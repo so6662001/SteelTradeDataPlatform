@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>批量购买名额包 · 上游钢厂端 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.qp-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; align-items: start; }
+.qp-steps { padding: 18px 60px 14px; }
+.qp-steps .el-step { cursor: pointer; }
+.tier-card { border: 1px solid var(--stp-border); border-radius: 6px; padding: 10px 8px; text-align: center; background: #fff; cursor: pointer; transition: all .15s; position: relative; }
+.tier-card:hover { border-color: #a8d2ff; }
+.tier-card.on { border-color: var(--el-color-primary); background: #f7fbff; box-shadow: 0 0 0 2px var(--el-color-primary-light-8); }
+.tier-card .rng { font-size: 13px; color: #4a5568; }
+.tier-card .off { font-size: 18px; font-weight: 600; margin: 4px 0 2px; }
+.tier-card .unit { font-size: 12px; color: var(--stp-sub); }
+.tier-card .cur { position: absolute; top: -9px; left: 50%; transform: translateX(-50%); background: var(--el-color-primary); color: #fff; font-size: 11px; line-height: 18px; padding: 0 8px; border-radius: 9px; white-space: nowrap; }
+.quick { display: inline-flex; gap: 6px; margin-left: 12px; }
+.quick span { padding: 0 10px; line-height: 28px; border: 1px solid #dcdfe6; border-radius: 4px; font-size: 13px; cursor: pointer; color: #4a5568; background: #fff; }
+.quick span:hover { color: var(--el-color-primary); border-color: #a8d2ff; }
+.quick span.on { color: var(--el-color-primary); border-color: var(--el-color-primary); background: #f1f7ff; }
+.sum-kv { display: grid; grid-template-columns: auto 1fr; gap: 9px 10px; font-size: 13px; margin: 0; }
+.sum-kv dt { color: var(--stp-sub); } .sum-kv dd { margin: 0; text-align: right; }
+.sum-total { border-top: 1px dashed var(--stp-border); margin-top: 12px; padding-top: 12px; }
+.ex-tag { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 11px; line-height: 18px; background: #fff8eb; color: #9a6400; border: 1px solid #f3dfb8; font-weight: 400; white-space: nowrap; }
+.el-descriptions__label { white-space: nowrap; }
+.rule-ul { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.95; color: #4a5568; }
+.later-card { border: 1px dashed #cfd6e0; border-radius: 6px; padding: 12px; background: #fafbfc; color: #8a94a3; }
+.later-card h4 { margin: 0 0 4px; font-size: 14px; color: #5b6778; display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.later-card p { margin: 0; font-size: 12px; line-height: 1.7; }
+.sec-title { font-size: 14px; font-weight: 600; margin: 18px 0 10px; display: flex; align-items: center; gap: 6px; }
+.sec-title:first-child { margin-top: 0; }
+.sec-title::before { content: ""; width: 3px; height: 14px; background: var(--el-color-primary); border-radius: 2px; }
+.cashier { border: 1px solid var(--stp-border); border-radius: 8px; overflow: hidden; }
+.cashier .hd { background: #1b2a3c; color: #fff; padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+.cashier .bd { padding: 18px 16px; }
+.pay-way { display: flex; gap: 10px; margin-top: 12px; }
+.pay-way span { flex: 1; border: 1px solid var(--stp-border); border-radius: 6px; padding: 10px; text-align: center; font-size: 13px; cursor: pointer; }
+.pay-way span.on { border-color: var(--el-color-primary); color: var(--el-color-primary); background: #f7fbff; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="upstream" active="quota-package" title="批量购买名额包" watermark
+  desc="一次购买 N 个名额，有效期内自由分配给名录中的企业；数量越多单价越低。订阅制，年付为主。">
+  <template #actions>
+    <span class="ex-tag" style="line-height:24px;font-size:12px">本页单价、折扣均为示例参数，待业务方确定</span>
+    <el-button @click="$go('orders.html')"><el-icon><Tickets /></el-icon>订单与订阅</el-button>
+  </template>
+
+  <div class="card qp-steps">
+    <el-steps :active="step" finish-status="success" align-center>
+      <el-step v-for="(s, i) in steps" :key="s.t" :title="s.t" :description="s.d" @click="jump(i)" />
+    </el-steps>
+  </div>
+
+  <!-- 第 4 步：结果 -->
+  <div v-if="step === 3" class="card">
+    <el-result icon="success" :title="pay.way === 'transfer' ? '订单已提交，等待平台财务核销' : '支付成功，订单待生效'">
+      <template #sub-title>
+        <div style="line-height:1.9;max-width:660px;margin:0 auto">
+          订单号 <b class="num">{{ orderNo }}</b>　{{ typeText }} <b class="num">{{ form.qty }}</b> 个名额　应付 <b class="num">¥ {{ $fmt(calc.total) }}</b><br>
+          <template v-if="pay.way === 'transfer'">转账凭证已上传。平台财务核销后订单生效，核销结果通过站内信与短信通知。</template>
+          <template v-else>已通过货袋子收银台完成支付。</template>
+          名额自 <b class="num">{{ calc.start }}</b> 起可用，到期日 <b class="num">{{ calc.end }}</b>。
+        </div>
+      </template>
+      <template #extra>
+        <el-button type="primary" @click="$go('directory.html')"><el-icon><ShoppingCart /></el-icon>去分配名额</el-button>
+        <el-button @click="$go('orders.html')"><el-icon><Tickets /></el-icon>查看订单</el-button>
+        <el-button @click="restart">再买一单</el-button>
+      </template>
+    </el-result>
+    <div class="grid c3" style="max-width:900px;margin:0 auto 8px">
+      <div class="tip-box blue small"><b>分配名额</b><br>到企业名录勾选企业，或按条件圈选。名额可分批分配，未分配名额不延长有效期。</div>
+      <div class="tip-box blue small"><b>生效时间</b><br>新分配的企业按数据池周期统一生效，下次生效日 2026-12-01，历史不重算。分配名额包内的名额不产生新费用。</div>
+      <div class="tip-box blue small"><b>合同与发票</b><br>电子合同已生成，可在订单详情下载；订单生效后可申请发票。</div>
+    </div>
+    <div style="text-align:center"><el-button link type="primary" @click="step = 2">返回上一步查看支付信息</el-button></div>
+  </div>
+
+  <div v-else class="qp-wrap">
+    <div>
+      <!-- 第 1 步：选择名额包 -->
+      <template v-if="step === 0">
+        <div class="card">
+          <div class="card-title"><span>数量阶梯单价<small>{{ form.type === 'add' ? '周期内加购按累计名额数（已购 200 + 加购数）确定阶梯' : '按本次购买的名额数确定阶梯' }}</small></span><span class="ex-tag">示例参数，待业务方确定</span></div>
+          <div class="grid c6" style="margin-bottom:0;gap:10px;padding-top:6px">
+            <div class="tier-card" v-for="t in tiers" :key="t.label" :class="{on: t.label === calc.tier.label}" @click="pickTier(t)">
+              <span v-if="t.label === calc.tier.label" class="cur">当前档</span>
+              <div class="rng num">{{ t.label }} 个</div>
+              <div class="off" :style="{color: t.label === calc.tier.label ? 'var(--el-color-primary)' : ''}">{{ t.off === 1 ? '原价' : offText(t.off) }}</div>
+              <div class="unit"><span class="num">{{ (base * t.off).toFixed(0) }}</span> 元/名额·月</div>
+            </div>
+          </div>
+          <div class="muted small mt12">目录单价 {{ base }} 元/名额·月。阶梯折扣可与周期折扣叠加：年付 {{ offText(yearOff) }}、季付 {{ offText(quarterOff) }}、月付不打折。</div>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><span>选择名额包</span></div>
+          <el-form label-width="92px">
+            <el-form-item label="购买类型">
+              <el-radio-group v-model="form.type" @change="onType">
+                <el-radio-button value="new">新购</el-radio-button>
+                <el-radio-button value="add">周期内加购</el-radio-button>
+              </el-radio-group>
+              <span class="muted small" style="margin-left:12px">{{ form.type === 'new' ? '新开一个订阅批次，有独立的起止日期' : '费用试算：加购须在下单时指定新增企业，到期日与原订单对齐（2027-03-31）' }}</span>
+            </el-form-item>
+            <el-form-item label="名额数量">
+              <el-input-number v-model="form.qty" :min="minQty" :max="5000" :step="10" step-strictly style="width:160px" />
+              <span class="quick"><span v-for="q in [50, 100, 200, 500, 1000]" :key="q" :class="{on: form.qty === q}" @click="form.qty = q">{{ $fmt(q) }}</span></span>
+              <span class="muted small" style="margin-left:12px">{{ form.type === 'new' ? '最小购买量 ' + minQty + ' 个' : '加购后累计 ' + (200 + form.qty) + ' 个' }}</span>
+            </el-form-item>
+            <el-form-item label="计费周期">
+              <el-radio-group v-model="form.cycle" :disabled="form.type === 'add'">
+                <el-radio-button value="year">年付 · {{ offText(yearOff) }}</el-radio-button>
+                <el-radio-button value="quarter">季付 · {{ offText(quarterOff) }}</el-radio-button>
+                <el-radio-button value="month">月付</el-radio-button>
+              </el-radio-group>
+              <span class="muted small" style="margin-left:12px">{{ form.type === 'add' ? '加购沿用原订单的年付周期' : '订阅制，年付为主' }}</span>
+            </el-form-item>
+            <el-form-item label="有效期" style="margin-bottom:0">
+              <span class="num">{{ calc.start }} 至 {{ calc.end }}</span>
+              <span class="muted small" style="margin-left:12px">{{ form.type === 'add' ? '计费起止日，共 121 天（含首尾）；计划生效日 2026-12-01 即计费起始日' : '付款核销后，自下一个数据池生效日起算' }}</span>
+            </el-form-item>
+            <div v-if="form.type === 'add'" class="tip-box blue small" style="margin:12px 0 0">
+              <b>周期内加购的计费规则：</b>从新增企业的生效日起计费，<b>下单日至生效日之间不收费</b>；计费天数为生效日至原订单到期日（含首尾）。新增企业在下一个数据池调整周期生效，生效前为“已分配（待生效）”，不计费、不计提分成，数据不进入聚合。<br>
+              加购须在下单时指定新增企业，本页只做费用试算，请到 <a href="directory.html">企业名录选购</a> 勾选企业后下单：有未分配名额时先用未分配名额（不属于加购，不产生新费用），超出的部分按加购计价。当前名额包 200 个已全部分配（在池 186 个、待生效 14 个），没有未分配名额，新选企业全部按加购计价。<span class="ex-tag">是否允许加购未指定企业的名额待确认（N-26）</span>
+            </div>
+          </el-form>
+        </div>
+
+        <div class="grid c2">
+          <div class="card">
+            <div class="card-title"><span>购买规则</span></div>
+            <ul class="rule-ul">
+              <li>名额包可分批分配给名录中的企业；<b>未分配名额不延长有效期</b>。</li>
+              <li>替换按数据池周期统一生效（每自然月 1 次），每周期替换<b>不超过在用名额的 20%</b>。</li>
+              <li>首次购买的最小购买量为 <b>20</b> 个，与最小数据池规模一致。</li>
+              <li>随订阅<b>赠送 12 个月历史数据</b>，按首次分配的成员集合计算。</li>
+              <li>周期内加购<b>从新增企业生效日起计费</b>，下单日至生效日之间不收费；新增企业在下一个数据池调整周期（每自然月 1 日）生效，加购不占用替换额度。</li>
+              <li>加购的计费天数为生效日至原订单到期日（含首尾），到期日与原订单对齐；下一个生效日晚于原订单到期日时不提供加购，请在续费时扩容。</li>
+              <li>把已购名额包内的未分配名额分配给企业<b>不属于加购，不产生新费用</b>；减少名额只能在续费时进行。</li>
+            </ul>
+          </div>
+          <div class="card">
+            <div class="card-title"><span>预置组合包与全量包</span><el-tag size="small" type="info">二期提供</el-tag></div>
+            <div class="grid c2" style="margin-bottom:0;gap:10px">
+              <div class="later-card" v-for="p in later" :key="p.t">
+                <h4>{{ p.t }}</h4>
+                <p>{{ p.d }}</p>
+                <p style="margin-top:6px"><el-tag size="small" type="info" effect="plain">二期提供</el-tag></p>
+              </div>
+            </div>
+            <div class="muted small mt12">组合包与全量包整体定价，定价方式待业务方确定。当前可在 <a href="directory.html">企业名录选购</a> 中按组合包条件圈选企业。</div>
+          </div>
+        </div>
+      </template>
+
+      <!-- 第 2 步：确认订单 -->
+      <template v-else-if="step === 1">
+        <div class="card">
+          <div class="sec-title">购买主体</div>
+          <el-descriptions :column="2" border size="small">
+            <el-descriptions-item label="购买主体">东岳钢铁集团有限公司</el-descriptions-item>
+            <el-descriptions-item label="企业认证">已认证 · 钢铁生产企业</el-descriptions-item>
+            <el-descriptions-item label="归并的关联企业" :span="2">东岳钢铁集团国际贸易有限公司、东岳特钢有限公司</el-descriptions-item>
+            <el-descriptions-item label="下单人">周立明（企业管理员）</el-descriptions-item>
+            <el-descriptions-item label="下单时间"><span class="num">2026-11-24 14:20</span></el-descriptions-item>
+          </el-descriptions>
+          <div class="tip-box small mt8">同一集团的关联企业归并为同一购买主体，共用一个数据池与同一套名额，不能分别建池。</div>
+
+          <div class="sec-title">商品明细</div>
+          <table class="plain-table">
+            <thead><tr><th>商品</th><th class="r">名额数</th><th class="r">折后单价</th><th>计费周期</th><th>有效期</th><th class="r">金额（元）</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>{{ form.type === 'new' ? '名额包（新购）' : '名额包（周期内加购）' }}<div class="muted small">{{ calc.tier.label }} 档 {{ calc.tier.off === 1 ? '原价' : offText(calc.tier.off) }} · {{ cycleText }}</div></td>
+                <td class="r num">{{ $fmt(form.qty) }}</td>
+                <td class="r num">{{ calc.unit.toFixed(2) }} 元/名额·月</td>
+                <td>{{ calc.periodText }}</td>
+                <td class="num">{{ calc.start }}<br>至 {{ calc.end }}</td>
+                <td class="r num">{{ $fmt(calc.total) }}</td>
+              </tr>
+              <tr v-if="form.type === 'new'"><td colspan="5">赠送：12 个月历史数据<span class="muted small">（随订阅赠送）</span></td><td class="r num">0</td></tr>
+              <tr class="total"><td colspan="5">应付金额<span class="ex-tag" style="margin-left:8px">示例参数，待业务方确定</span></td><td class="r num" style="color:#e5484d;font-size:16px">{{ $fmt(calc.total) }}</td></tr>
+            </tbody>
+          </table>
+
+          <div class="sec-title">开票信息<span class="muted small" style="font-weight:400">订单生效后可在“订单与订阅”申请开票</span></div>
+          <el-form label-width="110px" size="default">
+            <div class="grid c2" style="margin-bottom:0;gap:0 20px">
+              <el-form-item label="发票类型">
+                <el-radio-group v-model="inv.type"><el-radio value="special">增值税专用发票</el-radio><el-radio value="normal">增值税普通发票</el-radio></el-radio-group>
+              </el-form-item>
+              <el-form-item label="发票抬头"><el-input v-model="inv.title" /></el-form-item>
+              <el-form-item label="纳税人识别号"><el-input v-model="inv.tax" /></el-form-item>
+              <el-form-item label="开户行及账号"><el-input v-model="inv.bank" /></el-form-item>
+              <el-form-item label="注册地址电话"><el-input v-model="inv.addr" /></el-form-item>
+              <el-form-item label="收票邮箱"><el-input v-model="inv.mail" /></el-form-item>
+            </div>
+          </el-form>
+
+          <div class="sec-title">合同与协议</div>
+          <div class="tip-box orange small">
+            提交订单后生成《钢贸数据服务订单合同》，双方电子签章。《数据服务协议》含<b>禁止再识别条款</b>：不得通过任何方式推算或识别单家企业的经营数据，不得转售；违约的，平台可终止服务并追究责任。
+          </div>
+          <div class="mt12"><el-checkbox v-model="agree.a">我已阅读并同意《数据服务协议》，包括其中的禁止再识别条款</el-checkbox></div>
+          <div><el-checkbox v-model="agree.b">我已阅读并同意《名额包购买规则》：未分配名额不延长有效期；已生效订单的退款规则以合同约定为准</el-checkbox></div>
+        </div>
+      </template>
+
+      <!-- 第 3 步：支付 -->
+      <template v-else>
+        <div class="card">
+          <div class="row between">
+            <div>订单 <b class="num">{{ orderNo }}</b> 已生成　<el-tag size="small" type="warning">待支付</el-tag></div>
+            <div>应付金额 <span class="price-big num" style="font-size:22px">¥ {{ $fmt(calc.total) }}</span></div>
+          </div>
+          <el-tabs v-model="pay.way" class="mt12">
+            <el-tab-pane label="对公转账" name="transfer">
+              <div class="tip-box blue small mb12">钢厂采购以对公转账为主。转账后上传凭证，<b>平台财务核销后订单生效</b>（一般 1–2 个工作日）。</div>
+              <el-descriptions :column="2" border size="small" title="平台收款账户">
+                <el-descriptions-item label="户名">货袋子平台运营主体（以合同载明为准）</el-descriptions-item>
+                <el-descriptions-item label="开户行">示例银行 · 营业部</el-descriptions-item>
+                <el-descriptions-item label="账号"><span class="num">6222 **** **** 0188</span><span class="muted small">（示例）</span> <el-button link type="primary" @click="$demo('收款账户信息已复制')">复制</el-button></el-descriptions-item>
+                <el-descriptions-item label="转账附言"><span class="num">{{ orderNo }}</span><span class="muted small">（请务必填写订单号）</span></el-descriptions-item>
+                <el-descriptions-item label="应付金额" :span="2"><b class="num">{{ $fmt(calc.total) }}</b> 元（{{ cn }}）</el-descriptions-item>
+              </el-descriptions>
+              <el-form label-width="96px" class="mt16">
+                <el-form-item label="转账凭证" required>
+                  <el-upload action="#" :auto-upload="false" :limit="1" accept=".pdf,.jpg,.png" :on-change="onProof" :on-remove="() => pay.proof = ''">
+                    <el-button><el-icon><Upload /></el-icon>上传转账凭证</el-button>
+                    <template #tip><div class="muted small">银行回单或网银截图，支持 PDF、JPG、PNG，不超过 10 MB。<a href="javascript:;" @click="pay.proof = '转账回单_示例.pdf'">原型演示：使用示例凭证</a></div></template>
+                  </el-upload>
+                  <div v-if="pay.proof" class="small" style="color:#18a058;width:100%"><el-icon style="vertical-align:-2px"><CircleCheckFilled /></el-icon> 已选择：{{ pay.proof }}</div>
+                </el-form-item>
+                <el-form-item label="付款账户名"><el-input v-model="pay.payer" style="width:320px" /></el-form-item>
+                <el-form-item label="转账日期" style="margin-bottom:0"><el-date-picker v-model="pay.date" type="date" value-format="YYYY-MM-DD" style="width:200px" /></el-form-item>
+              </el-form>
+            </el-tab-pane>
+            <el-tab-pane label="在线支付" name="online">
+              <div class="cashier">
+                <div class="hd"><span>货袋子收银台</span><span>复用货袋子平台支付能力</span></div>
+                <div class="bd">
+                  <div class="row between"><span>钢贸数据服务 · {{ typeText }} {{ form.qty }} 个名额<br><span class="muted small">订单号 {{ orderNo }}</span></span><span class="price-big num">¥ {{ $fmt(calc.total) }}</span></div>
+                  <div class="pay-way"><span v-for="w in ['企业网银', '银行卡快捷支付', '货袋子账户余额']" :key="w" :class="{on: pay.online === w}" @click="pay.online = w">{{ w }}</span></div>
+                  <div class="muted small mt12">点击支付后跳转货袋子收银台。大额订单可能受企业网银单笔限额限制，建议使用对公转账。</div>
+                </div>
+              </div>
+            </el-tab-pane>
+          </el-tabs>
+        </div>
+      </template>
+    </div>
+
+    <!-- 右侧：费用汇总 -->
+    <div class="cart-bar">
+      <div class="card" style="margin-bottom:0">
+        <div class="card-title"><span>费用汇总</span><span class="ex-tag">示例参数，待业务方确定</span></div>
+        <dl class="sum-kv">
+          <dt>购买类型</dt><dd>{{ typeText }}</dd>
+          <dt>名额数量</dt><dd><b class="num">{{ $fmt(form.qty) }}</b> 个</dd>
+          <dt>目录单价</dt><dd><span class="num">{{ base }}</span> 元/名额·月</dd>
+          <dt>数量阶梯折扣</dt><dd>{{ calc.tier.label }} 档 · {{ calc.tier.off === 1 ? '原价' : offText(calc.tier.off) }}</dd>
+          <dt>周期折扣</dt><dd>{{ cycleText }}</dd>
+          <dt>折后单价</dt><dd><b class="num">{{ calc.unit.toFixed(2) }}</b> 元/名额·月</dd>
+          <template v-if="form.type === 'add'">
+            <dt>适用日单价</dt><dd><span class="num">{{ calc.day.toFixed(2) }}</span> 元/名额·日</dd>
+            <dt>计划生效日</dt><dd class="num">{{ calc.start }}</dd>
+            <dt>计费起止日</dt><dd class="num">{{ calc.start }} 至 {{ calc.end }}</dd>
+            <dt>计费天数</dt><dd>121 天（含首尾）</dd>
+          </template>
+          <template v-else>
+            <dt>计费周期</dt><dd>{{ calc.periodText }}</dd>
+            <dt>有效期</dt><dd class="num">{{ calc.start }} 至 {{ calc.end }}</dd>
+          </template>
+          <template v-if="form.type === 'new'"><dt>赠送</dt><dd>12 个月历史数据</dd></template>
+          <template v-if="$state.gate === 'open'"><dt>价格数据权益</dt><dd style="color:#b26a00">待确认（N-04）</dd></template>
+        </dl>
+        <div v-if="$state.gate === 'open'" class="tip-box orange small mt8">价格数据权益：包含在名额价格内还是单独加价待确认（N-04）。本单金额暂未包含可能的加价。</div>
+        <div class="sum-total">
+          <div class="row between" style="align-items:baseline"><span>合计</span><span class="price-big num">¥ {{ $fmt(calc.total) }}</span></div>
+          <div class="row between small muted mt8"><span>折合每名额每月</span><span><b class="num" style="color:#1f2d3d">{{ calc.unit.toFixed(2) }}</b> 元</span></div>
+          <div class="row between small muted" style="margin-top:4px"><span>较目录价节省</span><span class="num">¥ {{ $fmt(calc.save) }}</span></div>
+          <div class="small muted" style="margin-top:8px;line-height:1.6">{{ calc.formula }}</div>
+        </div>
+        <div class="mt16">
+          <template v-if="step === 0 && form.type === 'add'">
+            <el-button type="primary" size="large" style="width:100%" @click="$go('directory.html')">去企业名录指定新增企业并下单</el-button>
+            <div class="muted small mt8" style="text-align:center">以上为试算金额；下单日至生效日之间不收费</div>
+          </template>
+          <template v-else-if="step === 0">
+            <el-button type="primary" size="large" style="width:100%" @click="go(1)">下一步：确认订单</el-button>
+          </template>
+          <template v-else-if="step === 1">
+            <el-button type="primary" size="large" style="width:100%" :disabled="!(agree.a && agree.b)" @click="go(2)">提交订单并去支付</el-button>
+            <el-button style="width:100%;margin:8px 0 0" @click="step = 0">上一步：修改名额包</el-button>
+            <div v-if="!(agree.a && agree.b)" class="muted small mt8" style="text-align:center">请先勾选两项协议</div>
+          </template>
+          <template v-else>
+            <el-button v-if="pay.way === 'transfer'" type="primary" size="large" style="width:100%" :disabled="!pay.proof" :loading="pay.loading" @click="finish">提交转账凭证</el-button>
+            <el-button v-else type="primary" size="large" style="width:100%" :loading="pay.loading" @click="finish">前往货袋子收银台支付</el-button>
+            <el-button style="width:100%;margin:8px 0 0" @click="step = 1">上一步：返回订单确认</el-button>
+            <div v-if="pay.way === 'transfer' && !pay.proof" class="muted small mt8" style="text-align:center">请先上传转账凭证；也可稍后在“订单与订阅”中上传</div>
+          </template>
+        </div>
+      </div>
+    </div>
+  </div>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const P = M.PRICING;
+  const CN_OFF = { 0.95: '九五折', 0.9: '九折', 0.85: '八五折', 0.8: '八折', 0.75: '七五折' };
+  /* 金额大写（整数元） */
+  const toCn = (n) => {
+    const d = '零壹贰叁肆伍陆柒捌玖', u = ['', '拾', '佰', '仟'], g = ['', '万', '亿'];
+    let s = '', i = 0, lower = 1000;
+    while (n > 0) {
+      const part = n % 10000; let ps = '', zero = false;
+      for (let j = 3; j >= 0; j--) { const v = Math.floor(part / Math.pow(10, j)) % 10; if (v) { if (zero && ps) ps += '零'; ps += d[v] + u[j]; zero = false; } else zero = true; }
+      if (ps) s = ps + g[i] + (s && lower < 1000 ? '零' : '') + s;
+      lower = part; n = Math.floor(n / 10000); i++;
+    }
+    return '人民币' + (s || '零') + '元整';
+  };
+
+  STP.mount({
+    data() {
+      return {
+        step: 0, maxStep: 0, base: P.base, yearOff: P.yearOff, quarterOff: P.quarterOff, tiers: P.tiers, orderNo: 'DO-20261124-0061',
+        steps: [{ t: '选择名额包', d: '数量、周期、购买类型' }, { t: '确认订单', d: '购买主体、开票、协议' }, { t: '支付', d: '对公转账或在线支付' }, { t: '分配名额', d: '到企业名录分配' }],
+        form: { type: 'new', qty: 100, cycle: 'year' },
+        agree: { a: false, b: false },
+        inv: { type: 'special', title: '东岳钢铁集团有限公司', tax: '9137 **** **** **** 6X', bank: '示例银行东岳支行 3700 **** **** 5521', addr: '示例省示例市钢城路 1 号 0000-5550100', mail: 'caiwu@dongyue.example' },
+        pay: { way: 'transfer', proof: '', payer: '东岳钢铁集团有限公司', date: '2026-11-24', online: '企业网银', loading: false },
+        later: [
+          { t: '华东建材样本包', d: '86 家 · 华东 · 建筑钢材' }, { t: '华南板材样本包', d: '42 家 · 华南 · 板材' },
+          { t: '全国优特钢样本包', d: '38 家 · 全国 · 优特钢' }, { t: '全量包', d: '订阅全部已上架企业，新上架企业自动加入' },
+        ],
+      };
+    },
+    computed: {
+      minQty() { return this.form.type === 'new' ? P.minQty : 10; },
+      typeText() { return this.form.type === 'new' ? '新购' : '周期内加购'; },
+      cycleText() { const c = this.form.type === 'add' ? 'year' : this.form.cycle; return c === 'year' ? '年付 · ' + CN_OFF[P.yearOff] : c === 'quarter' ? '季付 · ' + CN_OFF[P.quarterOff] : '月付 · 不打折'; },
+      calc() {
+        const f = this.form, q = f.qty || 0, add = f.type === 'add';
+        const cycle = add ? 'year' : f.cycle;
+        const cOff = cycle === 'year' ? P.yearOff : cycle === 'quarter' ? P.quarterOff : 1;
+        const months = cycle === 'year' ? 12 : cycle === 'quarter' ? 3 : 1;
+        const tier = M.tierOf(add ? 200 + q : q) || P.tiers[0];
+        const unit = P.base * cOff * tier.off;
+        /* 周期内加购：从新增企业生效日 2026-12-01 起计费，到 2027-03-31 共 121 天（含首尾）；下单日至生效日之间不收费 */
+        const ratio = add ? 121 / 365 : 1;
+        const total = Math.round(q * P.base * months * cOff * tier.off * ratio);
+        const list = Math.round(q * P.base * months * ratio);
+        const end = add ? '2027-03-31' : { year: '2027-11-30', quarter: '2027-02-28', month: '2026-12-31' }[cycle];
+        return {
+          tier, unit, total, save: list - total, start: '2026-12-01', end,
+          periodText: add ? '计费 121 天（含首尾）' : months + ' 个月', day: unit * 12 / 365,
+          formula: add ? '公式：' + q + ' × ' + P.base + ' × 12 × ' + cOff + ' × ' + tier.off + ' × 121/365（适用日单价 × 计费天数；折算口径 N-24、适用阶梯 N-25 待确认）' : '公式：' + q + ' × ' + P.base + ' × ' + months + ' × ' + cOff + ' × ' + tier.off,
+        };
+      },
+      cn() { return toCn(this.calc.total); },
+    },
+    methods: {
+      offText(o) { return CN_OFF[o] || '原价'; },
+      onType(v) { if (v === 'new' && this.form.qty < P.minQty) this.form.qty = P.minQty; if (v === 'add') { this.form.cycle = 'year'; this.maxStep = 0; } },
+      pickTier(t) {
+        const q = this.form.type === 'add' ? Math.max(10, t.min - 200) : t.min;
+        if (this.form.type === 'add' && t.max < 210) { this.$info('已购 200 个名额，加购后累计名额数不会落在该档'); return; }
+        this.form.qty = q;
+      },
+      go(i) { this.step = i; this.maxStep = Math.max(this.maxStep, i); window.scrollTo(0, 0); },
+      jump(i) {
+        if (i > 0 && this.form.type === 'add') { this.$info('周期内加购须指定新增企业，请到企业名录勾选企业后下单'); return; }
+        if (i <= this.maxStep) { this.step = i; return; }
+        this.$info(i === 3 ? '完成支付后进入“分配名额”' : '请按顺序完成前一步');
+      },
+      onProof(file) { this.pay.proof = file.name; },
+      finish() {
+        this.pay.loading = true;
+        setTimeout(() => { this.pay.loading = false; this.go(3); }, 700);
+      },
+      restart() { this.step = 0; this.maxStep = 0; this.agree = { a: false, b: false }; this.pay.proof = ''; this.orderNo = 'DO-20261124-0062'; },
+    },
+  });
+})();
+</script>
+</body>
+</html>

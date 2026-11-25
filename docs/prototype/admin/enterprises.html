@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>企业管理 · 平台运营后台 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.ent-name b { font-weight: 600; }
+.ent-name span { display: block; font-size: 12px; color: var(--stp-sub); margin-top: 2px; }
+.filter-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 12px; }
+.sec-title { font-size: 14px; font-weight: 600; margin: 20px 0 10px; display: flex; align-items: center; justify-content: space-between; }
+.sec-title:first-child { margin-top: 0; }
+.sec-title::before { content: ""; width: 3px; height: 14px; background: var(--el-color-primary); border-radius: 2px; margin-right: 8px; }
+.sec-title > span:first-child { flex: 1; }
+.lock-block { border: 1px dashed #c3cad5; border-radius: 6px; padding: 16px; background: repeating-linear-gradient(135deg, #f7f8fa 0 8px, #f1f3f6 8px 16px); display: flex; gap: 14px; align-items: flex-start; }
+.lock-block .ic { width: 40px; height: 40px; border-radius: 8px; background: #fff; border: 1px solid var(--stp-border); display: flex; align-items: center; justify-content: center; font-size: 20px; color: #8a94a3; flex-shrink: 0; }
+.lock-block h4 { margin: 0 0 4px; font-size: 14px; }
+.lock-block p { margin: 0 0 10px; font-size: 13px; color: #5b6778; line-height: 1.7; }
+.prog-steps { display: flex; gap: 3px; margin-bottom: 3px; }
+.prog-steps i { flex: 1; height: 5px; border-radius: 2px; background: #e4e8ee; }
+.prog-steps i.on { background: #18a058; }
+.anon-gen { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid #e0d1fb; background: #faf7ff; border-radius: 6px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="admin" active="enterprises" title="企业管理"
+  desc="上游、下游企业的板块准入审核、身份类型认定、画像与上架审核、接入管理、关联企业维护与状态管理。平台人员默认不可查看下游企业上传明细。">
+  <template #actions>
+    <el-button @click="$demo('企业清单已导出（不含任何上传数据）')"><el-icon><Download /></el-icon>导出企业清单</el-button>
+    <el-button type="primary" @click="tab = 'audit'"><el-icon><Stamp /></el-icon>待审核（{{ audits.length }}）</el-button>
+  </template>
+
+  <div class="grid c5">
+    <stat-card label="下游入驻企业" :value="21386" unit="家" icon="OfficeBuilding"><span>已上架 <b>17,902</b></span></stat-card>
+    <div class="stat">
+      <div class="label">上架方式分布</div>
+      <div class="value num" style="font-size:18px;line-height:1.7">实名 10,384<span class="unit">家</span></div>
+      <div class="foot"><span>匿名带编号 <b>6,906</b></span><span>指定钢厂可见 <b>612</b></span><span>不上架 <b>3,484</b></span></div>
+    </div>
+    <stat-card label="板块状态：暂停 / 退出" :value="486" unit="家暂停" icon="SwitchButton"><span>退出流程中 <b>37</b></span><span>本月已退出 <b>12</b></span></stat-card>
+    <stat-card label="上游购买主体" :value="512" unit="家" icon="Coin" tip="同一集团的关联企业归并为一个购买主体，共用一个数据池校验口径"><span>付费 <b>438</b></span><span>涉及法人 <b>1,264</b></span></stat-card>
+    <stat-card label="待审核" :value="audits.length" unit="项" icon="Stamp"><span>准入 <b>{{ auditCount('准入审核') }}</b></span><span>身份 <b>{{ auditCount('身份类型认定') }}</b></span><span>画像 <b>{{ auditCount('画像审核') }}</b></span><span>上架 <b>{{ auditCount('上架审核') }}</b></span></stat-card>
+  </div>
+
+  <div class="card">
+    <el-tabs v-model="tab">
+      <!-- 下游企业 -->
+      <el-tab-pane name="dn" label="下游企业">
+        <div class="filter-bar">
+          <el-input v-model="f.kw" placeholder="企业名称 / 企业编号 / 匿名编号" clearable style="width:240px"><template #prefix><el-icon><Search /></el-icon></template></el-input>
+          <el-select v-model="f.prov" placeholder="所在省份" clearable style="width:120px"><el-option v-for="p in provs" :key="p" :label="p" :value="p" /></el-select>
+          <el-select v-model="f.listing" placeholder="上架方式" clearable style="width:160px"><el-option v-for="p in listings" :key="p" :label="p" :value="p" /></el-select>
+          <el-select v-model="f.status" placeholder="板块状态" clearable style="width:110px"><el-option v-for="p in ['正常','暂停','退出']" :key="p" :label="p" :value="p" /></el-select>
+          <el-select v-model="f.quality" placeholder="质量评级" clearable style="width:110px"><el-option v-for="p in ['A','B','C']" :key="p" :label="p + ' 级'" :value="p" /></el-select>
+          <el-select v-model="f.grain" placeholder="上传粒度" clearable style="width:120px"><el-option v-for="p in ['行级','日汇总','混用']" :key="p" :label="p" :value="p" /></el-select>
+          <el-select v-model="f.price" placeholder="价格上传" clearable style="width:120px"><el-option label="已开启" value="on" /><el-option label="未开启" value="off" /></el-select>
+          <el-button @click="resetFilter">重置</el-button>
+        </div>
+        <el-table :data="pageRows" size="small" border>
+          <el-table-column label="企业" min-width="212">
+            <template #default="{row}">
+              <div class="ent-name"><a href="javascript:;" @click="open(row)"><b>{{ row.name }}</b></a><span>{{ row.id }} · 编号 {{ row.anon }}</span></div>
+            </template>
+          </el-table-column>
+          <el-table-column label="所在地" width="96"><template #default="{row}">{{ row.prov }} · {{ row.city.replace('市','') }}</template></el-table-column>
+          <el-table-column label="上架方式" width="124">
+            <template #default="{row}"><el-tag size="small" :type="listingType(row.listing)" effect="plain">{{ row.listing }}</el-tag></template>
+          </el-table-column>
+          <el-table-column label="板块状态" width="76"><template #default="{row}"><span class="dot" :class="row.status === '正常' ? 'ok' : row.status === '暂停' ? 'warn' : 'err'"></span>{{ row.status }}</template></el-table-column>
+          <el-table-column label="接入进度" width="100">
+            <template #default="{row}">
+              <div class="prog-steps"><i v-for="n in 4" :key="n" :class="{on: n <= row.step + 1}"></i></div>
+              <span class="small muted">{{ steps[row.step] }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="上传粒度" width="72"><template #default="{row}">{{ row.grain }}</template></el-table-column>
+          <el-table-column label="价格上传" width="72"><template #default="{row}"><span v-if="priceOn(row)" style="color:#18a058">已开启</span><span v-else class="muted">未开启</span></template></el-table-column>
+          <el-table-column label="质量评级" width="72" align="center"><template #default="{row}"><el-tag size="small" :type="row.quality === 'A' ? 'success' : row.quality === 'B' ? 'primary' : 'warning'">{{ row.quality }}</el-tag></template></el-table-column>
+          <el-table-column label="关联集团" width="104"><template #default="{row}"><span v-if="row.group">{{ row.group }}</span><span v-else class="muted">—</span></template></el-table-column>
+          <el-table-column prop="joined" label="入驻时间" width="98" />
+          <el-table-column label="操作" width="104" align="center">
+            <template #default="{row}">
+              <el-button link type="primary" @click="open(row)">详情</el-button>
+              <el-dropdown trigger="click" @command="c => rowCmd(c, row)">
+                <el-button link type="primary">更多<el-icon><ArrowDown /></el-icon></el-button>
+                <template #dropdown><el-dropdown-menu>
+                  <el-dropdown-item v-if="row.status === '正常'" command="暂停">暂停板块服务</el-dropdown-item>
+                  <el-dropdown-item v-if="row.status === '暂停'" command="正常">恢复为正常</el-dropdown-item>
+                  <el-dropdown-item command="下架" :disabled="row.listing === '不上架'">从名录下架</el-dropdown-item>
+                  <el-dropdown-item command="工单" divided>发起明细访问工单</el-dropdown-item>
+                </el-dropdown-menu></template>
+              </el-dropdown>
+            </template>
+          </el-table-column>
+          <template #empty><div class="empty-block">没有符合条件的企业，请调整筛选条件</div></template>
+        </el-table>
+        <div class="tbl-foot">
+          <span>全平台下游企业 21,386 家；原型展示其中 {{ dnAll.length }} 家示例，当前筛选命中 {{ filtered.length }} 家。列表只含状态与质量评级，不含任何销量、库存、价格数值。</span>
+          <el-pagination small background layout="prev, pager, next" :total="filtered.length" :page-size="10" v-model:current-page="page" />
+        </div>
+      </el-tab-pane>
+
+      <!-- 上游企业 -->
+      <el-tab-pane name="up" label="上游企业">
+        <el-alert type="info" show-icon :closable="false" title="购买资格限定为经认证的钢铁生产企业。同一集团的关联企业归并为一个购买主体：同一时间只有一个生效数据池，名额与替换额度按购买主体合并计算。" />
+        <el-table :data="ups" size="small" border>
+          <el-table-column label="购买主体" min-width="230"><template #default="{row}"><div class="ent-name"><a href="javascript:;" @click="openUp(row)"><b>{{ row.name }}</b></a><span>{{ row.id }} · {{ row.kind }}</span></div></template></el-table-column>
+          <el-table-column label="集团归并的关联企业数" width="160" align="right"><template #default="{row}"><a href="javascript:;" @click="openUp(row)">{{ row.rel }} 家</a></template></el-table-column>
+          <el-table-column label="已购名额" width="100" align="right"><template #default="{row}"><span class="num">{{ row.quota ? $fmt(row.quota) : '—' }}</span></template></el-table-column>
+          <el-table-column label="数据池家数" width="190" align="right">
+            <template #default="{row}"><el-tag v-if="row.eff && row.eff < 20" size="small" type="danger">有效 {{ row.eff }} 家，低于 20</el-tag> <span class="num">{{ row.pool ? $fmt(row.pool) : '—' }}</span></template>
+          </el-table-column>
+          <el-table-column prop="expire" label="订阅到期" width="120" />
+          <el-table-column label="状态" width="120"><template #default="{row}"><el-tag size="small" :type="upType(row.status)">{{ row.status }}</el-tag></template></el-table-column>
+          <el-table-column label="操作" width="190" align="center">
+            <template #default="{row}"><el-button link type="primary" @click="openUp(row)">详情</el-button><el-button link type="primary" @click="$go('pools.html')">数据池</el-button><el-button link type="primary" @click="$go('billing.html')">订单</el-button></template>
+          </el-table-column>
+        </el-table>
+        <div class="tbl-foot"><span>全平台上游购买主体 512 家（付费 438 家）；原型展示 {{ ups.length }} 家示例。</span></div>
+      </el-tab-pane>
+
+      <!-- 待审核 -->
+      <el-tab-pane name="audit">
+        <template #label>待审核 <el-badge :value="audits.length" type="danger" :hidden="!audits.length" style="vertical-align:1px" /></template>
+        <div class="filter-bar">
+          <el-radio-group v-model="auditType">
+            <el-radio-button value="" :label="'全部（' + audits.length + '）'" />
+            <el-radio-button v-for="t in auditTypes" :key="t" :value="t" :label="t + '（' + auditCount(t) + '）'" />
+          </el-radio-group>
+        </div>
+        <el-table :data="auditRows" size="small" border>
+          <el-table-column label="审核类型" width="130"><template #default="{row}"><el-tag size="small" :type="auditTag(row.type)">{{ row.type }}</el-tag></template></el-table-column>
+          <el-table-column label="企业" min-width="230"><template #default="{row}"><b>{{ row.name }}</b></template></el-table-column>
+          <el-table-column label="身份" width="80"><template #default="{row}">{{ row.side }}</template></el-table-column>
+          <el-table-column prop="summary" label="申请内容" min-width="300" />
+          <el-table-column prop="time" label="提交时间" width="140" />
+          <el-table-column label="等待时长" width="100"><template #default="{row}"><span :style="{color: row.wait > 24 ? '#e5484d' : ''}">{{ row.wait }} 小时</span></template></el-table-column>
+          <el-table-column label="操作" width="90" align="center"><template #default="{row}"><el-button type="primary" size="small" plain @click="openAudit(row)">审核</el-button></template></el-table-column>
+          <template #empty><div class="empty-block">当前没有待审核事项</div></template>
+        </el-table>
+        <div class="tbl-foot"><span>审核时限：准入与身份认定 1 个工作日，画像与上架 2 个工作日。审核结论与意见全部留痕，并通知企业。</span></div>
+      </el-tab-pane>
+    </el-tabs>
+  </div>
+
+  <!-- 下游企业详情抽屉 -->
+  <el-drawer v-model="drawer" size="720px" :title="cur ? cur.name : ''">
+    <template v-if="cur">
+      <div class="row mb12">
+        <el-tag :type="cur.status === '正常' ? 'success' : cur.status === '暂停' ? 'warning' : 'danger'">板块状态：{{ cur.status }}</el-tag>
+        <el-tag :type="listingType(cur.listing)" effect="plain">{{ cur.listing }}</el-tag>
+        <el-tag type="info">质量评级 {{ cur.quality }}</el-tag>
+        <el-tag v-if="cur.group" type="warning" effect="plain">关联企业 · {{ cur.group }}</el-tag>
+        <span class="muted small">当前被 <b>{{ cur.subs }}</b> 家钢厂订阅</span>
+      </div>
+
+      <div class="sec-title"><span>认证信息</span><span class="muted small" style="font-weight:400">复用货袋子平台企业认证</span></div>
+      <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="企业编号">{{ cur.id }}</el-descriptions-item>
+        <el-descriptions-item label="统一社会信用代码">9132{{ cur.id.slice(1) }}••••••{{ cur.id.slice(-2) }}X</el-descriptions-item>
+        <el-descriptions-item label="所在地">{{ cur.prov }} · {{ cur.city }}</el-descriptions-item>
+        <el-descriptions-item label="企业认证">已认证（货袋子平台）</el-descriptions-item>
+        <el-descriptions-item label="身份类型">下游钢贸企业</el-descriptions-item>
+        <el-descriptions-item label="入驻时间">{{ cur.joined }}（接入 {{ cur.months }} 个月）</el-descriptions-item>
+        <el-descriptions-item label="匿名编号"><span class="anon-name">{{ cur.anon }}</span></el-descriptions-item>
+        <el-descriptions-item label="企业管理员">{{ cur.admin }}（手机号已脱敏）</el-descriptions-item>
+      </el-descriptions>
+
+      <div class="sec-title"><span>协议签署记录</span></div>
+      <el-table :data="cur.agreements" size="small" border>
+        <el-table-column prop="name" label="协议" min-width="200" />
+        <el-table-column prop="ver" label="版本" width="80" />
+        <el-table-column prop="time" label="签署时间" width="150" />
+        <el-table-column prop="by" label="签署人" width="110" />
+        <el-table-column label="状态" width="90"><template #default="{row}"><el-tag size="small" :type="row.ok ? 'success' : 'info'">{{ row.ok ? '已签署' : '未签署' }}</el-tag></template></el-table-column>
+      </el-table>
+
+      <div class="sec-title"><span>自主申报画像</span><span class="muted small" style="font-weight:400">由企业自主申报，经画像审核后在名录展示</span></div>
+      <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="主营大类">{{ cur.cat }}</el-descriptions-item>
+        <el-descriptions-item label="规模档（申报区间）">{{ cur.scale }}</el-descriptions-item>
+        <el-descriptions-item label="代理品牌">{{ cur.brands.join('、') }}</el-descriptions-item>
+        <el-descriptions-item label="覆盖声明">{{ cur.cover }}</el-descriptions-item>
+        <el-descriptions-item label="价格上传">{{ priceOn(cur) ? '已开启' : '未开启' }}</el-descriptions-item>
+        <el-descriptions-item label="画像审核">已通过（{{ cur.joined }}）</el-descriptions-item>
+      </el-descriptions>
+
+      <div class="sec-title"><span>接入应用与密钥状态</span><el-button size="small" @click="quotaDlg = true"><el-icon><Setting /></el-icon>调整限流配额</el-button></div>
+      <el-table :data="cur.apps" size="small" border>
+        <el-table-column prop="src" label="来源系统" min-width="140" />
+        <el-table-column prop="key" label="应用标识" width="136"><template #default="{row}"><span class="code">{{ row.key }}</span></template></el-table-column>
+        <el-table-column prop="grain" label="上传粒度" width="80" />
+        <el-table-column label="密钥状态" width="104"><template #default="{row}"><span class="dot" :class="row.on ? (row.exp ? 'warn' : 'ok') : 'err'"></span>{{ row.on ? (row.exp ? '30 日内到期' : '正常') : '已停用' }}</template></el-table-column>
+        <el-table-column prop="last" label="最近调用" width="106" />
+        <el-table-column label="操作" width="64" align="center"><template #default="{row}"><el-button link :type="row.on ? 'danger' : 'primary'" @click="toggleApp(row)">{{ row.on ? '停用' : '启用' }}</el-button></template></el-table-column>
+      </el-table>
+      <div class="small muted mt8">限流配额：<b>{{ cur.qps }}</b> 次/分钟，单批最多 <b>{{ $fmt(cur.batch) }}</b> 行；近 24 小时接口成功率 {{ cur.succ }}%，触发限流 {{ cur.limited }} 次。密钥明文仅企业可见，平台只能查看状态与停用。</div>
+
+      <div class="sec-title"><span>关联企业维护</span><el-button size="small" @click="addRel"><el-icon><Plus /></el-icon>登记关联关系</el-button></div>
+      <el-table v-if="cur.rels.length" :data="cur.rels" size="small" border>
+        <el-table-column prop="name" label="关联企业" min-width="220" />
+        <el-table-column prop="rel" label="关系" width="150" />
+        <el-table-column prop="src" label="来源" width="130" />
+        <el-table-column label="操作" width="76" align="center"><template #default="{$index}"><el-button link type="danger" @click="cur.rels.splice($index, 1); $demo('已解除关联关系，变更已留痕')">解除</el-button></template></el-table-column>
+      </el-table>
+      <div v-else class="tip-box small">未登记关联企业。钢厂关联的贸易公司在名录中标注“关联企业”；关联方订阅的名额不参与分成（示例参数，待业务方确定）。</div>
+
+      <div class="sec-title"><span>状态管理</span></div>
+      <div class="row">
+        <el-button :disabled="cur.status !== '正常'" @click="setStatus(cur, '暂停')">暂停板块服务</el-button>
+        <el-button :disabled="cur.status !== '暂停'" type="success" plain @click="setStatus(cur, '正常')">恢复为正常</el-button>
+        <el-button :disabled="cur.status === '退出'" type="danger" plain @click="setStatus(cur, '退出')">办理退出</el-button>
+        <span class="muted small">暂停或退出后，订阅该企业的名额按补偿规则冻结或释放，见 <a href="pools.html">数据池管理</a></span>
+      </div>
+
+      <div class="sec-title"><span>上传数据明细</span><el-tag size="small" type="info"><el-icon style="vertical-align:-2px"><Lock /></el-icon> 不可见</el-tag></div>
+      <div class="lock-block">
+        <div class="ic"><el-icon><Lock /></el-icon></div>
+        <div>
+          <h4>平台人员默认不可查看下游企业上传明细</h4>
+          <p>销售出库明细、库存快照、价格与金额均不在后台展示。排障确需查看时，须发起明细访问工单：经<b>企业授权</b>后<b>限时</b>开放指定范围，访问全程<b>留痕</b>，并在企业侧“数据使用透明账本”中<b>对企业可见</b>。</p>
+          <el-button type="primary" @click="$go('audit.html')"><el-icon><Tickets /></el-icon>发起明细访问工单</el-button>
+          <span class="muted small" style="margin-left:10px">该企业近 90 天内工单 {{ cur.tickets }} 次</span>
+        </div>
+      </div>
+    </template>
+  </el-drawer>
+
+  <!-- 限流配额 -->
+  <el-dialog v-model="quotaDlg" title="调整限流配额" width="480px" append-to-body>
+    <el-form v-if="cur" label-width="120px">
+      <el-form-item label="企业">{{ cur.name }}</el-form-item>
+      <el-form-item label="每分钟调用上限"><el-input-number v-model="quota.qps" :min="60" :max="6000" :step="60" /> <span class="muted small" style="margin-left:8px">次/分钟，默认 600</span></el-form-item>
+      <el-form-item label="单批最大行数"><el-input-number v-model="quota.batch" :min="500" :max="5000" :step="500" /> <span class="muted small" style="margin-left:8px">行</span></el-form-item>
+      <el-form-item label="调整原因"><el-input v-model="quota.reason" type="textarea" :rows="2" placeholder="如：历史数据集中补传" /></el-form-item>
+    </el-form>
+    <template #footer><el-button @click="quotaDlg = false">取消</el-button><el-button type="primary" @click="saveQuota">保存</el-button></template>
+  </el-dialog>
+
+  <!-- 上游详情 -->
+  <el-dialog v-model="upDlg" :title="curUp ? curUp.name : ''" width="640px">
+    <template v-if="curUp">
+      <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="购买主体编号">{{ curUp.id }}</el-descriptions-item>
+        <el-descriptions-item label="身份类型">{{ curUp.kind }}</el-descriptions-item>
+        <el-descriptions-item label="已购名额">{{ curUp.quota ? $fmt(curUp.quota) + ' 个' : '未购买' }}</el-descriptions-item>
+        <el-descriptions-item label="数据池家数">{{ curUp.pool ? curUp.pool + ' 家' : '—' }}</el-descriptions-item>
+        <el-descriptions-item label="订阅到期">{{ curUp.expire }}</el-descriptions-item>
+        <el-descriptions-item label="状态">{{ curUp.status }}</el-descriptions-item>
+      </el-descriptions>
+      <div class="sec-title"><span>集团归并的关联企业（{{ curUp.rel }} 家）</span><el-button size="small" @click="$demo('已打开关联企业登记，新增后按同一购买主体归并')"><el-icon><Plus /></el-icon>新增关联企业</el-button></div>
+      <el-table :data="curUp.members" size="small" border>
+        <el-table-column prop="name" label="企业" min-width="240" />
+        <el-table-column prop="role" label="角色" width="150" />
+        <el-table-column prop="side" label="板块身份" width="130" />
+      </el-table>
+      <div class="tip-box blue small mt12">关联企业共用一个数据池与一套替换额度，防止集团内多个法人分别购买不同数据池后互相差分。钢厂关联的贸易公司在名录中标注“关联企业”。</div>
+    </template>
+    <template #footer><el-button @click="upDlg = false">关闭</el-button></template>
+  </el-dialog>
+
+  <!-- 审核弹窗 -->
+  <el-dialog v-model="auditDlg" :title="curAudit ? curAudit.type + ' · ' + curAudit.name : ''" width="640px">
+    <template v-if="curAudit">
+      <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="企业">{{ curAudit.name }}</el-descriptions-item>
+        <el-descriptions-item label="板块身份">{{ curAudit.side }}</el-descriptions-item>
+        <el-descriptions-item label="提交时间">{{ curAudit.time }}</el-descriptions-item>
+        <el-descriptions-item label="货袋子企业认证">已认证</el-descriptions-item>
+        <el-descriptions-item label="申请内容" :span="2">{{ curAudit.summary }}</el-descriptions-item>
+      </el-descriptions>
+
+      <template v-if="curAudit.type === '准入审核'">
+        <div class="sec-title"><span>准入核对项</span></div>
+        <el-checkbox-group v-model="rv.checks" style="display:grid;gap:2px">
+          <el-checkbox value="a">企业主体认证有效，经营范围含钢材销售</el-checkbox>
+          <el-checkbox value="b">已签署《数据授权协议》《板块服务协议》</el-checkbox>
+          <el-checkbox value="c">企业管理员已实名并完成二次验证绑定</el-checkbox>
+          <el-checkbox value="d">不在平台风险名单内</el-checkbox>
+        </el-checkbox-group>
+      </template>
+
+      <template v-if="curAudit.type === '身份类型认定'">
+        <div class="sec-title"><span>身份类型认定</span></div>
+        <el-form label-width="110px">
+          <el-form-item label="认定结论">
+            <el-radio-group v-model="rv.kind"><el-radio value="钢铁生产企业">钢铁生产企业（可购买）</el-radio><el-radio value="钢厂关联贸易公司">钢厂关联贸易公司</el-radio><el-radio value="贸易企业">贸易企业（不可购买）</el-radio></el-radio-group>
+          </el-form-item>
+          <el-form-item label="集团归并"><el-select v-model="rv.group" clearable placeholder="无所属集团，独立购买主体" style="width:100%"><el-option v-for="m in mills" :key="m" :label="m + '集团有限公司'" :value="m" /></el-select></el-form-item>
+          <el-form-item label="证明材料">营业执照、生产许可证、钢铁行业规范企业证明（3 份，已上传）<el-button link type="primary" @click="$info('原型演示：预览证明材料')">预览</el-button></el-form-item>
+        </el-form>
+        <div class="tip-box orange small">购买资格限定为经认证的钢铁生产企业。贸易企业不得以上游身份购买；同一集团的企业归并为同一购买主体。</div>
+      </template>
+
+      <template v-if="curAudit.type === '画像审核'">
+        <div class="sec-title"><span>自主申报画像</span></div>
+        <el-descriptions :column="2" border size="small">
+          <el-descriptions-item label="主营大类">{{ curAudit.p.cat }}</el-descriptions-item>
+          <el-descriptions-item label="规模档（申报区间）">{{ curAudit.p.scale }}</el-descriptions-item>
+          <el-descriptions-item label="代理品牌">{{ curAudit.p.brands }}</el-descriptions-item>
+          <el-descriptions-item label="覆盖声明">{{ curAudit.p.cover }}</el-descriptions-item>
+        </el-descriptions>
+        <div class="tip-box blue small mt12">系统一致性比对：申报规模档与上传数据<b>{{ curAudit.p.match ? '相符' : '偏差较大，建议退回修改' }}</b>。比对由系统完成，只返回是否相符，审核人看不到企业的销量、库存数值。</div>
+      </template>
+
+      <template v-if="curAudit.type === '上架审核'">
+        <div class="sec-title"><span>上架方式与匿名编号</span></div>
+        <el-descriptions :column="2" border size="small">
+          <el-descriptions-item label="企业选择的上架方式">{{ curAudit.listing }}</el-descriptions-item>
+          <el-descriptions-item label="质量评级">{{ curAudit.q }}</el-descriptions-item>
+          <el-descriptions-item label="近 30 日有效上传天数">{{ curAudit.days }} 天</el-descriptions-item>
+          <el-descriptions-item label="标准映射率">{{ curAudit.map }}%</el-descriptions-item>
+        </el-descriptions>
+        <div class="anon-gen mt12">
+          <span class="muted small">匿名编号</span>
+          <span v-if="rv.anon" class="anon-name" style="font-size:15px;font-weight:600">{{ rv.anon }}</span>
+          <span v-else class="muted">尚未生成</span>
+          <span class="flex1"></span>
+          <el-button size="small" type="primary" plain @click="genAnon"><el-icon><Refresh /></el-icon>{{ rv.anon ? '重新生成' : '生成匿名编号' }}</el-button>
+        </div>
+        <div class="small muted mt8">编号规则：大区 · 主营大类简称 · 随机序号。序号随机分配，不含注册地到市、规模、入驻顺序等可识别信息。实名上架的企业同样生成编号，供其日后切换为匿名时使用。</div>
+      </template>
+
+      <el-form label-width="80px" class="mt16">
+        <el-form-item label="审核意见"><el-input v-model="rv.note" type="textarea" :rows="2" placeholder="通过可不填；驳回须填写原因，将通知企业" /></el-form-item>
+      </el-form>
+    </template>
+    <template #footer>
+      <el-button @click="auditDlg = false">取消</el-button>
+      <el-button type="danger" plain :disabled="!rv.note" @click="doAudit(false)">驳回</el-button>
+      <el-button type="primary" :disabled="!canPass" @click="doAudit(true)">审核通过</el-button>
+    </template>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const STEPS = ['已签协议', '密钥已发放', '沙箱联调通过', '正式上传中'];
+  const ADMINS = ['陈海峰', '王建国', '李秀兰', '张伟民', '刘志强', '黄丽华', '周文斌', '吴晓东', '郑国栋', '孙玉梅'];
+  const monthAgo = (m, h) => { const d = new Date(2026, 10 - m, 1 + (h % 27)); return STP.dateStr(d); };
+  const enrich = (e, i) => {
+    const h = M.hash(e.id + 'x'), r = M.rngOf(h);
+    const a = r();
+    e.listing = a < 0.08 ? '不上架' : a < 0.13 ? '只对指定钢厂可见' : e.mode === '实名' ? '实名' : '匿名带编号';
+    const s = r(); e.status = s < 0.9 ? '正常' : s < 0.96 ? '暂停' : '退出';
+    const p = r(); e.step = e.months <= 2 ? (p < 0.4 ? 1 : p < 0.7 ? 2 : 3) : 3;
+    const g = r(); e.grain = e.grain === '单据行级' ? (g < 0.06 ? '混用' : '行级') : (g < 0.06 ? '混用' : '日汇总');
+    e.group = e.related ? e.brands[0] + '集团' : '';
+    e.joined = monthAgo(e.months, h);
+    e.subs = e.listing === '不上架' ? 0 : Math.round(3 + r() * 30);
+    e.admin = ADMINS[h % ADMINS.length];
+    e.qps = 600; e.batch = 1000; e.succ = (98 + r() * 1.9).toFixed(1); e.limited = h % 4 === 0 ? h % 7 : 0; e.tickets = h % 9 === 0 ? 1 : 0;
+    e.agreements = [
+      { name: '《数据授权协议》', ver: 'V2.1', time: e.joined + ' 10:1' + (h % 10), by: e.admin, ok: true },
+      { name: '《板块服务协议》', ver: 'V2.0', time: e.joined + ' 10:1' + (h % 10), by: e.admin, ok: true },
+      { name: '《价格数据上传补充条款》', ver: 'V1.0', time: e.priceOn ? monthAgo(Math.max(0, e.months - 3), h) + ' 15:02' : '—', by: e.priceOn ? e.admin : '—', ok: e.priceOn },
+      { name: '《收益分成补充协议》', ver: 'V1.0', time: e.listing === '不上架' ? '—' : e.joined + ' 10:20', by: e.listing === '不上架' ? '—' : e.admin, ok: e.listing !== '不上架' },
+    ];
+    e.apps = [{ src: 'SRC-ERP 主 ERP', key: 'ak_' + (h % 65536).toString(16).padStart(4, '0') + '••••' + ((h >> 8) % 4096).toString(16).padStart(3, '0'), grain: e.grain === '日汇总' ? '日汇总' : '行级', on: e.step >= 1, exp: h % 11 === 0, last: e.step === 3 && e.status === '正常' ? '今天 0' + (1 + h % 6) + ':' + STP.pad(h % 60) : '—' }];
+    if (e.grain === '混用') e.apps.push({ src: 'SRC-FGS 分公司进销存', key: 'ak_' + ((h >> 4) % 65536).toString(16).padStart(4, '0') + '••••' + (h % 4096).toString(16).padStart(3, '0'), grain: '日汇总', on: true, exp: false, last: '今天 02:' + STP.pad((h >> 3) % 60) });
+    e.rels = e.related ? [{ name: e.group + '有限公司', rel: '钢厂关联的贸易公司', src: '企业申报，运营核实' }] : [];
+    return e;
+  };
+  const hy = {
+    id: 'E100000', name: '苏州恒运钢铁贸易有限公司', mode: '实名', anon: '华东·建材·A0321', prov: '江苏', city: '苏州市', region: '华东', cat: '建筑钢材、热轧板卷', scale: '50–100 万吨', quality: 'A',
+    months: 14, brands: ['东岳', '金江'], cover: '部分上传：仅主营大类、指定仓库', priceOn: false, related: false,
+    listing: '实名', status: '正常', step: 3, grain: '混用', group: '', joined: '2025-09-19', subs: 23, admin: '陈海峰', qps: 1200, batch: 1000, succ: '99.8', limited: 0, tickets: 3,
+    agreements: [
+      { name: '《数据授权协议》', ver: 'V2.1', time: '2025-09-19 10:26', by: '陈海峰', ok: true },
+      { name: '《板块服务协议》', ver: 'V2.0', time: '2025-09-19 10:26', by: '陈海峰', ok: true },
+      STP.state.dnPrice === 'on' ? { name: '《价格数据上传补充条款》', ver: 'V1.0', time: '2026-10-20 09:12', by: '陈海峰', ok: true } : { name: '《价格数据上传补充条款》', ver: 'V1.0', time: '—', by: '—', ok: false },
+      { name: '《收益分成条款》', ver: '随《数据授权协议》V2.1 确认', time: '2026-07-01 09:40', by: '陈海峰', ok: true },
+    ],
+    apps: [
+      { src: 'SRC-HQ 总部 ERP', key: 'hy3a••••7e45', grain: '行级', on: true, exp: false, last: '昨天 23:52' },
+      { src: 'SRC-WX 无锡分公司进销存', key: 'hy9d••••5c08', grain: '日汇总', on: true, exp: false, last: '昨天 23:58' },
+    ],
+    rels: [],
+  };
+  const dnAll = [hy].concat(M.enterprises(59, 20261124).map(enrich));
+
+  const KINDS = ['钢铁生产企业'];
+  const upRaw = [
+    ['东岳钢铁集团有限公司', 3, 200, 186, '2027-03-31', '订阅中'], ['金江钢铁股份有限公司', 6, 500, 478, '2027-01-31', '订阅中'], ['海川特钢有限公司', 2, 60, 60, '2027-06-30', '订阅中'],
+    ['云岭钢铁集团有限公司', 3, 150, 142, '2027-08-31', '订阅中'], ['北辰钢铁有限责任公司', 5, 1200, 1168, '2027-02-28', '订阅中'], ['瀚阳钢铁集团有限公司', 2, 80, 76, '2027-04-30', '订阅中'],
+    ['昆仑钢铁股份有限公司', 3, 250, 241, '2027-10-31', '订阅中'], ['南粤钢铁有限公司', 4, 100, 96, '2027-05-31', '退款中'], ['中洲钢铁集团有限公司', 1, 20, 20, '2027-08-31', '订阅中', 17],
+    ['汉江钢铁有限公司', 2, 0, 0, '—', '已认证未购买'], ['渤海钢铁股份有限公司', 2, 0, 0, '—', '已认证未购买'], ['祁连钢铁集团有限公司', 1, 0, 0, '—', '已认证未购买'],
+  ];
+  const ups = upRaw.map((u, i) => {
+    const short = u[0].replace(/(集团有限公司|股份有限公司|有限责任公司|有限公司)$/, '');
+    const members = [{ name: u[0], role: '购买主体（集团本部）', side: '上游' }];
+    const tails = ['销售有限公司', '国际贸易有限公司', '（华东）物资有限公司', '板材有限公司', '特钢有限公司'];
+    /* 东岳的归并关联企业与上游端“购买主体”信息一致：集团本部 + 东岳钢铁集团国际贸易有限公司、东岳特钢有限公司 */
+    if (i === 0) members.push({ name: '东岳钢铁集团国际贸易有限公司', role: '关联贸易公司', side: '下游（名录标注“关联企业”）' }, { name: '东岳特钢有限公司', role: '关联生产企业', side: '上游（归并）' });
+    else for (let k = 1; k < u[1]; k++) members.push({ name: short + tails[(k - 1) % tails.length], role: k <= 2 ? '关联贸易公司' : '关联生产企业', side: k <= 2 ? '下游（名录标注“关联企业”）' : '上游（归并）' });
+    return { id: 'U' + (20001 + i), name: u[0], kind: KINDS[0], rel: u[1], quota: u[2], pool: u[3], expire: u[4], status: u[5], eff: u[6] || 0, members };
+  });
+
+  const A = (type, name, side, summary, time, wait, ext) => Object.assign({ type, name, side, summary, time, wait }, ext || {});
+  const audits = [
+    A('准入审核', '长沙鑫盛钢铁贸易有限公司', '下游', '申请开通数据板块；来源：东岳钢铁带动入驻', '2026-11-24 09:12', 5),
+    A('准入审核', '兰州广源物资有限公司', '下游', '申请开通数据板块；来源：平台定向邀约（甘肃 · 建筑钢材）', '2026-11-24 08:40', 6),
+    A('准入审核', '南昌永泰金属材料有限公司', '下游', '申请开通数据板块；来源：自主申请', '2026-11-23 17:26', 21),
+    A('准入审核', '沈阳宏达钢铁有限公司', '下游', '申请开通数据板块；来源：金江钢铁带动入驻', '2026-11-23 15:02', 23),
+    A('准入审核', '西安同创供应链管理有限公司', '下游', '申请开通数据板块；来源：自主申请', '2026-11-23 11:48', 26),
+    A('准入审核', '成都嘉禾不锈钢有限公司', '下游', '申请开通数据板块；主营不锈钢；来源：平台定向邀约', '2026-11-23 10:05', 28),
+    A('身份类型认定', '太行钢铁集团有限公司', '上游', '申请认定为“钢铁生产企业”，取得购买资格', '2026-11-24 10:20', 4),
+    A('身份类型认定', '东岳钢铁（华东）物资有限公司', '上游 / 下游', '申请以上游身份购买；系统识别为东岳钢铁集团的关联贸易公司', '2026-11-23 16:10', 22),
+    A('身份类型认定', '佛山万隆钢铁有限公司', '上游', '申请认定为“钢铁生产企业”；经营范围以贸易为主', '2026-11-22 14:30', 48),
+    A('画像审核', '杭州瑞丰钢铁贸易有限公司', '下游', '修改规模档：5–20 万吨 → 20–50 万吨', '2026-11-24 09:50', 4, { p: { cat: '热轧板卷', scale: '20–50 万吨', brands: '北辰、金江', cover: '全量上传', match: true } }),
+    A('画像审核', '唐山金汇物资有限公司', '下游', '首次申报画像', '2026-11-23 18:02', 20, { p: { cat: '建筑钢材', scale: '100 万吨以上', brands: '昆仑', cover: '部分上传：指定仓库', match: false } }),
+    A('画像审核', '无锡华昌金属材料有限公司', '下游', '修改代理品牌：新增“海川”', '2026-11-23 13:15', 25, { p: { cat: '优特钢', scale: '5–20 万吨', brands: '海川、瀚阳', cover: '全量上传', match: true } }),
+    A('画像审核', '青岛顺通钢铁有限公司', '下游', '覆盖声明变更：全量上传 → 部分上传：仅主营大类', '2026-11-22 16:44', 46, { p: { cat: '中厚板', scale: '20–50 万吨', brands: '云岭', cover: '部分上传：仅主营大类', match: true } }),
+    A('上架审核', '武汉正阳钢铁贸易有限公司', '下游', '申请上架：匿名带编号', '2026-11-24 10:02', 4, { listing: '匿名带编号', q: 'B', days: 27, map: 96.8, region: '华中', abbr: '建材' }),
+    A('上架审核', '宁波天润物贸有限公司', '下游', '申请上架：实名', '2026-11-24 08:55', 5, { listing: '实名', q: 'A', days: 30, map: 98.9, region: '华东', abbr: '热卷' }),
+    A('上架审核', '郑州久隆实业有限公司', '下游', '申请上架：只对指定钢厂可见（指定 2 家）', '2026-11-23 17:40', 20, { listing: '只对指定钢厂可见', q: 'B', days: 24, map: 95.2, region: '华中', abbr: '型钢' }),
+    A('上架审核', '佛山联众金属材料有限公司', '下游', '上架方式变更：实名 → 匿名带编号', '2026-11-23 14:18', 24, { listing: '匿名带编号', q: 'A', days: 29, map: 97.6, region: '华南', abbr: '管材' }),
+    A('上架审核', '天津佳合钢铁有限公司', '下游', '申请上架：匿名带编号', '2026-11-22 15:36', 47, { listing: '匿名带编号', q: 'C', days: 21, map: 91.4, region: '华北', abbr: '冷镀' }),
+  ];
+
+  STP.mount({
+    data() {
+      return {
+        tab: 'dn', page: 1, dnAll, ups, audits, steps: STEPS, mills: M.MILLS,
+        provs: M.provinces.map((p) => p.name), listings: ['实名', '匿名带编号', '只对指定钢厂可见', '不上架'],
+        f: { kw: '', prov: '', listing: '', status: '', quality: '', grain: '', price: '' },
+        auditTypes: ['准入审核', '身份类型认定', '画像审核', '上架审核'], auditType: '',
+        drawer: false, cur: null, quotaDlg: false, quota: { qps: 600, batch: 1000, reason: '' },
+        upDlg: false, curUp: null,
+        auditDlg: false, curAudit: null, rv: { checks: [], kind: '钢铁生产企业', group: '', anon: '', note: '' },
+      };
+    },
+    computed: {
+      filtered() {
+        const f = this.f;
+        return this.dnAll.filter((e) => (!f.kw || (e.name + e.id + e.anon).indexOf(f.kw) >= 0) && (!f.prov || e.prov === f.prov) && (!f.listing || e.listing === f.listing)
+          && (!f.status || e.status === f.status) && (!f.quality || e.quality === f.quality) && (!f.grain || e.grain === f.grain) && (!f.price || (f.price === 'on') === this.priceOn(e)));
+      },
+      pageRows() { return this.filtered.slice((this.page - 1) * 10, this.page * 10); },
+      auditRows() { return this.audits.filter((a) => !this.auditType || a.type === this.auditType); },
+      canPass() {
+        const a = this.curAudit; if (!a) return false;
+        if (a.type === '准入审核') return this.rv.checks.length === 4;
+        if (a.type === '上架审核') return !!this.rv.anon;
+        return true;
+      },
+    },
+    watch: { f: { deep: true, handler() { this.page = 1; } } },
+    methods: {
+      priceOn(e) { return e.id === 'E100000' ? this.$state.dnPrice === 'on' : e.priceOn; },
+      listingType(l) { return l === '实名' ? 'success' : l === '匿名带编号' ? 'primary' : l === '不上架' ? 'info' : 'warning'; },
+      upType(s) { return s === '订阅中' ? 'success' : s === '即将到期' ? 'warning' : 'info'; },
+      auditTag(t) { return { 准入审核: 'primary', 身份类型认定: 'warning', 画像审核: 'success', 上架审核: 'danger' }[t]; },
+      auditCount(t) { return this.audits.filter((a) => a.type === t).length; },
+      resetFilter() { this.f = { kw: '', prov: '', listing: '', status: '', quality: '', grain: '', price: '' }; },
+      open(row) { this.cur = row; this.drawer = true; },
+      openUp(row) { this.curUp = row; this.upDlg = true; },
+      rowCmd(c, row) {
+        if (c === '工单') { this.$go('audit.html'); return; }
+        if (c === '下架') {
+          ElementPlus.ElMessageBox.confirm('下架后该企业不再出现在企业名录中，已订阅的名额不受影响。确认下架「' + row.name + '」？', '从名录下架', { type: 'warning', confirmButtonText: '确认下架', cancelButtonText: '取消' })
+            .then(() => { row.listing = '不上架'; this.$demo('已下架，操作已留痕并通知企业'); }).catch(() => {});
+          return;
+        }
+        this.setStatus(row, c);
+      },
+      setStatus(row, s) {
+        const tip = { 暂停: '暂停后该企业的数据不再参与聚合，订阅其的名额将冻结，上游可免费替换或顺延。', 正常: '恢复后该企业的数据自恢复日起重新参与聚合，冻结名额解冻。', 退出: '退出后名额释放，上游可免费替换；历史聚合结果不重算。此操作需企业已完成退出流程。' }[s];
+        ElementPlus.ElMessageBox.confirm(tip + '确认将「' + row.name + '」的板块状态改为“' + s + '”？', '状态变更', { type: 'warning', confirmButtonText: '确认', cancelButtonText: '取消' })
+          .then(() => { row.status = s; this.$demo('状态已变更为“' + s + '”，已留痕并通知企业与相关上游'); }).catch(() => {});
+      },
+      toggleApp(app) { app.on = !app.on; this.$demo(app.on ? '应用已启用' : '应用已停用，该来源系统的上传将被拒绝'); },
+      saveQuota() { this.cur.qps = this.quota.qps; this.cur.batch = this.quota.batch; this.quotaDlg = false; this.$demo('限流配额已调整，立即生效并留痕'); },
+      addRel() {
+        ElementPlus.ElMessageBox.prompt('请输入关联企业名称（同一集团或同一实际控制人）', '登记关联关系', { confirmButtonText: '登记', cancelButtonText: '取消', inputValue: '东岳钢铁集团有限公司' })
+          .then(({ value }) => { if (value) { this.cur.rels.push({ name: value, rel: '钢厂关联的贸易公司', src: '运营登记' }); this.cur.group = value.replace(/有限公司$/, ''); this.$demo('关联关系已登记，名录将标注“关联企业”'); } }).catch(() => {});
+      },
+      openAudit(row) {
+        this.curAudit = row;
+        this.rv = { checks: [], kind: row.name.indexOf('物资') >= 0 ? '钢厂关联贸易公司' : row.name.indexOf('万隆') >= 0 ? '贸易企业' : '钢铁生产企业', group: row.name.indexOf('东岳') >= 0 ? '东岳钢铁' : '', anon: '', note: '' };
+        this.auditDlg = true;
+      },
+      genAnon() { const a = this.curAudit; this.rv.anon = a.region + '·' + a.abbr + '·A' + String(1000 + Math.floor(Math.random() * 8999)).slice(-4); },
+      doAudit(pass) {
+        const a = this.curAudit;
+        this.audits.splice(this.audits.indexOf(a), 1);
+        this.auditDlg = false;
+        this.$demo(pass ? a.type + '已通过：' + a.name + (this.rv.anon ? '，匿名编号 ' + this.rv.anon : '') : '已驳回并通知企业：' + a.name);
+      },
+    },
+  });
+})();
+</script>
+</body>
+</html>

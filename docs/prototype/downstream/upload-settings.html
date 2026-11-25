@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>上传设置 · 下游钢贸端 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.sec-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.sec-head .no { width: 28px; height: 28px; border-radius: 6px; background: var(--el-color-primary); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 600; flex-shrink: 0; }
+.sec-head h2 { margin: 0; font-size: 17px; }
+.sec-head p { margin: 2px 0 0; font-size: 12px; color: var(--stp-sub); }
+.sec-head .right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.cmp .option-card { cursor: default; }
+.cmp .option-card h4 { font-size: 16px; margin-bottom: 10px; }
+.cmp dl { display: grid; grid-template-columns: 112px 1fr; gap: 0; margin: 0; font-size: 13px; }
+.cmp dt, .cmp dd { padding: 8px 0; border-top: 1px dashed var(--stp-border); line-height: 1.65; margin: 0; }
+.cmp dt { color: var(--stp-sub); }
+.cmp dd { color: #3d4b5c; }
+.price-switch { display: flex; align-items: center; gap: 16px; padding: 16px 18px; border-radius: 8px; border: 1px solid var(--stp-border); background: #fafbfc; }
+.price-switch.on { background: #f0faf4; border-color: #cfe9da; }
+.price-switch .txt b { font-size: 16px; }
+.price-switch .txt div { font-size: 13px; color: #5b6778; margin-top: 4px; line-height: 1.6; }
+.principle { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px dashed var(--stp-border); font-size: 13px; line-height: 1.7; }
+.principle:last-child { border-bottom: none; }
+.principle .el-icon { color: #18a058; font-size: 16px; margin-top: 3px; flex-shrink: 0; }
+.sub-card { border: 1px solid var(--stp-border); border-radius: 6px; padding: 14px 16px; }
+.sub-card h4 { margin: 0 0 10px; font-size: 14px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sub-card h4 small { font-weight: 400; color: var(--stp-sub); font-size: 12px; }
+.scope-chip { display: inline-block; padding: 1px 8px; background: #eef4fb; color: #2b5d9b; border-radius: 3px; font-size: 13px; margin: 0 6px 4px 0; }
+.scope-chip.all { background: #f4f5f7; color: #5b6778; }
+.danger-zone { border: 1px solid #f3c9ca; border-radius: 6px; padding: 12px 16px; background: #fffafa; }
+.danger-zone .item { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 0; }
+.danger-zone .item + .item { border-top: 1px dashed #f3c9ca; }
+.danger-zone .item b { font-size: 13px; } .danger-zone .item div div { font-size: 12px; color: var(--stp-sub); margin-top: 2px; line-height: 1.6; }
+.terms { border: 1px solid var(--stp-border); border-radius: 6px; padding: 4px 14px; max-height: 330px; overflow-y: auto; background: #fafbfc; }
+.terms h5 { margin: 12px 0 4px; font-size: 13px; }
+.terms p { margin: 0 0 8px; font-size: 13px; line-height: 1.75; color: #3d4b5c; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="downstream" active="upload-settings" title="上传设置"
+  desc="两项由企业自己决定的设置：用什么粒度上传销售数据，以及是否上传价格与金额。两项设置互相独立，都可以随时调整，每次变更留痕。">
+  <template #actions>
+    <el-tag type="info" effect="plain"><el-icon style="vertical-align:-2px"><Lock /></el-icon> 仅企业管理员可操作</el-tag>
+    <el-button @click="$go('api-docs.html')"><el-icon><Document /></el-icon>接口文档</el-button>
+  </template>
+
+  <!-- ============ 上传粒度 ============ -->
+  <div class="card">
+    <div class="sec-head">
+      <span class="no">1</span>
+      <div><h2>上传粒度</h2><p>按“企业 + 来源系统”设置。不同来源系统可以使用不同粒度。</p></div>
+      <div class="right"><el-button type="primary" plain @click="openSwitch('SRC-HQ')"><el-icon><Switch /></el-icon>切换粒度</el-button></div>
+    </div>
+
+    <el-table :data="sources" border>
+      <el-table-column label="来源系统" min-width="220"><template #default="{row}"><span class="code">{{ row.k }}</span> <b>{{ row.name }}</b></template></el-table-column>
+      <el-table-column label="当前上传粒度" width="150"><template #default="{row}"><el-tag :type="row.grain==='line' ? 'primary' : 'success'" effect="light">{{ gName(row.grain) }}</el-tag></template></el-table-column>
+      <el-table-column label="生效业务日期" width="150"><template #default="{row}">自 {{ row.since }} 起</template></el-table-column>
+      <el-table-column label="日均上传量" width="150"><template #default="{row}">约 {{ row.vol }}</template></el-table-column>
+      <el-table-column label="待生效的切换" min-width="250">
+        <template #default="{row}">
+          <template v-if="row.pending"><span class="dot warn"></span>自 {{ row.pending.date }} 业务日期起改为{{ gName(row.pending.to) }}　<a href="javascript:;" @click="cancelSwitch(row)">撤销</a></template>
+          <span v-else class="muted">无</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="150" align="center">
+        <template #default="{row}">
+          <el-tooltip v-if="row.locked" content="同一来源系统每月最多切换一次，本月已提交过切换" placement="top"><span><el-button link type="primary" disabled>切换粒度</el-button></span></el-tooltip>
+          <el-button v-else link type="primary" @click="openSwitch(row.k)">切换粒度</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+
+    <div class="side-panel-title" style="margin-top:18px">两种模式的差异</div>
+    <div class="grid c2 cmp" style="margin-bottom:12px">
+      <div v-for="g in ['line','daily']" :key="g" class="option-card" :class="{on: usedBy(g).length}">
+        <h4>{{ gName(g) }}<el-tag v-for="s in usedBy(g)" :key="s" size="small" effect="plain" :type="g==='line' ? 'primary' : 'success'">{{ s }} 正在使用</el-tag></h4>
+        <p>{{ g==='line' ? '逐行上传销售出库与退货单据。平台可做的校验最完整，更正最灵活。' : '每天上传一批按维度汇总后的净销量。平台看不到单据，暴露的信息更少。' }}</p>
+        <dl class="mt8">
+          <template v-for="r in cmp" :key="r[0]"><dt>{{ r[0] }}</dt><dd>{{ g==='line' ? r[1] : r[2] }}</dd></template>
+        </dl>
+      </div>
+    </div>
+    <div class="tip-box green">
+      <b>上传粒度不对上游展示，也不是上游的维度或筛选条件。</b>两种粒度的数据在平台内先合并到“企业 × 日”层再做聚合与披露判定，<b>对上游的聚合结果相同</b>。钢厂无法知道你用的是哪种粒度，也无法按粒度筛选数据。
+    </div>
+
+    <div class="side-panel-title" style="margin-top:18px">切换记录</div>
+    <el-table :data="switchLog" border size="small">
+      <el-table-column label="操作时间" width="150"><template #default="{row}"><span class="num">{{ row.at }}</span></template></el-table-column>
+      <el-table-column label="来源系统" width="110"><template #default="{row}"><span class="code">{{ row.src }}</span></template></el-table-column>
+      <el-table-column label="变更内容" min-width="240" prop="text"></el-table-column>
+      <el-table-column label="生效业务日期" width="130" prop="date"></el-table-column>
+      <el-table-column label="操作人" width="150" prop="by"></el-table-column>
+      <el-table-column label="状态" width="100" align="center"><template #default="{row}"><el-tag size="small" :type="row.status==='已生效' ? 'success' : row.status==='待生效' ? 'warning' : 'info'">{{ row.status }}</el-tag></template></el-table-column>
+    </el-table>
+    <div class="small muted mt8">生效日之前的数据保持原粒度。同一来源系统、同一业务日期只接受一种粒度的销售数据，另一种粒度会被拒收（错误码 3004）。库存为日末快照，两种粒度使用同一接口。</div>
+  </div>
+
+  <!-- ============ 价格与金额上传 ============ -->
+  <div class="card">
+    <div class="sec-head">
+      <span class="no">2</span>
+      <div><h2>价格与金额上传</h2><p>企业级开关，自愿开启。与上传粒度、上传条件规则互相独立。</p></div>
+      <div class="right">
+        <el-tooltip placement="top" content="原型演示：开关状态跨页面保持，工作台、接口日志、每日汇总与明细自查会随之变化"><span class="proto-switch">原型状态 · 价格上传 <b :style="{color: on ? '#18a058' : '#8a94a3'}">{{ on ? '已开启' : '未开启' }}</b></span></el-tooltip>
+      </div>
+    </div>
+
+    <div class="price-switch" :class="{on}">
+      <el-switch :model-value="on" size="large" @change="toggle" />
+      <div class="txt" style="flex:1">
+        <template v-if="on">
+          <b>已开启</b><el-tag size="small" type="success" style="margin-left:8px">范围内的价格与金额字段正常接收</el-tag>
+          <div>开启时间 {{ openedAt }} · 操作人 陈海峰（企业管理员）。可随时关闭；关闭后接口不再接收价格字段。</div>
+          <div class="small muted">原型说明：“已开启”状态统一按 2026-10-20 开启展示，所以数据核对、对标等页面里 10-20 之后的批次带有价格。</div>
+        </template>
+        <template v-else>
+          <b>未开启</b><el-tag size="small" type="info" style="margin-left:8px">默认关闭，由企业管理员主动开启</el-tag>
+          <div>当前接口收到 unitPrice、amount 等价格与金额字段<b>一律丢弃、不落盘</b>，并在批次结果中提示“价格字段未接收”（PRICE_DROPPED）。销量、库存上传不受影响。</div>
+        </template>
+      </div>
+      <el-button v-if="!on" type="primary" @click="openTerms"><el-icon><Open /></el-icon>开启价格上传</el-button>
+    </div>
+
+    <!-- 关闭状态 -->
+    <template v-if="!on">
+      <div class="grid c2 mt16" style="margin-bottom:0">
+        <div class="sub-card">
+          <h4>自愿原则<small>是否上传价格完全由企业决定</small></h4>
+          <div class="principle"><el-icon><CircleCheckFilled /></el-icon><div><b>默认关闭。</b>不开启不影响销量与库存的上传、不影响质量评级；价格为自愿上传，不计入质量评分。</div></div>
+          <div class="principle"><el-icon><CircleCheckFilled /></el-icon><div><b>只采集销售成交的单价与金额。</b>不采集成本、毛利、库存金额、报价（未成交价格）。</div></div>
+          <div class="principle"><el-icon><CircleCheckFilled /></el-icon><div><b>范围由你限定。</b>开启后可按大类、品名、品牌、仓库限定哪些数据带价格，范围外的价格字段平台同样丢弃不落盘。</div></div>
+          <div class="principle"><el-icon><CircleCheckFilled /></el-icon><div><b>可随时关闭并清除。</b>关闭后不再接收价格；可一键清除已上传数据中的价格与金额字段，销量数据保留。</div></div>
+        </div>
+        <div class="sub-card">
+          <h4>开启后，钢厂能看到什么<small>比销量更严的披露门槛</small></h4>
+          <div class="principle"><el-icon><CircleCheckFilled /></el-icon><div><b>只以加权均价和区间形式出现。</b>钢厂只能看到多家企业合并后的加权均价及涨跌、价格覆盖率区间；看不到任何单家企业的价格，也看不到金额合计、最高最低价、价格分布。</div></div>
+          <div class="principle"><el-icon><CircleCheckFilled /></el-icon><div><b>门槛比销量更严。</b>至少 <b>{{ $PV.kPrice }}</b> 家有价企业才披露（销量为 {{ $PV.k }} 家）；按有价销量计算优势度，最大一家超过 {{ $PV.dom1 }}% 或前两家超过 {{ $PV.dom2 }}% 时屏蔽；均价取整到 {{ $PV.roundPrice }} 元/吨。</div></div>
+          <div class="principle"><el-icon><CircleCheckFilled /></el-icon><div><b>上游侧价格功能另受平台法务闸口控制。</b>闸口默认关闭，取得法务意见后才由平台开启。当前状态：<b>{{ $state.gate==='open' ? '已向钢厂开放' : '尚未向钢厂开放' }}</b>。</div></div>
+          <div class="principle"><el-icon><CircleCheckFilled /></el-icon><div><b>本企业内也有权限控制。</b>“查看价格与金额”是独立权限，默认只有企业管理员可见。</div></div>
+        </div>
+      </div>
+    </template>
+
+    <!-- 开启状态 -->
+    <template v-else>
+      <div class="grid c2 mt16" style="margin-bottom:14px">
+        <div class="sub-card">
+          <h4><span>当前上传范围<small>　范围外的价格字段丢弃不落盘</small></span><el-button size="small" @click="openScope"><el-icon><Edit /></el-icon>编辑范围</el-button></h4>
+          <dl class="kv" style="grid-template-columns:64px 1fr">
+            <template v-for="s in scopeRows" :key="s.k"><dt>{{ s.k }}</dt><dd><span v-if="!s.v.length" class="scope-chip all">{{ s.all }}</span><span v-for="v in s.v" :key="v" class="scope-chip">{{ v }}</span></dd></template>
+          </dl>
+          <div class="small muted mt8">四个条件同时满足的数据才接收价格。示例：建筑钢材、热轧板卷中，品牌为东岳、金江的销售数据带价格上传。</div>
+        </div>
+        <div class="sub-card">
+          <h4><span>披露用途</span></h4>
+          <el-radio-group v-model="usage" style="display:flex;flex-direction:column;align-items:flex-start;gap:4px" @change="usageChange">
+            <el-radio value="disclose">参与对上游的聚合披露<span class="muted small">　只以加权均价和区间形式出现，受更严的披露门槛保护</span></el-radio>
+            <el-radio value="self" disabled>仅用于本企业自查与行业对标<span class="level-tag lock">二期</span><span class="muted small">　不对上游披露（待业务方确认）</span></el-radio>
+          </el-radio-group>
+          <div class="tip-box blue small mt12">参与披露时：至少 {{ $PV.kPrice }} 家有价企业、优势度 {{ $PV.dom1 }}% / {{ $PV.dom2 }}%、均价取整到 {{ $PV.roundPrice }} 元/吨。上游侧价格功能另受平台法务闸口控制，当前<b>{{ $state.gate==='open' ? '已向钢厂开放' : '尚未向钢厂开放' }}</b>。</div>
+        </div>
+        <div class="sub-card">
+          <h4><span>价格口径默认值<small>　接口未传对应字段时按默认值处理</small></span><el-button size="small" @click="saveDefaults">保存默认值</el-button></h4>
+          <el-form label-width="76px" size="small">
+            <el-form-item label="是否含税" style="margin-bottom:10px"><el-radio-group v-model="def.tax"><el-radio-button value="含税">含税</el-radio-button><el-radio-button value="不含税">不含税</el-radio-button></el-radio-group></el-form-item>
+            <el-form-item label="价格条件" style="margin-bottom:10px"><el-radio-group v-model="def.term"><el-radio-button value="自提">仓库自提价</el-radio-button><el-radio-button value="送到">送到价（含运费）</el-radio-button></el-radio-group></el-form-item>
+            <el-form-item label="计重方式" style="margin-bottom:4px"><el-radio-group v-model="def.weight"><el-radio-button value="理计">理计</el-radio-button><el-radio-button value="磅计">磅计</el-radio-button></el-radio-group></el-form-item>
+          </el-form>
+          <div class="small muted">平台默认聚合口径为含税、自提、非暂估。送到价单独口径；暂估价不参与默认口径。</div>
+        </div>
+        <div class="sub-card">
+          <h4><span>“查看价格与金额”权限成员<small>　未授权成员在自查页面看不到价格列</small></span></h4>
+          <table class="plain-table">
+            <thead><tr><th>成员</th><th>角色</th><th class="c" style="width:120px">可查看价格</th></tr></thead>
+            <tbody>
+              <tr v-for="m in members" :key="m.name">
+                <td>{{ m.name }}</td><td>{{ m.role }}</td>
+                <td class="c">
+                  <el-tooltip v-if="m.fixed" content="企业管理员默认具备该权限" placement="top"><span><el-switch :model-value="true" disabled size="small" /></span></el-tooltip>
+                  <el-switch v-else-if="m.can" v-model="m.on" size="small" @change="v => grant(m, v)" />
+                  <span v-else class="muted small">不可授予</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="small muted mt8">默认只有企业管理员可见，可授予数据管理员。接口对接员、只读成员、财务不可授予。</div>
+        </div>
+      </div>
+
+      <div class="danger-zone">
+        <div class="item">
+          <div><b>清除已上传价格</b><div>只清除已上传数据中的价格与金额字段，销量数据保留。已披露的历史价格聚合不回溯修改。</div></div>
+          <el-button type="danger" plain @click="clearOpen"><el-icon><Delete /></el-icon>清除已上传价格</el-button>
+        </div>
+        <div class="item">
+          <div><b>关闭价格上传</b><div>关闭后接口收到价格字段一律丢弃不落盘。已上传的价格默认保留，可另行清除。</div></div>
+          <el-button type="danger" plain @click="closeDlg = true"><el-icon><SwitchButton /></el-icon>关闭价格上传</el-button>
+        </div>
+      </div>
+    </template>
+
+    <div class="side-panel-title" style="margin-top:18px">开关、范围、用途的变更记录</div>
+    <el-table v-if="plog.length" :data="plog" border size="small">
+      <el-table-column label="时间" width="150"><template #default="{row}"><span class="num">{{ row.at }}</span></template></el-table-column>
+      <el-table-column label="类型" width="110"><template #default="{row}"><el-tag size="small" effect="plain" :type="row.type==='开关' ? 'primary' : row.type==='清除' ? 'danger' : 'info'">{{ row.type }}</el-tag></template></el-table-column>
+      <el-table-column label="变更内容" min-width="380" prop="text"></el-table-column>
+      <el-table-column label="操作人" width="170" prop="by"></el-table-column>
+    </el-table>
+    <div v-else class="empty-block" style="border:1px dashed var(--stp-border);border-radius:6px;padding:22px 0">暂无变更记录。价格上传自入驻起一直保持默认关闭。</div>
+    <div class="small muted mt8">每次变更写入审计日志并通知企业管理员。开启、关闭或清除都不会回溯修改已披露的历史价格聚合。</div>
+  </div>
+
+  <!-- 切换粒度 -->
+  <el-dialog v-model="switchDlg" title="切换上传粒度" width="600px">
+    <el-form label-width="110px">
+      <el-form-item label="来源系统">
+        <el-select v-model="sw.src" style="width:100%" @change="swSrcChange">
+          <el-option v-for="s in sources" :key="s.k" :label="s.k + ' ' + s.name + '（当前：' + gName(s.grain) + '）'" :value="s.k" :disabled="s.locked" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="目标粒度">
+        <el-radio-group v-model="sw.to">
+          <el-radio-button value="line" :disabled="swSrc.grain==='line'">行级模式</el-radio-button>
+          <el-radio-button value="daily" :disabled="swSrc.grain==='daily'">日汇总模式</el-radio-button>
+        </el-radio-group>
+      </el-form-item>
+      <el-form-item label="生效业务日期">
+        <el-date-picker v-model="sw.date" type="date" value-format="YYYY-MM-DD" :disabled-date="beforeTomorrow" :clearable="false" style="width:200px" />
+        <span class="small muted" style="margin-left:10px">不早于次日（2026-11-25）</span>
+      </el-form-item>
+    </el-form>
+    <div class="tip-box orange small">
+      <div>1. 生效日之前的数据<b>保持原粒度</b>，更正这些日期的数据仍用原接口。</div>
+      <div>2. 同一来源系统、同一业务日期<b>只接受一种粒度</b>的销售数据，另一种粒度会被拒收（错误码 3004）。请确保 ERP 端自 {{ sw.date }} 的业务日期起改用{{ sw.to==='daily' ? '销售日汇总接口' : '销售出库批量上传接口' }}。</div>
+      <div>3. 同一来源系统<b>每月最多切换一次</b><span class="muted">（示例参数，待业务方确定）</span>。</div>
+      <div>4. 切换记录留痕，写入审计日志。上传粒度不对上游展示，切换不影响对上游的聚合结果。</div>
+      <div v-if="sw.to==='daily'">5. 切换为日汇总模式后，“单笔吨位上下限”“按内部编码排除”两类规则条件只能在 ERP 端执行，请在 <a href="upload-rules.html">上传条件规则</a> 中确认。</div>
+    </div>
+    <el-checkbox v-model="sw.ok" class="mt12">我已与接口对接员确认 ERP 端的切换安排</el-checkbox>
+    <template #footer><el-button @click="switchDlg=false">取消</el-button><el-button type="primary" :disabled="!sw.ok" @click="doSwitch">确认切换</el-button></template>
+  </el-dialog>
+
+  <!-- 价格数据授权条款 -->
+  <el-dialog v-model="termsDlg" title="《价格数据授权条款》确认" width="680px" :close-on-click-modal="false">
+    <div class="terms">
+      <h5>一、采集范围</h5>
+      <p>平台只采集本企业主动上传的<b>销售成交单价与成交金额</b>，以及随价格上传的口径信息（是否含税、价格条件、是否暂估价、计重方式）。不采集成本、毛利、库存金额、报价（未成交价格）。企业可按大类、品名、品牌、仓库限定上传范围，范围外的价格字段平台丢弃不落盘。</p>
+      <h5>二、用途</h5>
+      <p>价格数据用于：（1）与其他已授权企业的数据合并，向已订阅的钢厂提供聚合后的价格指标；（2）本企业的数据自查；（3）行业对标（如提供）。不用于任何可识别到单家企业的用途，不向任何第三方提供单家企业的价格。</p>
+      <h5>三、披露形式</h5>
+      <p>对上游只以<b>加权均价及其涨跌、价格覆盖率区间</b>的形式出现。不披露销售金额合计、有价样本的精确销量、最高最低价、价格分布。品牌维度只有“本厂品牌”与“其他品牌（合并）”。均价取整到 10 元/吨。</p>
+      <h5>四、披露门槛</h5>
+      <p>价格指标采用比销量更严的门槛：任一统计单元格的<b>有价企业数不少于 8 家</b>；按有价销量计算，最大一家占比超过 50% 或前两家合计超过 80% 时屏蔽；“其他品牌”须由不少于 3 个品牌构成且单一品牌不超过 50%；销量被屏蔽的单元格价格一并屏蔽。上游侧价格功能另受平台法务闸口控制，闸口未开放前不向任何钢厂展示价格指标。</p>
+      <h5>五、关闭与清除</h5>
+      <p>企业可随时关闭价格上传，关闭后平台不再接收价格字段；可一键清除已上传数据中的价格与金额字段，销量数据保留。<b>已生成并已披露的历史价格聚合结果不回溯修改。</b></p>
+      <h5>六、留痕</h5>
+      <p>开关、范围、用途的每次变更写入审计日志，并通知企业管理员。</p>
+    </div>
+    <div class="small muted mt8">以上披露参数为平台当前公示值（示例参数，待业务方与法务确定）；参数调整前会通知全部下游企业。</div>
+    <el-checkbox v-model="agree" class="mt12">我已阅读并同意《价格数据授权条款》，确认以企业管理员身份开启价格与金额上传</el-checkbox>
+    <template #footer><el-button @click="termsDlg=false">暂不开启</el-button><el-button type="primary" :disabled="!agree" @click="turnOn">确认开启</el-button></template>
+  </el-dialog>
+
+  <!-- 编辑范围 -->
+  <el-dialog v-model="scopeDlg" title="编辑价格上传范围" width="600px">
+    <el-form label-width="76px">
+      <el-form-item label="大类"><el-select v-model="sf.cats" multiple clearable placeholder="不选表示全部大类" style="width:100%" @change="sf.prods = []"><el-option v-for="c in catOpts" :key="c" :label="c" :value="c" /></el-select></el-form-item>
+      <el-form-item label="品名"><el-select v-model="sf.prods" multiple clearable placeholder="不选表示所选大类下的全部品名" style="width:100%"><el-option v-for="p in prodOpts" :key="p" :label="p" :value="p" /></el-select></el-form-item>
+      <el-form-item label="品牌"><el-select v-model="sf.brands" multiple clearable placeholder="不选表示全部品牌" style="width:100%"><el-option v-for="b in brandOpts" :key="b" :label="b" :value="b" /></el-select></el-form-item>
+      <el-form-item label="仓库"><el-select v-model="sf.whs" multiple clearable placeholder="不选表示全部仓库" style="width:100%"><el-option v-for="w in whOpts" :key="w" :label="w" :value="w" /></el-select></el-form-item>
+    </el-form>
+    <div class="tip-box blue small">范围修改后对之后上传的数据生效，ERP 可通过上传设置查询接口获取最新范围。范围外的数据即使 ERP 传了价格字段，平台也丢弃不落盘（PRICE_DROPPED）。已上传的价格不受影响，如需清除请使用“清除已上传价格”。</div>
+    <template #footer><el-button @click="scopeDlg=false">取消</el-button><el-button type="primary" @click="saveScope">保存范围</el-button></template>
+  </el-dialog>
+
+  <!-- 清除已上传价格 -->
+  <el-dialog v-model="clearDlg" title="清除已上传价格" width="560px">
+    <el-alert type="error" show-icon :closable="false" title="危险操作：清除后无法恢复，如需再次提供价格只能由 ERP 重新上传。"></el-alert>
+    <el-form label-width="96px">
+      <el-form-item label="清除范围">
+        <el-radio-group v-model="cf.range" style="display:flex;flex-direction:column;align-items:flex-start">
+          <el-radio value="all">全部已上传的价格与金额</el-radio>
+          <el-radio value="date">指定业务日期之前的价格与金额　<el-date-picker v-model="cf.date" type="date" value-format="YYYY-MM-DD" :disabled="cf.range!=='date'" :clearable="false" size="small" style="width:150px" /></el-radio>
+        </el-radio-group>
+      </el-form-item>
+    </el-form>
+    <div class="tip-box red small">
+      <div>· <b>只清除价格与金额字段</b>（单价、金额及其口径），<b>销量数据保留</b>，不影响销量与库存的聚合。</div>
+      <div>· <b>已披露的历史价格聚合不回溯修改。</b>清除只影响之后的计算。</div>
+      <div>· 清除不会关闭价格上传开关；如不希望继续上传价格，请同时关闭开关。</div>
+    </div>
+    <el-checkbox v-model="cf.ok" class="mt12">我已了解以上影响，确认清除</el-checkbox>
+    <template #footer><el-button @click="clearDlg=false">取消</el-button><el-button type="danger" :disabled="!cf.ok" @click="doClear">确认清除</el-button></template>
+  </el-dialog>
+
+  <!-- 关闭开关 -->
+  <el-dialog v-model="closeDlg" title="关闭价格上传" width="520px">
+    <p style="margin:0 0 10px;line-height:1.8">关闭后，接口收到价格、金额字段一律丢弃不落盘，并在批次结果中提示“价格字段未接收”。销量与库存上传不受影响，可随时重新开启。</p>
+    <div class="tip-box small">已上传的价格默认保留；已披露的历史价格聚合不回溯修改。名录中的“是否提供价格数据”将随之变为“不提供”，下次确认画像时生效。</div>
+    <el-checkbox v-model="closeClear" class="mt12">同时清除已上传数据中的全部价格与金额字段（销量数据保留）</el-checkbox>
+    <template #footer><el-button @click="closeDlg=false">取消</el-button><el-button type="danger" @click="turnOff">确认关闭</el-button></template>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const NOW = '2026-11-24 14:30', ME = '陈海峰（企业管理员）';
+  /* “已开启”状态统一按 2026-10-20 开启展示：各页的带价数据（近 30 日趋势、2026-11-23 批次）都晚于这一时间 */
+  const OPENED = '2026-10-20 09:12';
+  const BRANDS = M.MILLS.map((m) => (m === '海川特钢' ? m : m.replace('钢铁', '')));
+  const scopeText = (s) => '大类：' + (s.cats.join('、') || '全部') + '；品名：' + (s.prods.join('、') || '全部') + '；品牌：' + (s.brands.join('、') || '全部') + '；仓库：' + (s.whs.join('、') || '全部');
+  const DEFAULT_SCOPE = { cats: ['建筑钢材', '热轧板卷'], prods: [], brands: ['东岳', '金江'], whs: [] };
+  STP.mount({
+    data() {
+      const on = STP.state.dnPrice === 'on';
+      return {
+        sources: [
+          { k: 'SRC-HQ', name: '总部 ERP', grain: 'line', since: '2025-09-26', vol: '260 行', pending: null, locked: false },
+          { k: 'SRC-WX', name: '无锡分公司进销存', grain: 'daily', since: '2026-10-01', vol: '40 条汇总记录', pending: null, locked: false },
+        ],
+        cmp: [
+          ['上传什么', '销售出库与退货的每一行单据（单据号可传脱敏值），接口为销售出库批量上传', '按业务日期和维度组合汇总后的净销量，每天一批完整数据，接口为销售日汇总上传'],
+          ['平台能看到什么', '单据行：单据号、行号、仓库、品名、材质、规格、钢厂、吨位。不含客户名称、业务员、成本', '只有汇总后的数量：某天、某仓库所在市、某品名规格、某钢厂卖了多少吨。看不到单据和单笔吨位，仓库可只报所在市'],
+          ['可用的规则条件', '全部条件，ERP 端与平台双重执行', '“单笔吨位上下限”“按内部编码排除”只能在 ERP 端执行，其余条件双重执行'],
+          ['自查能看到什么', '单据行，原始值与平台标准化后的值并列', '汇总记录及其来源批次，没有单据号'],
+          ['更正方式', '单行更新、单行作废', '重传该业务日期的完整汇总批次，平台整批替换；不支持单条作废'],
+          ['平台可做的校验', '单据去重、单行异常、突变', '批内唯一、批完整、突变、控制总数。没有单据级校验，每日对账是主要的完整性保障'],
+          ['幂等与更新', '按“企业 + 来源系统 + 单据号 + 行号”，取最新版本', '按“企业 + 来源系统 + 业务日期”整批替换'],
+          ['对上游的聚合结果', '相同', '相同'],
+        ],
+        switchLog: [
+          { at: '2026-09-24 10:32', src: 'SRC-WX', text: '行级模式 → 日汇总模式', date: '2026-10-01', by: ME, status: '已生效' },
+          { at: '2026-09-21 09:05', src: 'SRC-WX', text: '登记来源系统，初始粒度：行级模式', date: '2026-09-22', by: ME, status: '已生效' },
+          { at: '2025-09-19 15:10', src: 'SRC-HQ', text: '入驻时选择：行级模式', date: '2025-09-26', by: ME, status: '已生效' },
+        ],
+        switchDlg: false, sw: { src: 'SRC-HQ', to: 'daily', date: '2026-12-01', ok: false },
+        termsDlg: false, agree: false, scopeDlg: false, clearDlg: false, closeDlg: false, closeClear: false,
+        openedAt: on ? OPENED : '',
+        scope: JSON.parse(JSON.stringify(DEFAULT_SCOPE)), sf: { cats: [], prods: [], brands: [], whs: [] },
+        usage: 'disclose', def: { tax: '含税', term: '自提', weight: '理计' },
+        cf: { range: 'all', date: '2026-11-01', ok: false },
+        members: [
+          { name: '陈海峰', role: '企业管理员', fixed: true },
+          { name: '刘雯', role: '数据管理员', can: true, on: false },
+          { name: '钱永康', role: '数据管理员（无锡分公司）', can: true, on: false },
+          { name: '周凯', role: '接口对接员' },
+          { name: '顾晓燕', role: '财务' },
+        ],
+        plog: on ? [
+          { at: '2026-10-20 09:14', type: '范围', text: '设置上传范围：' + scopeText(DEFAULT_SCOPE), by: ME },
+          { at: OPENED, type: '开关', text: '开启价格与金额上传；已确认《价格数据授权条款》；披露用途：参与对上游的聚合披露', by: ME },
+        ] : [],
+        catOpts: M.categories.map((c) => c.name), brandOpts: BRANDS, whOpts: ['苏州望亭库', '上海宝山库', '无锡惠山库'],
+      };
+    },
+    computed: {
+      on() { return this.$state.dnPrice === 'on'; },
+      swSrc() { return this.sources.find((s) => s.k === this.sw.src); },
+      prodOpts() { return [].concat(...M.categories.filter((c) => !this.sf.cats.length || this.sf.cats.indexOf(c.name) >= 0).map((c) => c.products.map((p) => p.name))); },
+      scopeRows() {
+        const s = this.scope;
+        return [{ k: '大类', v: s.cats, all: '全部大类' }, { k: '品名', v: s.prods, all: '全部品名' }, { k: '品牌', v: s.brands, all: '全部品牌' }, { k: '仓库', v: s.whs, all: '全部仓库' }];
+      },
+    },
+    methods: {
+      gName(g) { return g === 'line' ? '行级模式' : '日汇总模式'; },
+      usedBy(g) { return this.sources.filter((s) => s.grain === g).map((s) => s.k); },
+      beforeTomorrow(d) { return STP.dateStr(d) < '2026-11-25'; },
+      openSwitch(k) {
+        const s = this.sources.find((x) => x.k === k && !x.locked) || this.sources.find((x) => !x.locked);
+        if (!s) { this.$info('两个来源系统本月都已提交过切换。同一来源系统每月最多切换一次'); return; }
+        this.sw = { src: s.k, to: s.grain === 'line' ? 'daily' : 'line', date: '2026-12-01', ok: false };
+        this.switchDlg = true;
+      },
+      swSrcChange() { this.sw.to = this.swSrc.grain === 'line' ? 'daily' : 'line'; },
+      doSwitch() {
+        const s = this.swSrc;
+        s.pending = { to: this.sw.to, date: this.sw.date }; s.locked = true;
+        this.switchLog.unshift({ at: NOW, src: s.k, text: this.gName(s.grain) + ' → ' + this.gName(this.sw.to), date: this.sw.date, by: ME, status: '待生效' });
+        this.switchDlg = false;
+        this.$demo(s.k + ' 将自 ' + this.sw.date + ' 业务日期起改为' + this.gName(this.sw.to) + '，已通知接口对接员');
+      },
+      cancelSwitch(row) {
+        ElementPlus.ElMessageBox.confirm('撤销后 ' + row.k + ' 继续使用' + this.gName(row.grain) + '。撤销不恢复本月的切换次数。', '撤销待生效的切换', { confirmButtonText: '确认撤销', cancelButtonText: '取消', type: 'warning' })
+          .then(() => { const l = this.switchLog.find((x) => x.src === row.k && x.status === '待生效'); if (l) l.status = '已撤销'; row.pending = null; this.$demo('已撤销'); }).catch(() => {});
+      },
+      toggle(v) { if (v) this.openTerms(); else this.closeDlg = true; },
+      openTerms() { this.agree = false; this.termsDlg = true; },
+      log(type, text) { this.plog.unshift({ at: NOW, type, text, by: ME }); },
+      turnOn() {
+        this.$setState('dnPrice', 'on');
+        this.openedAt = OPENED;
+        this.plog.unshift({ at: OPENED, type: '开关', text: '开启价格与金额上传；已确认《价格数据授权条款》；披露用途：参与对上游的聚合披露', by: ME });
+        this.plog.unshift({ at: '2026-10-20 09:14', type: '范围', text: '设置上传范围：' + scopeText(this.scope), by: ME });
+        this.termsDlg = false;
+        this.$demo('价格与金额上传已开启。请确认上传范围与价格口径默认值');
+      },
+      turnOff() {
+        this.$setState('dnPrice', 'off');
+        if (this.closeClear) this.log('清除', '清除全部已上传的价格与金额字段，销量数据保留；已披露的历史价格聚合不回溯修改');
+        this.log('开关', '关闭价格与金额上传；此后接口收到价格字段一律丢弃不落盘');
+        this.closeDlg = false; this.closeClear = false;
+        this.$demo('价格与金额上传已关闭');
+      },
+      openScope() { this.sf = JSON.parse(JSON.stringify(this.scope)); this.scopeDlg = true; },
+      saveScope() {
+        this.scope = JSON.parse(JSON.stringify(this.sf));
+        this.log('范围', '修改上传范围：' + scopeText(this.scope));
+        this.scopeDlg = false;
+        this.$demo('上传范围已保存，对之后上传的数据生效');
+      },
+      usageChange(v) { this.log('用途', '披露用途改为：' + (v === 'disclose' ? '参与对上游的聚合披露' : '仅用于本企业自查与行业对标')); },
+      saveDefaults() { this.log('口径', '价格口径默认值：' + this.def.tax + '、' + (this.def.term === '自提' ? '仓库自提价' : '送到价') + '、' + this.def.weight); this.$demo('价格口径默认值已保存'); },
+      grant(m, v) { this.log('权限', (v ? '授予' : '收回') + ' ' + m.name + '（' + m.role + '）“查看价格与金额”权限'); this.$demo((v ? '已授予 ' : '已收回 ') + m.name + ' 的“查看价格与金额”权限'); },
+      clearOpen() { this.cf = { range: 'all', date: '2026-11-01', ok: false }; this.clearDlg = true; },
+      doClear() {
+        this.log('清除', '清除' + (this.cf.range === 'all' ? '全部已上传' : '业务日期 ' + this.cf.date + ' 之前') + '的价格与金额字段，销量数据保留；已披露的历史价格聚合不回溯修改');
+        this.clearDlg = false;
+        this.$demo('清除任务已提交，完成后站内信通知。销量数据不受影响');
+      },
+    },
+  });
+})();
+</script>
+</body>
+</html>

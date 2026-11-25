@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>审计日志 · 平台运营后台 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.el-descriptions__label { white-space: nowrap; }
+.sec-title { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; font-size: 14px; font-weight: 600; }
+.sec-title i { width: 4px; height: 14px; border-radius: 2px; background: var(--el-color-primary); display: inline-block; }
+.sec-title small { font-weight: 400; color: var(--stp-sub); font-size: 12px; }
+.sec-title.mt16 { margin-top: 18px; }
+.demo-tag { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 11px; line-height: 18px; background: #fff8eb; color: #9a6400; border: 1px solid #f3dfb8; font-weight: 400; }
+.filter-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.sum-bar { display: flex; gap: 22px; flex-wrap: wrap; background: #f6f8fa; border-radius: 4px; padding: 8px 12px; font-size: 13px; margin-bottom: 12px; color: #4a5568; }
+.sum-bar b { color: #1f2d3d; }
+.rules { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+.rules > div { background: #fff; border: 1px solid var(--stp-border); border-radius: 6px; padding: 10px 14px; font-size: 12px; line-height: 1.75; color: #4a5568; }
+.rules b { display: block; font-size: 13px; color: #1f2d3d; margin-bottom: 2px; }
+.mono { font-family: Consolas, Menlo, monospace; font-size: 12px; }
+.diff { background: #fff1d6; color: #9a5a00; border-radius: 3px; padding: 0 4px; font-weight: 600; }
+.lv { display: inline-block; min-width: 26px; text-align: center; padding: 0 6px; border-radius: 3px; font-size: 12px; line-height: 20px; color: #fff; }
+.lv.h { background: #e5484d; } .lv.m { background: #f0a020; } .lv.l { background: #8a94a6; }
+.stat.click { cursor: pointer; }
+.stat.click:hover { border-color: #a8d2ff; }
+.exp { padding: 4px 16px 4px 48px; font-size: 12px; line-height: 1.9; color: #4a5568; }
+.exp span { color: var(--stp-sub); display: inline-block; width: 84px; }
+.act-list .el-radio { display: flex; height: auto; padding: 5px 0; align-items: flex-start; white-space: normal; margin-right: 0; }
+.act-list .el-radio__input { margin-top: 3px; }
+.act-list small { display: block; color: var(--stp-sub); font-size: 12px; line-height: 1.5; font-weight: 400; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="admin" :user="me" :role="roleOf(me)" active="audit" title="审计日志"
+  desc="检索上游查询与导出记录，处置异常查询告警，管理平台人员明细访问工单，查看全部关键操作日志。审计只记录查询条件与单元格计数，不记录返回的数值。">
+  <template #actions>
+    <el-dropdown trigger="click" @command="v => me = v">
+      <el-button><el-icon><UserFilled /></el-icon>原型状态 · 当前操作人：{{ me }}（{{ roleOf(me) }}）<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+      <template #dropdown><el-dropdown-menu>
+        <el-dropdown-item v-for="s in staff" :key="s.n" :command="s.n" :disabled="s.n===me">{{ s.n }}（{{ s.r }}）</el-dropdown-item>
+      </el-dropdown-menu></template>
+    </el-dropdown>
+    <el-button :loading="verify.on" @click="runVerify"><el-icon v-if="!verify.on"><CircleCheck /></el-icon>校验日志完整性</el-button>
+    <el-button type="primary" @click="newTicket"><el-icon><Tickets /></el-icon>新建明细访问工单</el-button>
+  </template>
+
+  <div class="grid c6">
+    <stat-card label="昨日查询次数" :value="18642" unit="次" note="涉及上游 312 家"></stat-card>
+    <stat-card label="昨日屏蔽单元格占比" :value="12.4" :d="1" unit="%" tip="被屏蔽的单元格数 ÷ 命中的单元格总数，全平台口径"></stat-card>
+    <stat-card label="昨日导出" :value="214" unit="次" note="全部带水印与文件指纹"></stat-card>
+    <div class="stat click" @click="tab='alert'"><div class="label">待处置告警</div><div class="value num" :style="{color: alertTodo ? '#e5484d' : ''}">{{ alertTodo }}<span class="unit">条</span></div><div class="foot"><span>待复核 {{ alerts.filter(a => a.st==='终止服务待复核').length }} 条</span></div></div>
+    <div class="stat click" @click="tab='ticket'"><div class="label">明细访问工单</div><div class="value num">{{ tickets.filter(t => t.st==='开放中').length }}<span class="unit">个开放中</span></div><div class="foot"><span>待企业授权 {{ tickets.filter(t => t.st==='待企业授权').length }} 个</span></div></div>
+    <div class="stat"><div class="label">日志完整性</div><div class="value" style="font-size:20px;color:#18a058">校验通过</div><div class="foot"><span>最近校验 {{ verify.last }}</span></div></div>
+  </div>
+
+  <div class="rules">
+    <div><b><el-icon style="vertical-align:-2px"><Lock /></el-icon> 日志不可篡改</b>日志只能追加，不提供修改与删除功能；每条日志带序号并与上一条链式校验，每日 02:00 自动做完整性校验。</div>
+    <div><b><el-icon style="vertical-align:-2px"><Timer /></el-icon> 留存期限</b>网络日志保留不少于 6 个月（法定最低要求）；业务审计日志建议保留 3 年。<span class="demo-tag">3 年为建议值，待业务方确定</span></div>
+    <div><b><el-icon style="vertical-align:-2px"><Switch /></el-icon> 角色互斥</b>安全审计员与运营角色互斥，同一账号不能同时持有。安全审计员处置告警但不能申请查看明细；运营角色不能处置告警。</div>
+  </div>
+
+  <div class="card">
+    <el-tabs v-model="tab">
+      <!-- ============ 查询审计 ============ -->
+      <el-tab-pane label="查询审计" name="query">
+        <div class="filter-bar">
+          <el-date-picker v-model="qf.range" type="daterange" value-format="YYYY-MM-DD" range-separator="至" :clearable="false" style="width:250px;flex:none" />
+          <el-select v-model="qf.ent" clearable filterable placeholder="全部上游企业" style="width:220px"><el-option v-for="m in mills" :key="m" :label="m" :value="m" /></el-select>
+          <el-input v-model="qf.acct" clearable placeholder="账号" style="width:140px" />
+          <el-select v-model="qf.type" clearable placeholder="全部出口类型" style="width:150px"><el-option v-for="t in outTypes" :key="t" :label="t" :value="t" /></el-select>
+          <el-checkbox v-model="qf.high">只看屏蔽占比 ≥ 30%</el-checkbox>
+          <span style="flex:1"></span>
+          <el-button @click="$demo('审计检索结果导出任务已创建。导出审计日志本身也会记入操作日志')"><el-icon><Download /></el-icon>导出检索结果</el-button>
+        </div>
+        <div class="sum-bar">
+          <span>2026-11-23 全平台查询 <b class="num">18,642</b> 次</span>
+          <span>看板 <b class="num">9,870</b></span><span>多维查询 <b class="num">7,426</b></span><span>导出 <b class="num">214</b></span><span>定时发送 <b class="num">1,132</b></span>
+          <span>命中单元格 <b class="num">412.6</b> 万个</span><span>其中屏蔽 <b class="num">51.2</b> 万个（12.4%）</span>
+        </div>
+        <el-table :data="qRows" border size="small">
+          <template #empty><el-empty description="没有符合条件的查询记录" :image-size="70" /></template>
+          <el-table-column label="时间" width="136"><template #default="{row}"><span class="num">{{ row.t }}</span></template></el-table-column>
+          <el-table-column label="上游企业" width="186"><template #default="{row}">{{ row.ent }}</template></el-table-column>
+          <el-table-column label="账号" width="116"><template #default="{row}"><span class="mono">{{ row.acct }}</span></template></el-table-column>
+          <el-table-column label="出口类型" width="92"><template #default="{row}"><el-tag size="small" :type="outType(row.type)" disable-transitions>{{ row.type }}</el-tag></template></el-table-column>
+          <el-table-column label="查询条件摘要" min-width="270"><template #default="{row}">{{ row.cond }}<el-tag v-if="row.alert" size="small" type="danger" disable-transitions style="margin-left:6px">关联告警</el-tag></template></el-table-column>
+          <el-table-column label="命中单元格" width="92" align="right"><template #default="{row}"><span class="num">{{ $fmt(row.hit) }}</span></template></el-table-column>
+          <el-table-column label="屏蔽单元格" width="92" align="right"><template #default="{row}"><span class="num">{{ $fmt(row.mask) }}</span></template></el-table-column>
+          <el-table-column label="屏蔽占比" width="80" align="right"><template #default="{row}"><span class="num" :style="{color: row.mask / row.hit >= 0.3 ? '#e5484d' : ''}">{{ (row.mask / row.hit * 100).toFixed(1) }}%</span></template></el-table-column>
+          <el-table-column label="操作" width="62" align="center"><template #default="{row}"><el-button link type="primary" @click="openQuery(row)">详情</el-button></template></el-table-column>
+        </el-table>
+        <div class="tbl-foot"><span>当前显示 {{ qRows.length }} 条（原型示例数据）。审计只记录条件与单元格计数，不保存返回给上游的聚合数值。</span><el-pagination layout="prev, pager, next" :total="18642" :page-size="50" small background /></div>
+      </el-tab-pane>
+
+      <!-- ============ 导出审计 ============ -->
+      <el-tab-pane label="导出审计" name="export">
+        <div class="filter-bar">
+          <el-input v-model="ef.kw" clearable placeholder="导出编号 / 企业 / 账号 / 文件指纹" style="width:300px"><template #prefix><el-icon><Search /></el-icon></template></el-input>
+          <span class="muted small">每个导出文件带水印（企业、账号、时间、导出编号）与使用条款页；文件指纹用于泄露溯源。</span>
+          <span style="flex:1"></span>
+          <el-button type="primary" plain @click="trace = { show: true, q: exports[1].fp.slice(7, 13), hit: null, done: false }"><el-icon><Aim /></el-icon>泄露溯源</el-button>
+        </div>
+        <el-table :data="eRows" border size="small">
+          <template #empty><el-empty description="没有符合条件的导出记录" :image-size="70" /></template>
+          <el-table-column label="导出编号" width="150"><template #default="{row}"><span class="num">{{ row.id }}</span><div class="small muted num">{{ row.t }}</div></template></el-table-column>
+          <el-table-column label="企业 / 账号" width="176"><template #default="{row}">{{ row.ent }}<div class="small muted mono">{{ row.acct }}</div></template></el-table-column>
+          <el-table-column label="查询条件摘要" min-width="180"><template #default="{row}">{{ row.cond }}</template></el-table-column>
+          <el-table-column label="行数" width="76" align="right"><template #default="{row}"><span class="num">{{ $fmt(row.rows) }}</span></template></el-table-column>
+          <el-table-column label="文件指纹" width="150"><template #default="{row}"><span class="mono">{{ row.fp }}</span><div class="small muted">{{ row.fmt }}</div></template></el-table-column>
+          <el-table-column label="水印信息" min-width="236"><template #default="{row}"><span class="small" style="white-space:nowrap">{{ row.short }} · {{ row.acct }}<br>{{ row.t }} · {{ row.id }}</span></template></el-table-column>
+          <el-table-column label="状态" width="100"><template #default="{row}"><span class="dot" :class="row.st==='已过期' ? '' : 'ok'"></span>{{ row.st }}<div class="small muted">下载 {{ row.dl }} 次</div></template></el-table-column>
+          <el-table-column label="操作" width="62" align="center"><template #default="{row}"><el-button link type="primary" @click="trace = { show: true, q: row.id, hit: row, done: true }">溯源</el-button></template></el-table-column>
+        </el-table>
+        <div class="tbl-foot"><span>当前显示 {{ eRows.length }} 条（原型示例数据）。平台不留存导出文件内容的副本，只留存条件、行数、指纹与水印参数；导出内容与页面使用同一套屏蔽结果。</span><el-pagination layout="prev, pager, next" :total="214" :page-size="50" small background /></div>
+      </el-tab-pane>
+
+      <!-- ============ 异常查询告警 ============ -->
+      <el-tab-pane name="alert">
+        <template #label>异常查询告警<el-badge v-if="alertTodo" :value="alertTodo" style="margin-left:6px" /></template>
+        <div class="grid c2" style="margin-bottom:12px">
+          <div class="tip-box orange small"><b>模式一 · 单筛选项差分序列</b><br>短时间内大量查询只相差一个筛选项（地区、规格、品牌、数据池成员或时间）。目的通常是用相邻结果相减，推算单家企业的数据。</div>
+          <div class="tip-box orange small"><b>模式二 · 高比例命中屏蔽边界</b><br>查询结果中，贡献企业数刚好落在屏蔽阈值附近（5–6 家）的单元格占比异常偏高。目的通常是试探屏蔽规则的边界。</div>
+        </div>
+        <div class="filter-bar">
+          <el-radio-group v-model="af.st"><el-radio-button value="">全部</el-radio-button><el-radio-button value="todo">待处置</el-radio-button><el-radio-button value="done">已处置</el-radio-button></el-radio-group>
+          <span class="muted small">告警触发后系统先自动限流并通知安全审计员，后续处置由安全审计员完成；终止服务须另一人复核。</span>
+        </div>
+        <el-table :data="aRows" border size="small">
+          <el-table-column label="告警编号" width="140"><template #default="{row}"><a href="javascript:;" class="num" @click="openAlert(row)">{{ row.id }}</a></template></el-table-column>
+          <el-table-column label="识别模式" min-width="280"><template #default="{row}"><b>{{ row.mode }}</b><div class="small muted">{{ row.metric }}</div></template></el-table-column>
+          <el-table-column label="企业 / 账号" width="186"><template #default="{row}">{{ row.ent }}<div class="small muted mono">{{ row.acct }}</div></template></el-table-column>
+          <el-table-column label="触发时间" width="136"><template #default="{row}"><span class="num">{{ row.t }}</span></template></el-table-column>
+          <el-table-column label="风险" width="64" align="center"><template #default="{row}"><span class="lv" :class="{高:'h',中:'m',低:'l'}[row.lv]">{{ row.lv }}</span></template></el-table-column>
+          <el-table-column label="处置状态" width="170"><template #default="{row}"><el-tag size="small" :type="alertType(row.st)" disable-transitions>{{ row.st }}</el-tag><div v-if="row.sub" class="small muted">{{ row.sub }}</div></template></el-table-column>
+          <el-table-column label="操作" width="120" align="center">
+            <template #default="{row}">
+              <el-button link type="primary" @click="openAlert(row)">详情</el-button>
+              <el-tooltip v-if="row.st!=='已终止服务' && row.st!=='已解除' && row.st!=='终止服务待复核'" :disabled="isAuditor" content="告警处置由安全审计员完成，请切换操作人为吴靖" placement="top"><span style="margin-left:10px"><el-button link type="warning" :disabled="!isAuditor" @click="openDispose(row)">处置</el-button></span></el-tooltip>
+              <el-button v-else-if="row.st==='终止服务待复核'" link type="warning" @click="openAlert(row)">复核</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <div class="tbl-foot"><span>近 30 日告警 {{ alerts.length }} 条。识别阈值在<a href="privacy-params.html">防反推参数</a>中维护；上游《数据服务协议》含禁止再识别条款，违约可终止服务并追责。</span></div>
+      </el-tab-pane>
+
+      <!-- ============ 明细访问工单 ============ -->
+      <el-tab-pane label="平台人员明细访问工单" name="ticket">
+        <el-alert type="warning" show-icon :closable="false" style="margin-bottom:12px">
+          <template #title>平台人员<b>默认不可查看</b>下游企业上传的明细。排障确需查看时提交工单，<b>经企业管理员授权后限时开放</b>，到期自动回收；访问全程留痕，并在企业侧“数据使用透明账本”中可见。</template>
+        </el-alert>
+        <div class="filter-bar">
+          <el-radio-group v-model="tf.st"><el-radio-button value="">全部</el-radio-button><el-radio-button value="待企业授权">待企业授权</el-radio-button><el-radio-button value="开放中">开放中</el-radio-button><el-radio-button value="closed">已结束</el-radio-button></el-radio-group>
+          <span style="flex:1"></span>
+          <el-button type="primary" @click="newTicket"><el-icon><Plus /></el-icon>新建工单</el-button>
+        </div>
+        <el-table :data="tRows" border size="small">
+          <template #empty><el-empty description="没有符合条件的工单" :image-size="70" /></template>
+          <el-table-column label="工单号" width="136"><template #default="{row}"><a href="javascript:;" class="num" @click="openTicket(row)">{{ row.id }}</a></template></el-table-column>
+          <el-table-column label="申请人与角色" width="120"><template #default="{row}">{{ row.by }}<div class="small muted">{{ roleOf(row.by) }}</div></template></el-table-column>
+          <el-table-column label="目标企业" width="190"><template #default="{row}">{{ row.ent }}</template></el-table-column>
+          <el-table-column label="事由" min-width="220"><template #default="{row}"><el-tag size="small" type="info" disable-transitions style="margin-right:6px">{{ row.kind }}</el-tag>{{ row.why }}</template></el-table-column>
+          <el-table-column label="企业授权状态" width="150"><template #default="{row}"><span class="dot" :class="{已授权:'ok',待授权:'warn',已拒绝:'err',超时未处理:''}[row.auth]"></span>{{ row.auth }}<div v-if="row.authBy" class="small muted">{{ row.authBy }}</div></template></el-table-column>
+          <el-table-column label="授权时限" width="136"><template #default="{row}">{{ row.hours }} 小时<div v-if="row.until" class="small muted num">至 {{ row.until }}</div></template></el-table-column>
+          <el-table-column label="状态" width="100"><template #default="{row}"><el-tag size="small" :type="ticketType(row.st)" disable-transitions>{{ row.st }}</el-tag></template></el-table-column>
+          <el-table-column label="操作" width="60" align="center"><template #default="{row}"><el-button link type="primary" @click="openTicket(row)">详情</el-button></template></el-table-column>
+        </el-table>
+        <div class="tbl-foot"><span>本月工单 {{ tickets.length }} 个。授权范围只限工单写明的批次与数据类型；访问页面带账号水印，禁止导出与复制。</span></div>
+      </el-tab-pane>
+
+      <!-- ============ 操作日志 ============ -->
+      <el-tab-pane label="操作日志" name="oplog">
+        <div class="filter-bar">
+          <el-select v-model="of.type" clearable placeholder="全部操作类型" style="width:170px"><el-option v-for="t in opTypes" :key="t" :label="t" :value="t" /></el-select>
+          <el-select v-model="of.side" clearable placeholder="全部主体" style="width:130px"><el-option label="平台人员" value="平台" /><el-option label="上游企业" value="上游" /><el-option label="下游企业" value="下游" /><el-option label="系统" value="系统" /></el-select>
+          <el-input v-model="of.kw" clearable placeholder="操作人 / 操作内容 / 关联单号" style="width:260px"><template #prefix><el-icon><Search /></el-icon></template></el-input>
+          <span style="flex:1"></span>
+          <span class="muted small">覆盖：登录、权限变更、规则变更、密钥操作、数据池变更、后台参数变更、价格闸口操作、分成规则变更</span>
+        </div>
+        <el-table :data="oRows" border size="small" row-key="seq">
+          <template #empty><el-empty description="没有符合条件的操作日志" :image-size="70" /></template>
+          <el-table-column type="expand">
+            <template #default="{row}">
+              <div class="exp">
+                <div><span>变更前</span>{{ row.before || '—' }}</div>
+                <div><span>变更后</span>{{ row.after || '—' }}</div>
+                <div><span>关联单号</span>{{ row.ref || '—' }}<template v-if="row.link">　<a :href="row.link">前往对应页面</a></template></div>
+                <div><span>链式校验</span><span class="mono" style="width:auto;color:#4a5568">序号 {{ row.seq }} · 本条摘要 {{ row.h }} · 上一条摘要 {{ row.ph }}</span>　<span class="dot ok" style="width:7px"></span>校验一致</div>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="时间" width="136"><template #default="{row}"><span class="num">{{ row.t }}</span></template></el-table-column>
+          <el-table-column label="操作类型" width="116"><template #default="{row}"><el-tag size="small" :type="opType(row.type)" disable-transitions>{{ row.type }}</el-tag></template></el-table-column>
+          <el-table-column label="操作人" width="250"><template #default="{row}">{{ row.who }}<div class="small muted">{{ row.org }}</div></template></el-table-column>
+          <el-table-column label="操作内容" min-width="330"><template #default="{row}">{{ row.text }}</template></el-table-column>
+          <el-table-column label="结果" width="76"><template #default="{row}"><span class="dot" :class="row.ok ? 'ok' : 'err'"></span>{{ row.ok ? '成功' : '失败' }}</template></el-table-column>
+          <el-table-column label="来源地址" width="116"><template #default="{row}"><span class="mono">{{ row.ip }}</span></template></el-table-column>
+        </el-table>
+        <div class="tbl-foot"><span>当前显示 {{ oRows.length }} 条（原型示例数据）。点击行首箭头查看变更前后内容与链式校验信息。日志不提供修改与删除入口。</span><el-pagination layout="prev, pager, next" :total="6420" :page-size="50" small background /></div>
+      </el-tab-pane>
+    </el-tabs>
+  </div>
+
+  <!-- 查询详情 -->
+  <el-drawer v-model="qd.show" title="查询审计详情" size="620px">
+    <template v-if="qd.r">
+      <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="查询编号"><span class="num">{{ qd.r.id }}</span></el-descriptions-item>
+        <el-descriptions-item label="时间"><span class="num">{{ qd.r.t }}:{{ qd.r.sec }}</span></el-descriptions-item>
+        <el-descriptions-item label="上游企业" :span="2">{{ qd.r.ent }}</el-descriptions-item>
+        <el-descriptions-item label="账号"><span class="mono">{{ qd.r.acct }}</span></el-descriptions-item>
+        <el-descriptions-item label="出口类型">{{ qd.r.type }}</el-descriptions-item>
+        <el-descriptions-item label="数据池版本">{{ qd.r.pool }}</el-descriptions-item>
+        <el-descriptions-item label="防反推参数版本">V1.3</el-descriptions-item>
+      </el-descriptions>
+      <div class="sec-title mt16"><i></i>查询条件</div>
+      <table class="plain-table">
+        <tbody>
+          <tr v-for="c in qd.r.detail" :key="c[0]"><td style="width:110px;color:var(--stp-sub)">{{ c[0] }}</td><td>{{ c[1] }}</td></tr>
+        </tbody>
+      </table>
+      <div class="sec-title mt16"><i></i>单元格统计</div>
+      <div class="grid c3">
+        <div class="stat"><div class="label">命中单元格</div><div class="value num" style="font-size:20px">{{ $fmt(qd.r.hit) }}</div></div>
+        <div class="stat"><div class="label">屏蔽单元格</div><div class="value num" style="font-size:20px">{{ $fmt(qd.r.mask) }}</div></div>
+        <div class="stat"><div class="label">屏蔽占比</div><div class="value num" style="font-size:20px">{{ (qd.r.mask / qd.r.hit * 100).toFixed(1) }}%</div></div>
+      </div>
+      <table class="plain-table">
+        <thead><tr><th>屏蔽原因</th><th class="r">单元格数</th></tr></thead>
+        <tbody><tr v-for="m in qd.reasons" :key="m[0]"><td>{{ m[0] }}</td><td class="r num">{{ $fmt(m[1]) }}</td></tr></tbody>
+      </table>
+      <div class="tip-box small mt12">审计记录只包含查询条件与单元格计数，<b>不包含返回的聚合数值，也不包含任何单家企业的数据</b>。导出、定时发送与页面查询使用同一套屏蔽结果。</div>
+      <div v-if="qd.r.alert" class="tip-box red small mt8">该查询属于告警 {{ qd.r.alert }} 的可疑查询序列。<a href="javascript:;" @click="qd.show=false; tab='alert'; openAlert(alerts.find(a => a.id===qd.r.alert))">查看告警</a></div>
+    </template>
+  </el-drawer>
+
+  <!-- 泄露溯源 -->
+  <el-dialog v-model="trace.show" title="泄露溯源" width="600px">
+    <div class="small muted mb12">拿到疑似外泄的文件后，输入文件指纹或水印中的导出编号，定位到导出企业、账号与时间。</div>
+    <div style="display:flex;gap:10px"><el-input v-model="trace.q" placeholder="文件指纹（可只输入片段）或导出编号" style="flex:1" @keyup.enter="doTrace" /><el-button type="primary" @click="doTrace">查找</el-button></div>
+    <template v-if="trace.done">
+      <el-descriptions v-if="trace.hit" :column="2" border size="small" class="mt12">
+        <el-descriptions-item label="导出编号"><span class="num">{{ trace.hit.id }}</span></el-descriptions-item>
+        <el-descriptions-item label="导出时间"><span class="num">{{ trace.hit.t }}</span></el-descriptions-item>
+        <el-descriptions-item label="企业" :span="2">{{ trace.hit.ent }}</el-descriptions-item>
+        <el-descriptions-item label="账号"><span class="mono">{{ trace.hit.acct }}</span></el-descriptions-item>
+        <el-descriptions-item label="行数 / 格式"><span class="num">{{ $fmt(trace.hit.rows) }}</span> 行 · {{ trace.hit.fmt }}</el-descriptions-item>
+        <el-descriptions-item label="文件指纹" :span="2"><span class="mono">{{ trace.hit.fp }}</span></el-descriptions-item>
+        <el-descriptions-item label="查询条件" :span="2">{{ trace.hit.cond }}</el-descriptions-item>
+        <el-descriptions-item label="水印内容" :span="2">{{ trace.hit.short }} · {{ trace.hit.acct }} · {{ trace.hit.t }} · {{ trace.hit.id }}</el-descriptions-item>
+        <el-descriptions-item label="下载记录" :span="2">共 {{ trace.hit.dl }} 次，均为导出账号本人下载</el-descriptions-item>
+      </el-descriptions>
+      <el-empty v-else description="没有匹配的导出记录。文件可能经过转存改写，可改用水印中的导出编号查找" :image-size="70" />
+    </template>
+    <template #footer>
+      <el-button @click="trace.show=false">关闭</el-button>
+      <el-button v-if="trace.done && trace.hit" type="primary" @click="trace.show=false; $demo('已生成溯源报告，并转交法务跟进')">生成溯源报告</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 告警详情 -->
+  <el-drawer v-model="ad.show" :title="'告警详情 ' + (ad.r ? ad.r.id : '')" size="760px">
+    <template v-if="ad.r">
+      <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="识别模式" :span="2"><b>{{ ad.r.mode }}</b>　{{ ad.r.metric }}</el-descriptions-item>
+        <el-descriptions-item label="企业">{{ ad.r.ent }}</el-descriptions-item>
+        <el-descriptions-item label="账号"><span class="mono">{{ ad.r.acct }}</span></el-descriptions-item>
+        <el-descriptions-item label="触发时间"><span class="num">{{ ad.r.t }}</span></el-descriptions-item>
+        <el-descriptions-item label="风险等级"><span class="lv" :class="{高:'h',中:'m',低:'l'}[ad.r.lv]">{{ ad.r.lv }}</span>　{{ ad.r.lvWhy }}</el-descriptions-item>
+        <el-descriptions-item label="处置状态" :span="2"><el-tag size="small" :type="alertType(ad.r.st)" disable-transitions>{{ ad.r.st }}</el-tag><span v-if="ad.r.sub" class="small muted" style="margin-left:8px">{{ ad.r.sub }}</span></el-descriptions-item>
+      </el-descriptions>
+
+      <div class="sec-title mt16"><i></i>可疑查询序列<small>共 {{ ad.r.n }} 次，显示前 {{ ad.seq.length }} 次；黄色标出相邻查询之间唯一变化的筛选项</small></div>
+      <el-table :data="ad.seq" border size="small">
+        <el-table-column label="#" width="44" align="center"><template #default="{$index}">{{ $index + 1 }}</template></el-table-column>
+        <el-table-column label="时间" width="82"><template #default="{row}"><span class="num">{{ row.t }}</span></template></el-table-column>
+        <el-table-column label="查询条件" min-width="300"><template #default="{row}">{{ row.fix }}<span class="diff">{{ row.diff }}</span></template></el-table-column>
+        <el-table-column label="命中" width="60" align="right"><template #default="{row}"><span class="num">{{ row.hit }}</span></template></el-table-column>
+        <el-table-column label="屏蔽" width="60" align="right"><template #default="{row}"><span class="num">{{ row.mask }}</span></template></el-table-column>
+        <el-table-column label="引擎响应" width="150"><template #default="{row}"><span class="dot" :class="row.rs==='正常返回' ? 'ok' : row.rs.indexOf('限流') >= 0 ? 'err' : 'warn'"></span>{{ row.rs }}</template></el-table-column>
+      </el-table>
+      <div class="tip-box small mt12"><b>系统研判：</b>{{ ad.r.judge }}</div>
+
+      <div class="sec-title mt16"><i></i>处置记录</div>
+      <el-timeline style="padding-left:4px">
+        <el-timeline-item v-for="(l, i) in ad.r.log" :key="i" :timestamp="l.t" :type="l.type || 'primary'" placement="top">
+          <b>{{ l.who }}</b>　{{ l.text }}
+        </el-timeline-item>
+      </el-timeline>
+
+      <div v-if="ad.r.st==='终止服务待复核'" class="tip-box orange small">
+        <b>终止服务申请待复核。</b>提交人：{{ ad.r.by }}。终止服务须由另一人复核后才生效，提交人不能复核自己的申请。当前操作人：{{ me }}（{{ roleOf(me) }}）。
+        <div class="mt8">
+          <el-tooltip :disabled="ad.r.by!==me" content="提交人不能复核自己的申请，请切换为另一位复核人" placement="top"><span><el-button type="danger" size="small" :disabled="ad.r.by===me" @click="reviewTerm(true)">复核通过，终止服务</el-button></span></el-tooltip>
+          <el-button size="small" style="margin-left:10px" :disabled="ad.r.by===me" @click="reviewTerm(false)">驳回</el-button>
+          <el-button v-if="ad.r.by===me" size="small" @click="withdrawTerm">撤回申请</el-button>
+        </div>
+      </div>
+    </template>
+    <template #footer>
+      <el-button @click="ad.show=false">关闭</el-button>
+      <el-button v-if="ad.r && ad.r.st!=='已终止服务' && ad.r.st!=='已解除' && ad.r.st!=='终止服务待复核'" type="primary" :disabled="!isAuditor" @click="openDispose(ad.r)">{{ isAuditor ? '处置' : '处置（仅安全审计员）' }}</el-button>
+    </template>
+  </el-drawer>
+
+  <!-- 处置 -->
+  <el-dialog v-model="dp.show" :title="'处置告警 ' + (dp.r ? dp.r.id : '')" width="640px">
+    <template v-if="dp.r">
+      <div class="small muted mb12">{{ dp.r.ent }} · <span class="mono">{{ dp.r.acct }}</span> · {{ dp.r.mode }}</div>
+      <el-radio-group v-model="dp.act" class="act-list" style="display:block">
+        <el-radio value="limit"><b>限流</b><small>限制该账号的查询频率。系统触发告警时已自动限流 24 小时，这里可调整上限与时长。</small></el-radio>
+        <el-radio value="notify"><b>通知企业管理员</b><small>向上游企业管理员发送站内信与短信，说明账号的异常查询行为，并提示协议中的禁止再识别条款。</small></el-radio>
+        <el-radio value="talk"><b>约谈</b><small>由安全审计员与法务约谈企业，要求说明查询目的并书面承诺。约谈期间保持限流。</small></el-radio>
+        <el-radio value="terminate"><b>依据禁止再识别条款终止服务</b><small>依据《数据服务协议》禁止再识别条款终止该企业的数据服务并保留追责权利。须附法务意见，并由另一人复核后生效。</small></el-radio>
+        <el-radio value="release"><b>解除</b><small>核实为正常业务查询（误报），解除限流并关闭告警。</small></el-radio>
+      </el-radio-group>
+      <el-form label-width="96px" class="mt12">
+        <template v-if="dp.act==='limit'">
+          <el-form-item label="查询上限"><el-select v-model="dp.rate" style="width:160px"><el-option label="每分钟 5 次" value="每分钟 5 次" /><el-option label="每分钟 10 次" value="每分钟 10 次" /><el-option label="每分钟 20 次" value="每分钟 20 次" /></el-select>
+            <el-select v-model="dp.dur" style="width:160px;margin-left:10px"><el-option label="持续 24 小时" value="24 小时" /><el-option label="持续 7 天" value="7 天" /><el-option label="直至人工解除" value="直至人工解除" /></el-select></el-form-item>
+          <el-form-item label="限流范围"><el-radio-group v-model="dp.scope"><el-radio value="该账号">仅该账号</el-radio><el-radio value="该企业全部账号">该企业全部账号</el-radio></el-radio-group></el-form-item>
+        </template>
+        <el-form-item v-if="dp.act==='talk'" label="约谈时间"><el-date-picker v-model="dp.date" type="date" value-format="YYYY-MM-DD" style="width:160px" /><span class="small muted" style="margin-left:10px">参与人：吴靖（安全审计员）、唐蕾（法务）</span></el-form-item>
+        <el-form-item v-if="dp.act==='terminate'" label="法务意见" required><el-checkbox v-model="dp.legal">已取得法务书面意见（唐蕾），确认构成违反禁止再识别条款</el-checkbox></el-form-item>
+        <el-form-item :label="dp.act==='release' ? '解除原因' : '处置说明'" required><el-input v-model="dp.note" type="textarea" :rows="2" :placeholder="dp.act==='release' ? '如：企业月末例行报表，已与企业管理员确认' : '写明依据与结论，将记入处置记录'" /></el-form-item>
+      </el-form>
+      <div v-if="dp.act==='terminate'" class="tip-box red small">终止服务影响企业全部账号。提交后进入“终止服务待复核”，由另一位平台人员复核通过才生效；已付费用按协议处理，并同步通知财务。</div>
+    </template>
+    <template #footer><el-button @click="dp.show=false">取消</el-button><el-button type="primary" :disabled="!dp.note.trim() || (dp.act==='terminate' && !dp.legal)" @click="doDispose">{{ dp.act==='terminate' ? '提交复核' : '确认处置' }}</el-button></template>
+  </el-dialog>
+
+  <!-- 新建工单 -->
+  <el-dialog v-model="nt.show" title="新建明细访问工单" width="640px">
+    <el-form label-width="96px">
+      <el-form-item label="申请人">{{ me }}（{{ roleOf(me) }}）</el-form-item>
+      <el-form-item label="目标企业" required><el-select v-model="nt.ent" filterable placeholder="输入企业名称搜索" style="width:100%"><el-option v-for="e in ents" :key="e" :label="e" :value="e" /></el-select></el-form-item>
+      <el-form-item label="事由类别" required><el-radio-group v-model="nt.kind"><el-radio-button value="数据排障">数据排障</el-radio-button><el-radio-button value="质量申诉">质量申诉</el-radio-button><el-radio-button value="造假核查">造假核查</el-radio-button><el-radio-button value="价格隔离">价格隔离</el-radio-button></el-radio-group></el-form-item>
+      <el-form-item label="事由说明" required><el-input v-model="nt.why" type="textarea" :rows="2" placeholder="写明要解决的问题，企业管理员授权时会看到这段说明" /></el-form-item>
+      <el-form-item label="访问范围" required>
+        <el-checkbox-group v-model="nt.scope"><el-checkbox value="校验失败行">校验失败行</el-checkbox><el-checkbox value="销售明细">销售明细</el-checkbox><el-checkbox value="库存明细">库存明细</el-checkbox><el-checkbox value="价格明细">价格明细</el-checkbox></el-checkbox-group>
+        <el-input v-model="nt.batch" placeholder="关联上传批次或业务日期，如 2026-11-23 批次" style="margin-top:6px" />
+      </el-form-item>
+      <el-form-item label="申请时长" required><el-radio-group v-model="nt.hours"><el-radio :value="2">2 小时</el-radio><el-radio :value="4">4 小时</el-radio><el-radio :value="8">8 小时</el-radio><el-radio :value="24">24 小时</el-radio></el-radio-group></el-form-item>
+    </el-form>
+    <ul class="step-list" style="border:1px solid var(--stp-border);border-radius:6px;padding:2px 12px">
+      <li class="doing"><span class="idx">1</span>提交工单，系统通知目标企业的企业管理员</li>
+      <li><span class="idx">2</span>企业管理员同意或拒绝；48 小时未处理，工单自动失效</li>
+      <li><span class="idx">3</span>同意后按申请时长限时开放，只开放工单写明的范围</li>
+      <li><span class="idx">4</span>到期自动回收权限；访问记录对企业可见</li>
+    </ul>
+    <template #footer><el-button @click="nt.show=false">取消</el-button><el-button type="primary" @click="submitTicket">提交工单</el-button></template>
+  </el-dialog>
+
+  <!-- 工单详情 -->
+  <el-drawer v-model="td.show" :title="'明细访问工单 ' + (td.r ? td.r.id : '')" size="640px">
+    <template v-if="td.r">
+      <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="申请人">{{ td.r.by }}（{{ roleOf(td.r.by) }}）</el-descriptions-item>
+        <el-descriptions-item label="申请时间"><span class="num">{{ td.r.t }}</span></el-descriptions-item>
+        <el-descriptions-item label="目标企业" :span="2">{{ td.r.ent }}</el-descriptions-item>
+        <el-descriptions-item label="事由" :span="2"><el-tag size="small" type="info" disable-transitions style="margin-right:6px">{{ td.r.kind }}</el-tag>{{ td.r.why }}</el-descriptions-item>
+        <el-descriptions-item label="访问范围" :span="2">{{ td.r.scope }}</el-descriptions-item>
+        <el-descriptions-item label="企业授权">{{ td.r.auth }}<span v-if="td.r.authBy" class="small muted">　{{ td.r.authBy }}</span></el-descriptions-item>
+        <el-descriptions-item label="授权时限">{{ td.r.hours }} 小时<span v-if="td.r.until" class="small muted num">　至 {{ td.r.until }}</span></el-descriptions-item>
+        <el-descriptions-item label="状态" :span="2"><el-tag size="small" :type="ticketType(td.r.st)" disable-transitions>{{ td.r.st }}</el-tag><span v-if="td.r.note" class="small muted" style="margin-left:8px">{{ td.r.note }}</span></el-descriptions-item>
+      </el-descriptions>
+
+      <div v-if="td.r.st==='待企业授权'" class="tip-box orange small mt12">
+        已通知企业管理员，等待授权。授权前平台人员看不到任何明细。
+        <div class="mt8"><span class="demo-tag" style="margin-right:8px">原型演示：模拟企业侧操作</span>
+          <el-button size="small" type="success" plain @click="simAuth(true)">企业管理员同意授权</el-button>
+          <el-button size="small" type="danger" plain @click="simAuth(false)">企业管理员拒绝</el-button>
+        </div>
+      </div>
+
+      <div class="sec-title mt16"><i></i>访问留痕<small>企业侧可见同样的记录</small></div>
+      <el-table :data="td.r.trail" border size="small">
+        <template #empty><span class="muted small">{{ td.r.st==='开放中' ? '授权已开放，尚无访问记录' : '没有访问记录' }}</span></template>
+        <el-table-column label="时间" width="136"><template #default="{row}"><span class="num">{{ row.t }}</span></template></el-table-column>
+        <el-table-column prop="who" label="访问人" width="90" />
+        <el-table-column prop="act" label="动作" min-width="250" />
+        <el-table-column label="行数" width="70" align="right"><template #default="{row}"><span class="num">{{ row.n || '—' }}</span></template></el-table-column>
+      </el-table>
+      <div class="tip-box small mt12">访问留痕只记录“谁、何时、看了哪个批次的多少行”，不在审计页面展示明细内容本身。明细只能在限时开放的排障页面中查看，页面带账号水印，禁止导出与复制。</div>
+    </template>
+    <template #footer>
+      <el-button @click="td.show=false">关闭</el-button>
+      <el-button v-if="td.r && td.r.st==='待企业授权' && td.r.by===me" @click="closeTicket('已撤回', '申请人撤回')">撤回工单</el-button>
+      <el-button v-if="td.r && td.r.st==='开放中'" type="primary" @click="viewDetail">模拟一次明细访问</el-button>
+      <el-button v-if="td.r && td.r.st==='开放中'" type="danger" plain @click="closeTicket('已关闭', me + ' 提前关闭')">提前关闭</el-button>
+    </template>
+  </el-drawer>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const STAFF = [{ n: '吴靖', r: '安全审计员' }, { n: '林若彤', r: '运营主管' }, { n: '孙雅婷', r: '数据质量专员' }, { n: '赵启明', r: '主数据管理员' }, { n: '唐蕾', r: '法务' }];
+  let tick = 0;
+  const nowStr = () => { const m = 32 + (tick++) * 4; return '2026-11-24 ' + (14 + Math.floor(m / 60)) + ':' + STP.pad(m % 60); };
+  const plusHours = (h) => { const hh = 14 + h; return hh >= 24 ? '2026-11-25 ' + STP.pad(hh - 24) + ':32' : '2026-11-24 ' + hh + ':32'; };
+  const warn = (m) => ElementPlus.ElMessage({ message: m, type: 'warning' });
+  const HY = '苏州恒运钢铁贸易有限公司';
+  const E = M.enterprises(40, 91).map((e) => e.name).filter((n) => n !== HY);
+  const MILLS = ['东岳钢铁集团有限公司', '金江钢铁股份有限公司', '海川特钢有限公司', '云岭钢铁集团有限公司', '北辰钢铁有限责任公司', '瀚阳钢铁集团有限公司', '昆仑钢铁股份有限公司', '南粤钢铁有限公司', '中洲钢铁集团有限公司', '汉江钢铁有限公司'];
+  const [DY, JJ, HC, YL, BC, HAN, KL, NY, ZZ, HJ] = MILLS;
+  const fp = (s) => { const h = (n) => (M.hash(s + n) % 65536).toString(16).padStart(4, '0'); return 'sha256:' + h(1) + h(2).slice(0, 2) + '…' + h(3); };
+
+  let qn = 18642;
+  const Q = (t, ent, acct, type, cond, hit, mask, detail, alert) => ({ id: 'Q-' + t.slice(0, 10).replace(/-/g, '') + '-' + String(qn--).padStart(6, '0'), t, sec: STP.pad(M.hash(t + acct + cond) % 60), ent, acct, type, cond, hit, mask, alert: alert || '', pool: '当日生效成员版本（' + t.slice(0, 10) + '）',
+    detail: detail || [['指标', '销量'], ['维度', cond], ['时间范围', '2026-11-17 至 2026-11-23，按日'], ['筛选', '数据池全部成员']] });
+  const QUERIES = [
+    Q('2026-11-23 20:23', HC, 'hc_market02', '多维查询', '销量 · 螺纹钢 HRB400E Φ20 · 江苏省，多选 12 市（未选“常州”）', 14, 14, [['指标', '销量（吨）'], ['维度', '品名 × 规格 × 城市'], ['时间范围', '2026-11-22，按日'], ['筛选', '品名 = 螺纹钢；规格 = HRB400E Φ20；省份 = 江苏；城市 = 多选 12 项（13 市中未选常州）']], 'AL-20261123-0007'),
+    Q('2026-11-23 20:22', HC, 'hc_market02', '多维查询', '销量 · 螺纹钢 HRB400E Φ20 · 江苏省，多选 12 市（未选“无锡”）', 14, 14, [['指标', '销量（吨）'], ['维度', '品名 × 规格 × 城市'], ['时间范围', '2026-11-22，按日'], ['筛选', '品名 = 螺纹钢；规格 = HRB400E Φ20；省份 = 江苏；城市 = 多选 12 项（13 市中未选无锡）']], 'AL-20261123-0007'),
+    Q('2026-11-24 10:42', DY, 'zhoulm', '导出', '销量、库存 · 螺纹钢 · 华东 8 市 · 2026-08-16 至 2026-11-23 按日', 4800, 312),
+    Q('2026-11-23 16:42', DY, 'zhoulm', '多维查询', '销量 · 品名 × 省份 · 建筑钢材 · 近 7 日', 392, 31),
+    Q('2026-11-23 15:42', BC, 'bc_data01', '多维查询', '库存 · 仓库所在城市 × 规格 · 中厚板 · 2026-11-22', 186, 132, null, 'AL-20261123-0005'),
+    Q('2026-11-23 14:18', JJ, 'jj_plan05', '看板', '聚合看板 · 全部大类 · 近 30 日', 1260, 88),
+    Q('2026-11-23 11:30', KL, 'kl_ops02', '多维查询', '销量 · 品牌归类 × 大区 · 热轧板卷 · 近 14 日', 168, 22),
+    Q('2026-11-23 10:02', NY, 'ny_sales11', '看板', '聚合看板 · 建筑钢材 · 华南 · 近 7 日', 420, 57),
+    Q('2026-11-23 08:30', DY, '系统任务', '定时发送', '周报 · 销量、库存 · 螺纹钢 · 江苏、浙江、上海各市 · 2026-11-16 至 2026-11-22', 432, 38),
+    Q('2026-11-23 08:05', YL, '系统任务', '定时发送', '周报 · 销量 · 全部大类 × 省份 · 上周', 930, 141),
+    Q('2026-11-24 09:12', DY, 'zhengxl', '看板', '聚合看板 · 全部大类 · 近 30 日', 1260, 74),
+    Q('2026-11-24 09:40', HAN, 'hy_sales07', '多维查询', '销量 · 规格 × 城市 · 冷轧板卷 · 2026-11-23', 96, 41),
+    Q('2026-11-24 10:26', KL, 'kl_ops02', '导出', '库存 · 品名 × 省份 · 型钢 · 近 30 日按周', 720, 96),
+    Q('2026-11-24 11:08', JJ, 'jj_plan05', '多维查询', '销量 · 品名 × 省份 · 优特钢 · 近 3 旬', 210, 68)];
+
+  const X = (id, t, ent, short, acct, cond, rows, fmt, dl, st) => ({ id, t, ent, short, acct, cond, rows, fmt, dl, st, fp: fp(id) });
+  const EXPORTS = [
+    X('EXP-20261124-0031', '2026-11-24 10:26', KL, '昆仑钢铁', 'kl_ops02', '库存 · 品名 × 省份 · 型钢 · 近 30 日按周', 720, 'Excel', 1, '可下载'),
+    X('EXP-20261124-0041', '2026-11-24 10:42', DY, '东岳钢铁', 'zhoulm', '销量、库存 · 螺纹钢 · 华东 8 市 · 2026-08-16 至 2026-11-23 按日', 800, 'Excel', 1, '可下载'),
+    X('EXP-20261123-0127', '2026-11-23 15:20', JJ, '金江钢铁', 'jj_plan05', '销量 · 品名 × 城市 · 热轧板卷 · 近 90 日按周', 12480, 'CSV', 1, '可下载'),
+    X('EXP-20261123-0098', '2026-11-23 11:47', KL, '昆仑钢铁', 'kl_ops02', '销量 · 品牌归类 × 大区 · 热轧板卷 · 近 14 日', 168, 'Excel', 3, '可下载'),
+    X('EXP-20261122-0066', '2026-11-22 16:31', HC, '海川特钢', 'hc_market02', '销量 · 规格 × 城市 · 螺纹钢 · 江苏省 · 近 30 日按日', 8940, 'CSV', 1, '可下载'),
+    X('EXP-20261121-0040', '2026-11-21 09:15', NY, '南粤钢铁', 'ny_sales11', '销量、库存 · 建筑钢材 · 华南 · 近 30 日按日', 3120, 'Excel', 1, '可下载'),
+    X('EXP-20261115-0083', '2026-11-15 14:02', YL, '云岭钢铁', 'yl_bi01', '销量 · 全部大类 × 省份 · 2026-10 按月', 372, 'Excel', 4, '已过期'),
+    X('EXP-20261114-0009', '2026-11-14 15:37', DY, '东岳钢铁', 'zhengxl', '销量、库存 · 本厂品牌 · 全部大类至规格段 · 2026-11-01 至 2026-11-13 按日', 1924, 'Excel', 0, '已过期')];
+
+  const seqOf = (kind) => {
+    const cities = ['全省合计', '苏州', '无锡', '常州', '南京', '徐州', '南通', '扬州'];
+    if (kind === 'city') return cities.map((c, i) => ({ t: '20:' + (14 + Math.floor(i * 0.6)) + ':' + STP.pad((i * 37) % 60), fix: '销量 · 螺纹钢 HRB400E Φ20 · 2026-11-22 · 江苏省，', diff: i ? '多选 12 市（未选“' + c + '”）' : '13 市全选', hit: 14, mask: i < 3 ? [2, 3, 3][i] : 14, rs: i < 3 ? (i ? '部分屏蔽' : '正常返回') : i < 6 ? '差分保护，整体屏蔽' : '已限流，拒绝' }));
+    if (kind === 'spec') return ['Φ12', 'Φ14', 'Φ16', 'Φ18', 'Φ20', 'Φ22', 'Φ25'].map((c, i) => ({ t: '10:0' + Math.floor(i / 2) + ':' + STP.pad((i * 23 + 8) % 60), fix: '销量 · 冷轧板卷 · 浙江省 · 2026-11-21 · ', diff: '规格组合第 ' + (i + 1) + ' 项', hit: 22, mask: i < 4 ? 6 + i : 22, rs: i < 4 ? '部分屏蔽' : '差分保护，整体屏蔽' }));
+    if (kind === 'pool') return ['2026-10-31', '2026-11-01', '2026-10-31', '2026-11-01', '2026-10-31', '2026-11-01'].map((c, i) => ({ t: '09:' + (20 + i) + ':' + STP.pad((i * 41) % 60), fix: '销量 · ' + ['螺纹钢', '螺纹钢', '盘螺', '盘螺', '线材', '线材'][i] + ' · 山东省 · 业务日期 ', diff: c + '（数据池变更' + (i % 2 ? '后' : '前') + '）', hit: 18, mask: i % 2 ? 18 : 4, rs: i % 2 ? '差分保护，整体屏蔽' : '部分屏蔽' }));
+    if (kind === 'brand') return ['8 个大类全选', '未选“热轧板卷”', '未选“中厚板”', '未选“冷轧及涂镀”', '未选“管材”', '未选“型钢”', '未选“优特钢”'].map((c, i) => ({ t: '21:' + (22 + Math.floor(i / 2)) + ':' + STP.pad((i * 29 + 4) % 60), fix: '销量 · 云南省 · 2026-11-18 · 大类多选：', diff: c, hit: 9, mask: i < 2 ? 3 : 9, rs: i < 2 ? (i ? '部分屏蔽' : '正常返回') : i < 5 ? '差分保护，整体屏蔽' : '已限流，拒绝' }));
+    return ['唐山', '邯郸', '石家庄', '保定', '沧州', '廊坊'].map((c, i) => ({ t: '15:' + (30 + i * 2) + ':' + STP.pad((i * 17) % 60), fix: '库存 · 中厚板 · 规格 × 仓库所在城市 · 2026-11-22 · ', diff: '城市 = ' + c, hit: 31, mask: 20 + (i * 3) % 6, rs: '部分屏蔽' }));
+  };
+  const A = (o) => Object.assign({ sub: '', by: '', lvWhy: '' }, o);
+  const ALERTS = [
+    A({ id: 'AL-20261123-0007', mode: '单筛选项差分序列', metric: '10 分钟内 46 次查询仅相差“城市”筛选项', ent: HC, acct: 'hc_market02', t: '2026-11-23 20:19', lv: '高', lvWhy: '序列覆盖全省城市，且账号 30 日内第 2 次触发', st: '待处置', sub: '系统已自动限流 24 小时', n: 46, seq: 'city',
+      judge: '该账号固定品名、规格与日期，每次在江苏省 13 个城市中少选 1 个后查询（界面不提供“排除”筛选，该账号用多选逐个漏选达到同样效果）。用“全省合计”减去“少选某城市”的结果，可得到单一城市的销量；对于贡献企业少的城市，接近单家企业数据。引擎自第 4 次起启用差分保护，返回整体屏蔽，未泄露单元格数值。',
+      log: [{ t: '2026-11-23 20:19', who: '系统', text: '识别到单筛选项差分序列，自动限流（每分钟 5 次，24 小时），并通知安全审计员', type: 'warning' }] }),
+    A({ id: 'AL-20261123-0005', mode: '高比例命中屏蔽边界', metric: '近 1 小时 120 次查询，71% 的单元格贡献企业数为 5–6 家', ent: BC, acct: 'bc_data01', t: '2026-11-23 15:42', lv: '中', lvWhy: '首次触发，未出现差分序列', st: '待处置', sub: '系统已自动限流 24 小时', n: 120, seq: 'edge',
+      judge: '该账号反复查询贡献企业数刚好高于阈值 k = 5 的单元格，命中屏蔽边界的比例远高于全平台平均水平（8.2%）。可能在试探屏蔽规则，也可能是细分规格的正常分析，需要与企业确认查询目的。',
+      log: [{ t: '2026-11-23 15:42', who: '系统', text: '识别到高比例命中屏蔽边界，自动限流（每分钟 5 次，24 小时），并通知安全审计员', type: 'warning' }] }),
+    A({ id: 'AL-20261122-0011', mode: '单筛选项差分序列', metric: '15 分钟内 28 次查询仅相差“规格”筛选项', ent: HAN, acct: 'hy_sales07', t: '2026-11-22 10:05', lv: '中', lvWhy: '首次触发', st: '已通知企业管理员', sub: '限流中，至 2026-11-29', n: 28, seq: 'spec',
+      judge: '该账号固定地区与日期，逐项调整规格组合后查询。引擎对后续查询启用差分保护，未泄露单元格数值。',
+      log: [{ t: '2026-11-22 10:05', who: '系统', text: '识别到单筛选项差分序列，自动限流并通知安全审计员', type: 'warning' }, { t: '2026-11-22 14:20', who: '吴靖', text: '限流延长至 7 天（每分钟 10 次，仅该账号）' }, { t: '2026-11-22 14:25', who: '吴靖', text: '已通知企业管理员，并提示协议中的禁止再识别条款' }] }),
+    A({ id: 'AL-20261120-0003', mode: '高比例命中屏蔽边界', metric: '定时发送任务中 64% 的单元格贡献企业数为 5–6 家', ent: JJ, acct: '系统任务', t: '2026-11-20 08:06', lv: '低', lvWhy: '定时任务，条件固定不变', st: '已解除', sub: '误报', n: 12, seq: 'edge',
+      judge: '该定时发送任务的维度组合较细，条件自创建以来未变化，不构成试探行为。',
+      log: [{ t: '2026-11-20 08:06', who: '系统', text: '识别到高比例命中屏蔽边界，自动限流并通知安全审计员', type: 'warning' }, { t: '2026-11-20 10:30', who: '吴靖', text: '解除：企业月度例行报表，条件固定，已与企业管理员确认。建议企业放粗维度以减少屏蔽', type: 'success' }] }),
+    A({ id: 'AL-20261112-0009', mode: '单筛选项差分序列', metric: '数据池变更前后，对同一条件重复查询 34 次，仅业务日期不同', ent: ZZ, acct: 'zz_mkt03', t: '2026-11-12 09:26', lv: '高', lvWhy: '利用数据池变更做差分', st: '已约谈', sub: '2026-11-14 约谈，已书面承诺', n: 34, seq: 'pool',
+      judge: '该账号在数据池变更生效日前后，对同一组条件交替查询变更前、变更后的业务日期。数据池成员按日期版本化、默认不重算历史，引擎对变更点两侧的差分启用保护，未泄露换入换出企业的数据。',
+      log: [{ t: '2026-11-12 09:26', who: '系统', text: '识别到单筛选项差分序列（数据池变更差分），自动限流并通知安全审计员', type: 'warning' }, { t: '2026-11-12 11:00', who: '吴靖', text: '已通知企业管理员' }, { t: '2026-11-14 15:00', who: '吴靖', text: '与法务唐蕾约谈企业，企业说明为新入职分析人员误操作，已书面承诺并停用该账号的多维查询权限' }] }),
+    A({ id: 'AL-20261119-0004', mode: '单筛选项差分序列', metric: '30 日内第 3 次触发；本次 20 分钟内 62 次查询仅相差“大类”筛选项', ent: YL, acct: 'yl_bi01', t: '2026-11-19 21:40', lv: '高', lvWhy: '约谈并书面承诺后再次触发', st: '终止服务待复核', sub: '吴靖 2026-11-23 16:10 提交', by: '吴靖', n: 62, seq: 'brand',
+      judge: '该企业在 2026-10-28 约谈并书面承诺后，同一部门的另一账号再次出现差分查询序列，且使用脚本自动发起。法务意见认为已构成违反《数据服务协议》禁止再识别条款。',
+      log: [{ t: '2026-11-19 21:40', who: '系统', text: '识别到单筛选项差分序列，自动限流并通知安全审计员', type: 'warning' }, { t: '2026-11-20 09:30', who: '吴靖', text: '限流范围扩大到该企业全部账号，直至人工解除' }, { t: '2026-11-23 16:10', who: '吴靖', text: '提交“依据禁止再识别条款终止服务”，已附法务意见（唐蕾），等待另一人复核', type: 'danger' }] })];
+
+  const T = (o) => Object.assign({ authBy: '', until: '', note: '', trail: [] }, o);
+  const TICKETS = [
+    T({ id: 'WO-20261124-003', by: '孙雅婷', t: '2026-11-24 13:50', ent: E[0], kind: '质量申诉', why: '企业申诉 2026-11-23 批次销售明细有 312 行校验失败，需核对拒收原因', scope: '2026-11-23 上传批次的校验失败行', auth: '待授权', hours: 4, st: '待企业授权' }),
+    T({ id: 'WO-20261124-002', by: '孙雅婷', t: '2026-11-24 10:12', ent: HY, kind: '数据排障', why: '协助排查 SRC-WX 在 2026-11-23 的对账差异（平台比申报少 1 条、3.220 吨）', scope: '来源系统 SRC-WX 2026-11-23 销售日汇总记录（45 条），不含价格与金额', auth: '待授权', hours: 2, st: '待企业授权' }),
+    T({ id: 'WO-20261124-001', by: '孙雅婷', t: '2026-11-24 09:05', ent: E[1], kind: '价格隔离', why: '价格超出合理区间被隔离 18 行，企业称为加工件含税价，需核对字段含义', scope: '2026-11-22 批次被隔离的价格明细 18 行', auth: '已授权', authBy: '企业管理员 2026-11-24 11:30', hours: 4, until: '2026-11-24 15:30', st: '开放中',
+      trail: [{ t: '2026-11-24 11:42', who: '孙雅婷', act: '打开限时排障页面', n: 0 }, { t: '2026-11-24 11:44', who: '孙雅婷', act: '查看 2026-11-22 批次被隔离的价格明细', n: 18 }] }),
+    T({ id: 'WO-20261118-002', by: '孙雅婷', t: '2026-11-18 09:20', ent: HY, kind: '质量申诉', why: '企业申诉 2026-11-17 无锡分公司日汇总批次的库存校验失败', scope: '来源系统 SRC-WX 2026-11-17 批次的校验失败行', auth: '已授权', authBy: '陈海峰 2026-11-18 10:12', hours: 4, until: '2026-11-18 14:12', st: '已关闭', note: '到期自动关闭',
+      trail: [{ t: '2026-11-18 10:20', who: '孙雅婷', act: '打开限时排障页面', n: 0 }, { t: '2026-11-18 10:22', who: '孙雅婷', act: '查看 SRC-WX 2026-11-17 批次的校验失败行', n: 6 }, { t: '2026-11-18 10:41', who: '孙雅婷', act: '查看同批次库存汇总记录（核对仓库映射）', n: 40 }, { t: '2026-11-18 14:12', who: '系统', act: '授权到期，自动回收访问权限', n: 0 }] }),
+    T({ id: 'WO-20261115-004', by: '林若彤', t: '2026-11-15 15:30', ent: E[2], kind: '造假核查', why: '反刷量规则命中“整数吨位占比异常”，申请抽查近 7 日销售明细', scope: '2026-11-08 至 2026-11-14 销售明细', auth: '已拒绝', authBy: '企业管理员 2026-11-16 09:02', hours: 8, st: '已拒绝', note: '企业拒绝授权；已改为要求企业提供自证材料' }),
+    T({ id: 'WO-20261110-001', by: '赵启明', t: '2026-11-10 10:15', ent: E[3], kind: '数据排障', why: '企业自定义品名无法映射到标准品类，需查看原始品名与规格写法', scope: '2026-11-09 批次未映射的销售明细', auth: '已授权', authBy: '企业管理员 2026-11-10 10:48', hours: 2, until: '2026-11-10 12:48', st: '已关闭', note: '赵启明 提前关闭',
+      trail: [{ t: '2026-11-10 10:55', who: '赵启明', act: '查看 2026-11-09 批次未映射的销售明细', n: 57 }, { t: '2026-11-10 11:20', who: '赵启明', act: '提前关闭工单，访问权限已回收', n: 0 }] }),
+    T({ id: 'WO-20261105-006', by: '孙雅婷', t: '2026-11-05 16:40', ent: E[4], kind: '数据排障', why: '接口重复推送导致 2026-11-04 批次行数翻倍，需确认重复行', scope: '2026-11-04 批次销售明细', auth: '超时未处理', hours: 4, st: '已失效', note: '48 小时内企业未处理，自动失效' })];
+
+  let on = 6420;
+  const O = (t, type, side, who, org, text, o) => { const seq = on--; return Object.assign({ seq, t, type, side, who, org, text, ok: true, ip: '10.' + (M.hash(who) % 200 + 10) + '.*.*', before: '', after: '', ref: '', link: '', h: fp('L' + seq).slice(7), ph: fp('L' + (seq - 1)).slice(7) }, o); };
+  /* 原型状态联动：价格闸口为“已开放”、示例下游企业价格上传为“已开启”时，操作日志里出现对应的留痕 */
+  const GATE_OPEN = STP.state.gate === 'open', DN_PRICE = STP.state.dnPrice === 'on';
+  const OPLOG = [
+    ...(GATE_OPEN ? [
+      O('2026-11-24 11:30', '价格闸口操作', '平台', '吴靖', '平台 · 安全审计员', '复核通过价格闸口开启申请，闸口开启：上游侧价格功能对全部已付费上游开放', { ref: '法务意见〔2026〕第 037 号', link: 'price-control.html', before: '闸口：关闭（开启申请待复核）', after: '闸口：开启' }),
+      O('2026-11-24 10:05', '价格闸口操作', '平台', '林若彤', '平台 · 运营主管', '上传法务书面意见并提交价格闸口开启申请，待复核', { ref: '法务意见〔2026〕第 037 号', link: 'price-control.html', before: '闸口：关闭', after: '闸口：关闭（开启申请待复核）' })] : []),
+    O('2026-11-24 09:02', '登录', '平台', '吴靖', '平台 · 安全审计员', '登录运营后台（双因素验证通过）'),
+    O('2026-11-24 08:47', '登录', '上游', 'yl_bi01', '云岭钢铁集团有限公司', '登录失败：账号处于限流与复核期间，多维查询入口已停用', { ok: false, ip: '117.136.*.*' }),
+    O('2026-11-23 16:42', '后台参数变更', '平台', '吴靖', '平台 · 安全审计员', '提交防反推参数变更：价格最细时间粒度与延迟，待复核', { ref: 'CHG-20261123-01', link: 'privacy-params.html', before: '日，T+1', after: '日，T+3（待复核，拟 2026-12-01 生效）' }),
+    O('2026-11-23 16:10', '权限变更', '平台', '吴靖', '平台 · 安全审计员', '提交“依据禁止再识别条款终止服务”：云岭钢铁集团有限公司，待复核', { ref: 'AL-20261119-0004', before: '服务状态：正常（全部账号限流）', after: '申请：终止服务（待复核）' }),
+    O('2026-11-23 15:26', '分成规则变更', '平台', '何志远', '平台 · 财务', '提交分成规则变更：起付金额 500 元改为 300 元，2027-01-01 生效，待复核', { ref: 'SRC-20261123-01', link: 'share-rules.html', before: '起付金额 500 元', after: '起付金额 300 元（待复核）' }),
+    O('2026-11-23 11:15', '后台参数变更', '平台', '何志远', '平台 · 财务', '提交定价变更：新增折扣码 STEEL2026Q4，待复核', { ref: 'PRC-20261123-01', link: 'billing.html', after: '新增折扣码 STEEL2026Q4（待复核）' }),
+    O('2026-11-21 10:30', '权限变更', '上游', '周立明', '东岳钢铁集团有限公司 · 企业管理员', '为账号 sunyh 开通“导出”权限', { ip: '58.210.*.*', before: '角色：数据分析（仅查看）', after: '角色：数据分析（查看 + 导出）' }),
+    O('2026-11-20 16:42', '数据池变更', '上游', '周立明', '东岳钢铁集团有限公司 · 企业管理员', '企业名录选购 43 家：13 家使用未分配名额新增入池，2026-12-01 生效；其余 30 家为加购，订单待支付', { ip: '58.210.*.*', before: '成员 186 家；待生效新增 1 家；未分配名额 13 个', after: '成员 186 家（2026-12-01 起按新成员）；待生效新增 14 家；未分配名额 0 个', ref: '加购订单 DO-20261120-0052' }),
+    O('2026-11-20 09:12', '密钥操作', '下游', '陈海峰', '苏州恒运钢铁贸易有限公司 · 企业管理员', '轮换来源系统 SRC-WX 的接口密钥，新旧密钥并行 7 天，旧密钥 2026-11-27 24:00 失效', { ip: '180.106.*.*', before: '密钥编号 K-…7c21（2026-10-01 启用）', after: '密钥编号 K-…a3f0（2026-11-20 启用）' }),
+    O('2026-11-19 10:08', '数据池变更', '上游', '周立明', '东岳钢铁集团有限公司 · 企业管理员', '提交数据池调整：替换 2 组、新增 1 家、移出 1 家，2026-12-01 生效', { ip: '58.210.*.*', before: '成员 186 家；本周期已用替换额度 3 个', after: '成员 186 家（2026-12-01 起按新成员）；本周期已用替换额度 5 个', ref: '数据池调整单 PC-20261119-0007' }),
+    O('2026-11-18 10:12', '权限变更', '下游', '陈海峰', '苏州恒运钢铁贸易有限公司 · 企业管理员', '同意平台人员明细访问工单，限时 4 小时', { ip: '180.106.*.*', ref: 'WO-20261118-002', before: '平台人员不可查看明细', after: '孙雅婷可查看 SRC-WX 2026-11-17 批次校验失败行，至 2026-11-18 14:12' }),
+    O('2026-11-15 02:00', '密钥操作', '系统', '密钥管理服务', '平台 · 系统任务', '按计划轮换数据加密密钥（季度轮换）', { ip: '内部', before: '密钥版本 2026Q3', after: '密钥版本 2026Q4' }),
+    O('2026-11-12 15:26', '数据池变更', '上游', '周立明', '东岳钢铁集团有限公司 · 企业管理员', '提交数据池调整：替换 3 组（换出 3 家、换入 3 家），2026-12-01 生效', { ip: '58.210.*.*', before: '成员 186 家；本周期已用替换额度 0 个', after: '成员 186 家（2026-12-01 起按新成员）；本周期已用替换额度 3 个', ref: '数据池调整单 PC-20261112-0011' }),
+    O('2026-11-10 15:30', '价格闸口操作', '平台', '唐蕾', '平台 · 法务', '完成价格数据季度法务复核，结论：维持闸口关闭', { ref: '季度复核记录 2026Q4', link: 'price-control.html', before: '闸口：关闭', after: '闸口：关闭（下次复核 2027-02-10）' }),
+    O('2026-11-09 16:42', '规则变更', '下游', '陈海峰', '苏州恒运钢铁贸易有限公司 · 企业管理员', '修改上传条件规则并发布新版本，2026-11-10 起生效', { ip: '180.106.*.*', before: '上传规则版本 v6', after: '上传规则版本 v7（规则内容不在平台审计页面展示）' }),
+    O('2026-11-06 11:05', '权限变更', '平台', '林若彤', '平台 · 运营主管', '为孙雅婷授予“数据质量专员”角色的价格隔离处置权限', { before: '数据质量专员（不含价格隔离处置）', after: '数据质量专员（含价格隔离处置）' }),
+    O('2026-10-21 00:00', '后台参数变更', '系统', '参数服务', '平台 · 系统任务', '防反推参数变更生效：价格单元格最小有价企业数 k_价由 6 家调整为 8 家（吴靖提交，林若彤复核）', { ip: '内部', ref: 'CHG-20261013-01', link: 'privacy-params.html', before: 'k_价 = 6', after: 'k_价 = 8' }),
+    ...(DN_PRICE ? [O('2026-10-20 09:12', '规则变更', '下游', '陈海峰', '苏州恒运钢铁贸易有限公司 · 企业管理员', '开启价格与金额上传，确认《价格数据上传补充条款》V1.0，并设置上传范围', { ip: '180.106.*.*', before: '价格与金额上传：未开启', after: '价格与金额上传：已开启（范围内容不在平台审计页面展示）' })] : []),
+    O('2026-07-01 00:00', '分成规则变更', '系统', '规则引擎', '平台 · 系统任务', '分成规则版本 SR-V3 生效：质量系数 C 档由 0.90 调整为 0.85', { ref: 'SR-V3', link: 'share-rules.html', before: 'SR-V2', after: 'SR-V3' }),
+    O('2026-06-01 09:00', '价格闸口操作', '系统', '闸口服务', '平台 · 系统任务', '创建价格披露闸口，默认状态：关闭', { link: 'price-control.html', after: '闸口：关闭' })];
+
+  STP.mount({
+    data() {
+      return {
+        staff: STAFF, me: '吴靖', tab: 'query', mills: MILLS, ents: [HY].concat(E.slice(0, 30)),
+        verify: { on: false, last: '2026-11-24 02:00' },
+        outTypes: ['看板', '多维查询', '导出', '定时发送'],
+        qf: { range: ['2026-11-23', '2026-11-24'], ent: '', acct: '', type: '', high: false }, queries: QUERIES, qd: { show: false, r: null, reasons: [] },
+        ef: { kw: '' }, exports: EXPORTS, trace: { show: false, q: '', hit: null, done: false },
+        af: { st: '' }, alerts: ALERTS, ad: { show: false, r: null, seq: [] },
+        dp: { show: false, r: null, act: 'limit', rate: '每分钟 5 次', dur: '7 天', scope: '该账号', date: '2026-11-26', legal: false, note: '' },
+        tf: { st: '' }, tickets: TICKETS, td: { show: false, r: null },
+        nt: { show: false, ent: '', kind: '数据排障', why: '', scope: ['校验失败行'], batch: '', hours: 4 },
+        opTypes: ['登录', '权限变更', '规则变更', '密钥操作', '数据池变更', '后台参数变更', '价格闸口操作', '分成规则变更'],
+        of: { type: '', side: '', kw: '' }, oplog: OPLOG,
+      };
+    },
+    computed: {
+      isAuditor() { return this.me === '吴靖'; },
+      alertTodo() { return this.alerts.filter((a) => a.st === '待处置').length; },
+      qRows() {
+        const f = this.qf, kw = f.acct.trim();
+        return this.queries.filter((q) => { const d = q.t.slice(0, 10); return d >= f.range[0] && d <= f.range[1] && (!f.ent || q.ent === f.ent) && (!kw || q.acct.indexOf(kw) >= 0) && (!f.type || q.type === f.type) && (!f.high || q.mask / q.hit >= 0.3); })
+          .slice().sort((a, b) => (a.t < b.t ? 1 : -1));
+      },
+      eRows() { const kw = this.ef.kw.trim(); return this.exports.filter((e) => !kw || (e.id + e.ent + e.acct + e.fp).indexOf(kw) >= 0); },
+      aRows() { const s = this.af.st; return this.alerts.filter((a) => !s || (s === 'todo' ? a.st === '待处置' || a.st === '终止服务待复核' : a.st !== '待处置' && a.st !== '终止服务待复核')).slice().sort((a, b) => (a.t < b.t ? 1 : -1)); },
+      tRows() { const s = this.tf.st; return this.tickets.filter((t) => !s || (s === 'closed' ? ['已关闭', '已拒绝', '已失效', '已撤回'].indexOf(t.st) >= 0 : t.st === s)); },
+      oRows() { const f = this.of, kw = f.kw.trim(); return this.oplog.filter((o) => (!f.type || o.type === f.type) && (!f.side || o.side === f.side) && (!kw || (o.who + o.org + o.text + o.ref).indexOf(kw) >= 0)); },
+    },
+    methods: {
+      roleOf(n) { const s = STAFF.find((x) => x.n === n); return s ? s.r : ''; },
+      outType(t) { return { 看板: 'info', 多维查询: 'primary', 导出: 'warning', 定时发送: 'success' }[t]; },
+      alertType(s) { return s === '待处置' || s === '终止服务待复核' ? 'danger' : s === '已解除' ? 'success' : s === '已终止服务' ? 'info' : 'warning'; },
+      ticketType(s) { return { 待企业授权: 'warning', 开放中: 'success', 已关闭: 'info', 已拒绝: 'danger', 已失效: 'info', 已撤回: 'info' }[s]; },
+      opType(t) { return { 登录: 'info', 权限变更: 'warning', 规则变更: 'primary', 密钥操作: 'danger', 数据池变更: 'primary', 后台参数变更: 'warning', 价格闸口操作: 'danger', 分成规则变更: 'success' }[t]; },
+      addLog(type, text, o) { this.oplog.unshift(O(nowStr(), type, '平台', this.me, '平台 · ' + this.roleOf(this.me), text, o)); },
+      runVerify() {
+        this.verify.on = true;
+        setTimeout(() => { this.verify.on = false; this.verify.last = nowStr(); this.$demo('完整性校验通过：6,420 条操作日志与 18,642 条查询审计的链式摘要全部一致，未发现缺失或改动'); }, 1600);
+      },
+      openQuery(r) {
+        const m = r.mask, a = Math.round(m * 0.58), b = Math.round(m * 0.22), c = r.alert ? m - a - b : Math.round(m * 0.2);
+        this.qd = { show: true, r, reasons: [['贡献企业数不足（少于 k = 5 家）', a], ['单一企业占比过高（优势度规则）', b], [r.alert ? '差分保护（相邻查询只差一个筛选项）' : '互补屏蔽（防止用合计倒推）', c]].concat(r.alert ? [] : [['差分保护', m - a - b - c]]) };
+      },
+      doTrace() {
+        const q = this.trace.q.trim();
+        this.trace.hit = q ? this.exports.find((e) => e.id === q || e.fp.replace('…', '').indexOf(q) >= 0 || e.fp.indexOf(q) >= 0) || null : null;
+        this.trace.done = true;
+      },
+      openAlert(r) { this.ad = { show: true, r, seq: seqOf(r.seq) }; },
+      openDispose(r) {
+        if (!this.isAuditor) return warn('告警处置由安全审计员完成，请切换操作人为吴靖');
+        this.dp = { show: true, r, act: r.st === '待处置' ? 'limit' : 'notify', rate: '每分钟 5 次', dur: '7 天', scope: '该账号', date: '2026-11-26', legal: false, note: '' };
+      },
+      doDispose() {
+        const d = this.dp, r = d.r, t = nowStr();
+        const map = {
+          limit: ['已限流', d.rate + '，' + d.dur + '，' + d.scope, '限流：' + d.rate + '，持续 ' + d.dur + '，范围：' + d.scope, 'primary'],
+          notify: ['已通知企业管理员', '限流保持', '已通知企业管理员，并提示协议中的禁止再识别条款', 'primary'],
+          talk: ['已约谈', '约谈时间 ' + d.date, '发起约谈，时间 ' + d.date + '，参与人：吴靖、唐蕾。约谈期间保持限流', 'primary'],
+          terminate: ['终止服务待复核', this.me + ' ' + t.slice(0, 16) + ' 提交', '提交“依据禁止再识别条款终止服务”，已附法务意见（唐蕾），等待另一人复核', 'danger'],
+          release: ['已解除', '误报', '解除限流并关闭告警', 'success'] }[d.act];
+        r.st = map[0]; r.sub = map[1]; r.by = d.act === 'terminate' ? this.me : '';
+        r.log.push({ t, who: this.me, text: map[2] + '。说明：' + d.note, type: map[3] });
+        this.addLog('权限变更', '处置异常查询告警 ' + r.id + '（' + r.ent + '）：' + map[0], { ref: r.id, after: map[2] });
+        d.show = false;
+        this.$demo(d.act === 'terminate' ? '已提交复核。请切换为另一位平台人员复核，提交人不能复核自己的申请' : '处置完成：' + map[0]);
+      },
+      reviewTerm(pass) {
+        const r = this.ad.r;
+        if (r.by === this.me) return this.$info('提交人不能复核自己的申请');
+        const done = (note) => {
+          const t = nowStr();
+          r.st = pass ? '已终止服务' : '已约谈'; r.sub = pass ? this.me + ' ' + t + ' 复核通过' : '终止服务申请被驳回，限流保持';
+          r.log.push({ t, who: this.me, text: pass ? '复核通过，依据禁止再识别条款终止服务。企业全部账号已停用，已通知企业与财务' : '驳回终止服务申请：' + note, type: pass ? 'danger' : 'info' });
+          this.addLog('权限变更', (pass ? '复核通过' : '驳回') + '终止服务申请：' + r.ent, { ref: r.id, before: '终止服务（待复核）', after: pass ? '服务状态：已终止' : '服务状态：正常（限流保持）' });
+          this.$demo(pass ? '复核通过，已终止该企业的数据服务' : '已驳回，告警恢复为限流状态');
+        };
+        if (pass) ElementPlus.ElMessageBox.confirm('复核通过后，将终止 ' + r.ent + ' 的数据服务，全部账号立即停用。', '复核终止服务', { type: 'warning', confirmButtonText: '复核通过', cancelButtonText: '取消' }).then(() => done()).catch(() => {});
+        else ElementPlus.ElMessageBox.prompt('请填写驳回原因', '驳回终止服务申请', { confirmButtonText: '驳回', cancelButtonText: '取消', inputValidator: (v) => !!(v && v.trim()) || '请填写驳回原因' }).then(({ value }) => done(value)).catch(() => {});
+      },
+      withdrawTerm() {
+        const r = this.ad.r; r.st = '已限流'; r.sub = '终止服务申请已撤回，限流保持'; r.by = '';
+        r.log.push({ t: nowStr(), who: this.me, text: '撤回终止服务申请', type: 'info' });
+        this.$demo('已撤回终止服务申请');
+      },
+      newTicket() {
+        if (this.isAuditor) return warn('安全审计员与运营角色互斥，不能申请查看企业明细。请切换为运营角色后再新建工单');
+        if (this.me === '唐蕾') return warn('法务角色没有明细访问工单的申请权限');
+        this.tab = 'ticket';
+        this.nt = { show: true, ent: '', kind: '数据排障', why: '', scope: ['校验失败行'], batch: '', hours: 4 };
+      },
+      submitTicket() {
+        const n = this.nt;
+        if (!n.ent) return warn('请选择目标企业');
+        if (!n.why.trim()) return warn('请填写事由说明');
+        if (!n.scope.length) return warn('请至少选择一项访问范围');
+        const id = 'WO-20261124-' + String(4 + this.tickets.filter((t) => t.id > 'WO-20261124-003').length).padStart(3, '0');
+        this.tickets.unshift(T({ id, by: this.me, t: nowStr(), ent: n.ent, kind: n.kind, why: n.why.trim(), scope: (n.batch.trim() ? n.batch.trim() + ' 的' : '') + n.scope.join('、'), auth: '待授权', hours: n.hours, st: '待企业授权' }));
+        this.addLog('权限变更', '提交明细访问工单 ' + id + '：' + n.ent + '，申请 ' + n.hours + ' 小时', { ref: id, before: '平台人员不可查看明细', after: '待企业授权' });
+        n.show = false; this.tf.st = '';
+        this.$demo('工单已提交，已通知企业管理员。授权前看不到任何明细');
+      },
+      openTicket(r) { this.td = { show: true, r }; },
+      simAuth(ok) {
+        const r = this.td.r, t = nowStr();
+        if (ok) { Object.assign(r, { auth: '已授权', authBy: '企业管理员 ' + t, until: plusHours(r.hours), st: '开放中' }); this.$demo('企业已授权，限时 ' + r.hours + ' 小时开放，到期自动回收'); }
+        else { Object.assign(r, { auth: '已拒绝', authBy: '企业管理员 ' + t, st: '已拒绝', note: '企业拒绝授权' }); this.$demo('企业已拒绝授权，工单关闭'); }
+      },
+      viewDetail() {
+        const r = this.td.r;
+        if (r.by !== this.me) return warn('只有工单申请人 ' + r.by + ' 可以在授权时限内查看，请切换操作人');
+        r.trail.push({ t: nowStr(), who: this.me, act: '查看 ' + r.scope, n: 12 + (M.hash(r.id + r.trail.length) % 40) });
+        this.$demo('已记录一次访问。原型不展示明细内容；企业侧可看到同样的访问记录');
+      },
+      closeTicket(st, note) {
+        const r = this.td.r; r.st = st; r.note = note;
+        if (st === '已关闭') r.trail.push({ t: nowStr(), who: this.me, act: '提前关闭工单，访问权限已回收', n: 0 });
+        this.$demo(st === '已关闭' ? '工单已关闭，访问权限已回收' : '工单已撤回');
+      },
+    },
+  });
+})();
+</script>
+</body>
+</html>

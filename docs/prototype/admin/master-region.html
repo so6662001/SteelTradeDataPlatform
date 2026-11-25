@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>地区与仓库 · 平台运营后台 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.rg-wrap { display: grid; grid-template-columns: 272px minmax(0, 1fr); gap: 16px; align-items: start; }
+.rg-tree { border: 1px solid var(--stp-border); border-radius: 6px; padding: 8px 6px; height: 640px; overflow: auto; }
+.rg-tree .el-tree-node__content { height: 30px; }
+.rg-tree .node { display: flex; align-items: center; justify-content: space-between; flex: 1; min-width: 0; font-size: 13px; padding-right: 6px; }
+.rg-tree .node .cd { color: var(--stp-sub); font-size: 12px; font-family: "SFMono-Regular", Consolas, Menlo, monospace; }
+.sec-title { font-size: 14px; font-weight: 600; margin: 18px 0 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.sec-title::before { content: ""; width: 3px; height: 14px; background: var(--el-color-primary); border-radius: 2px; margin-right: 8px; }
+.sec-title > span:first-child { flex: 1; }
+.wh-name b { font-weight: 600; }
+.wh-name span { display: block; font-size: 12px; color: var(--stp-sub); margin-top: 2px; }
+.impact { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 12px 0; }
+.impact div { border: 1px solid var(--stp-border); border-radius: 6px; padding: 10px 12px; }
+.impact span { font-size: 12px; color: var(--stp-sub); }
+.impact b { display: block; font-size: 17px; margin-top: 4px; }
+.cal-list { margin: 0; padding-left: 18px; font-size: 13px; line-height: 2; color: #4a5568; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="admin" active="master-region" title="地区与仓库"
+  desc="地区采用国家行政区划代码（省 → 市 → 区县）；钢贸多用第三方仓库，多家企业共用同一仓库，因此维护平台级标准仓库库，并把企业上传的仓库原文映射到标准仓库。">
+  <template #actions>
+    <el-button @click="$demo('行政区划已与国家标准最新版本比对，无差异')"><el-icon><Refresh /></el-icon>同步行政区划</el-button>
+    <el-button type="primary" @click="openWh(null)"><el-icon><Plus /></el-icon>新增标准仓库</el-button>
+  </template>
+
+  <div class="grid c5">
+    <div class="stat">
+      <div class="label">行政区划（国家标准代码）</div>
+      <div class="value num">34<span class="unit">省级</span></div>
+      <div class="foot"><span>地级 <b>333</b></span><span>县级 <b>2,844</b></span><span>版本 2025</span></div>
+    </div>
+    <stat-card label="标准仓库" :value="3862" unit="个" icon="House" tip="平台级标准仓库库：名称、地址、所在市"><span>启用 <b>3,790</b></span><span>疑似重复 <b>46</b></span><span>停用 <b>26</b></span></stat-card>
+    <stat-card label="仓库别名" :value="14920" unit="个" icon="CollectionTag" tip="每个标准仓库可维护多个别名，用于自动匹配企业上传的仓库原文"><span>仓库映射率 <b>98.1%</b></span></stat-card>
+    <stat-card label="仓库映射待确认" :value="164" unit="项" icon="List"><span>原型展示 <b>{{ queue.length }}</b> 项示例</span></stat-card>
+    <stat-card label="上游自定义销售大区" :value="1286" unit="个" icon="MapLocation" tip="各钢厂自定义的省市分组，由上游维护，平台只读"><span>涉及购买主体 <b>297</b></span><span>不可用 <b>38</b></span></stat-card>
+  </div>
+
+  <div class="card">
+    <div class="rg-wrap">
+      <!-- 左：行政区划树 -->
+      <div>
+        <div class="card-title" style="margin-bottom:8px"><span>行政区划<small>省 → 市 → 区县</small></span></div>
+        <el-input v-model="treeKw" size="small" placeholder="搜索名称或代码" clearable class="mb8"><template #prefix><el-icon><Search /></el-icon></template></el-input>
+        <div class="rg-tree">
+          <el-tree ref="tree" :data="tree" node-key="code" :default-expanded-keys="['320000', '320500']" :current-node-key="'320500'" highlight-current :filter-node-method="filterNode" @node-click="n => sel = n">
+            <template #default="{ data }"><span class="node"><span>{{ data.name }}</span><span class="cd">{{ data.code }}</span></span></template>
+          </el-tree>
+        </div>
+        <div class="small muted mt8">原型展示 18 个省级行政区；区县只展开部分城市。</div>
+      </div>
+
+      <!-- 右：地区详情 + 标准仓库库 -->
+      <div>
+        <div class="card-title" style="margin-bottom:10px">
+          <span>{{ sel.full }}<small>所选地区详情</small></span>
+          <span class="right"><el-tag size="small" type="success">启用</el-tag><el-button size="small" @click="$info('原型演示：行政区划调整（撤并、更名）按国家标准同步，历史代码保留映射关系')">区划变更记录</el-button></span>
+        </div>
+        <el-descriptions :column="3" border size="small">
+          <el-descriptions-item label="行政区划代码"><span class="code">{{ sel.code }}</span></el-descriptions-item>
+          <el-descriptions-item label="层级">{{ sel.levelName }}</el-descriptions-item>
+          <el-descriptions-item label="上级">{{ sel.parent || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="在该地区有仓库的企业数"><b class="num">{{ $fmt(sel.ents) }}</b> 家</el-descriptions-item>
+          <el-descriptions-item label="标准仓库数"><b class="num">{{ $fmt(sel.whs) }}</b> 个</el-descriptions-item>
+          <el-descriptions-item label="对上游披露">{{ sel.level === 3 ? '不披露，仅用于仓库地址归属' : sel.level === 2 ? '可披露（最细地区粒度）' : '可披露' }}</el-descriptions-item>
+        </el-descriptions>
+
+        <div class="sec-title">
+          <span>标准仓库库<small class="muted" style="font-weight:400;margin-left:8px">{{ onlySel ? sel.name + '范围内' : '全部示例' }} {{ whRows.length }} 个</small></span>
+          <el-checkbox v-model="onlySel" size="small">只看所选地区</el-checkbox>
+          <el-input v-model="whKw" size="small" placeholder="仓库名称 / 编码 / 别名" clearable style="width:200px"><template #prefix><el-icon><Search /></el-icon></template></el-input>
+          <el-button size="small" type="primary" plain @click="openWh(null)"><el-icon><Plus /></el-icon>新增</el-button>
+        </div>
+        <el-table :data="whRows" size="small" border max-height="420">
+          <el-table-column label="仓库名称" min-width="190"><template #default="{row}"><div class="wh-name"><b>{{ row.name }}</b><span>{{ row.code }}</span></div></template></el-table-column>
+          <el-table-column prop="addr" label="地址" min-width="200" />
+          <el-table-column prop="city" label="所在市" width="84" />
+          <el-table-column label="别名数" width="74" align="right"><template #default="{row}"><el-tooltip :content="row.alias.join('、')" placement="top"><span class="num" style="cursor:help;border-bottom:1px dashed #b0b9c6">{{ row.alias.length }}</span></el-tooltip></template></el-table-column>
+          <el-table-column label="使用企业数" width="96" align="right"><template #default="{row}"><span class="num">{{ row.ents }}</span> 家</template></el-table-column>
+          <el-table-column label="状态" width="96"><template #default="{row}"><el-tag size="small" :type="row.status === '启用' ? 'success' : row.status === '疑似重复' ? 'warning' : 'info'">{{ row.status }}</el-tag></template></el-table-column>
+          <el-table-column label="操作" width="112" align="center">
+            <template #default="{row}"><el-button link type="primary" @click="openWh(row)">编辑</el-button><el-button link type="primary" @click="openMerge(row)">合并</el-button></template>
+          </el-table-column>
+          <template #empty><div class="empty-block">所选地区暂无标准仓库示例数据<br><el-button class="mt8" size="small" @click="onlySel = false">查看全部示例</el-button></div></template>
+        </el-table>
+        <div class="small muted mt8">“使用企业数”为在该仓库有库存或出库记录的企业计数。后台不展示任何企业在各仓库的库存量、出库量。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 仓库映射待确认 -->
+  <div class="card">
+    <div class="card-title">
+      <span>仓库映射待确认队列<small>企业上传的仓库原文无法高置信度匹配到标准仓库；待确认期间该仓库的数据不参与聚合</small></span>
+      <span class="right"><el-button size="small" type="primary" :disabled="!qSel.length" @click="confirmQ(qSel)"><el-icon><Check /></el-icon>批量确认（{{ qSel.length }}）</el-button></span>
+    </div>
+    <el-table :data="queue" size="small" border @selection-change="s => qSel = s">
+      <el-table-column type="selection" width="42" :selectable="r => !!r.rec" />
+      <el-table-column label="企业上传的仓库原文" min-width="200"><template #default="{row}"><span class="code">{{ row.raw }}</span></template></el-table-column>
+      <el-table-column prop="city" label="企业填报的所在市" width="140" />
+      <el-table-column label="出现企业数" width="100" align="right"><template #default="{row}"><span class="num">{{ row.ents }}</span> 家</template></el-table-column>
+      <el-table-column label="推荐标准仓库" min-width="230"><template #default="{row}"><b v-if="row.rec">{{ row.rec }}</b><span v-else class="muted">无合适的标准仓库，建议新建</span></template></el-table-column>
+      <el-table-column label="置信度" width="90" align="right"><template #default="{row}"><b class="num" :style="{color: row.conf >= 0.9 ? '#18a058' : row.conf >= 0.75 ? '#b26a00' : '#e5484d'}">{{ Math.round(row.conf * 100) }}%</b></template></el-table-column>
+      <el-table-column label="操作" width="200" align="center">
+        <template #default="{row}">
+          <el-button v-if="row.rec" link type="primary" @click="confirmQ([row])">确认</el-button>
+          <el-button link type="primary" @click="openWh(null, row)">新建标准仓库</el-button>
+          <el-button link type="primary" @click="$info('原型演示：改选其他标准仓库，或退回企业确认')">改选</el-button>
+        </template>
+      </el-table-column>
+      <template #empty><div class="empty-block">待确认队列已清空</div></template>
+    </el-table>
+    <div class="tbl-foot"><span>确认后原文写入该标准仓库的别名库，相关数据自动回补并参与聚合。日汇总模式的企业可只报仓库所在市、不报仓库名称，这类数据直接按行政区划代码归属，不进入本队列。</span></div>
+  </div>
+
+  <div class="grid c-3-2">
+    <!-- 上游自定义销售大区 -->
+    <div class="card">
+      <div class="card-title"><span>上游自定义销售大区<small>由各上游维护，平台只读</small></span><span class="right"><el-tag size="small" type="info"><el-icon style="vertical-align:-2px"><View /></el-icon> 只读</el-tag></span></div>
+      <el-table :data="zones" size="small" border>
+        <el-table-column prop="up" label="购买主体" width="110" />
+        <el-table-column prop="name" label="大区名称" width="150" />
+        <el-table-column prop="members" label="包含的省、市" min-width="190" />
+        <el-table-column label="状态" min-width="150"><template #default="{row}"><el-tag size="small" :type="row.ok ? 'success' : 'danger'">{{ row.ok ? '可用' : '不可用' }}</el-tag><div v-if="!row.ok" class="small muted" style="margin-top:2px">{{ row.why }}</div></template></el-table-column>
+      </el-table>
+      <div class="tip-box blue small mt12">各钢厂的大区划分不同，自定义销售大区（省、市的分组）由上游自行创建和维护，平台不代为修改。大区视为新的层级成员，<b>按分组整体做披露判定</b>：大区内贡献企业数仍受 k = {{ $PV.k }} 门槛与优势度约束；同一上游的两个大区若只相差少量成员，差集须同样满足门槛，否则后创建的大区不可用。</div>
+    </div>
+    <!-- 地区口径 -->
+    <div class="card">
+      <div class="card-title"><span>地区口径说明</span></div>
+      <ul class="cal-list">
+        <li><b>销量</b>：默认按<b>出库仓库所在地</b>统计（必填、最可靠），上游可切换为按<b>流向地</b>统计（选填，填报率计入质量评分）。</li>
+        <li><b>库存</b>：按<b>仓库所在地</b>统计。</li>
+        <li><b>最细粒度</b>：对上游最细到<b>地级市</b>；区县只用于仓库地址归属。样本稀疏的品类可配置为到省，见 <a href="master-category.html">全品类主数据工作台</a>。</li>
+        <li>企业注册地不作为统计口径，仅用于名录展示。</li>
+        <li>行政区划采用国家标准代码；直辖市按“省级 + 市辖区”处理。</li>
+      </ul>
+      <div class="tip-box small mt12">仓库所在地反映渠道库存分布，流向地反映终端需求分布。钢材跨市、跨省销售普遍，两种口径的结果差异可能很大，上游页面固定显示当前口径。</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span>变更日志<small>地区与仓库主数据的增删改、合并、启停全部留痕</small></span></div>
+    <el-table :data="logs" size="small" border>
+      <el-table-column prop="time" label="时间" width="140" />
+      <el-table-column prop="by" label="操作人" width="90" />
+      <el-table-column prop="obj" label="对象" width="200" />
+      <el-table-column prop="what" label="变更内容" min-width="320" />
+      <el-table-column prop="impact" label="影响评估" min-width="220" />
+    </el-table>
+  </div>
+
+  <!-- 新增 / 编辑仓库 -->
+  <el-dialog v-model="whDlg" :title="wf.code ? '编辑标准仓库 · ' + wf.code : '新增标准仓库'" width="560px">
+    <el-form label-width="96px">
+      <el-form-item label="仓库名称"><el-input v-model="wf.name" placeholder="如：苏州望亭库" /></el-form-item>
+      <el-form-item label="所在地区"><el-cascader v-model="wf.region" :options="regionOpts" style="width:100%" placeholder="省 / 市 / 区县" :disabled="!!wf.code" /></el-form-item>
+      <el-form-item label="详细地址"><el-input v-model="wf.addr" placeholder="街道、门牌" /></el-form-item>
+      <el-form-item label="别名">
+        <el-tag v-for="a in wf.alias" :key="a" closable type="info" style="margin:0 6px 6px 0" @close="wf.alias.splice(wf.alias.indexOf(a), 1)">{{ a }}</el-tag>
+        <el-input v-model="wf.newAlias" size="small" style="width:150px" placeholder="输入后回车添加" @keyup.enter="addAlias" />
+      </el-form-item>
+      <el-form-item label="状态"><el-radio-group v-model="wf.status"><el-radio value="启用">启用</el-radio><el-radio value="停用">停用</el-radio></el-radio-group></el-form-item>
+    </el-form>
+    <div class="tip-box small">{{ wf.code ? '已有数据的仓库不可修改所在市（会改变历史地区口径）；确需调整请走“合并”或新建。' : '新增前请先搜索是否已存在同一仓库，避免重复建档。' }}</div>
+    <template #footer><el-button @click="whDlg = false">取消</el-button><el-button type="primary" :disabled="!wf.name || wf.region.length < 2" @click="saveWh">保存</el-button></template>
+  </el-dialog>
+
+  <!-- 合并重复仓库 -->
+  <el-dialog v-model="mergeDlg" title="合并重复仓库" width="640px">
+    <template v-if="mg.src">
+      <el-form label-width="110px">
+        <el-form-item label="被合并仓库"><b>{{ mg.src.name }}</b><span class="muted small" style="margin-left:8px">{{ mg.src.code }} · {{ mg.src.addr }}</span></el-form-item>
+        <el-form-item label="合并到">
+          <el-select v-model="mg.target" placeholder="选择同一地级市内的标准仓库" style="width:100%">
+            <el-option v-for="w in mergeTargets" :key="w.code" :label="w.name + '（' + w.code + '）'" :value="w.code" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template v-if="mg.target">
+        <div class="small muted">合并前影响评估</div>
+        <div class="impact">
+          <div><span>受影响企业数</span><b class="num">{{ mg.src.ents }} 家</b></div>
+          <div><span>企业侧映射</span><b class="num">{{ mg.src.ents + mg.src.alias.length }} 条</b></div>
+          <div><span>历史数据量</span><b class="num">{{ $fmt(mg.src.ents * 46) }} 万行</b></div>
+          <div><span>别名迁移</span><b class="num">{{ mg.src.alias.length + 1 }} 个</b></div>
+        </div>
+        <table class="plain-table">
+          <tbody>
+            <tr><td style="width:170px">地区口径是否变化</td><td><el-tag size="small" type="success">不变</el-tag>　两个仓库同属{{ mg.src.city }}，省、市层级聚合结果不受影响</td></tr>
+            <tr><td>是否触发重算</td><td>仓库级自查汇总重算；对上游的省、市层级聚合无需重算</td></tr>
+            <tr><td>企业侧可见变化</td><td>企业自查页中仓库标准名称变更，已通知相关企业</td></tr>
+          </tbody>
+        </table>
+      </template>
+      <div class="tip-box orange small mt12">仅允许同一地级市内的仓库合并。跨市合并会改变历史数据的地区归属，不提供此操作。合并后被合并仓库的名称与别名全部迁入目标仓库的别名库，操作留痕且不可撤销。</div>
+    </template>
+    <template #footer><el-button @click="mergeDlg = false">取消</el-button><el-button type="primary" :disabled="!mg.target" @click="doMerge">确认合并</el-button></template>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const PCODE = { 江苏: '320000', 浙江: '330000', 上海: '310000', 山东: '370000', 广东: '440000', 河北: '130000', 安徽: '340000', 河南: '410000', 天津: '120000', 湖北: '420000', 福建: '350000', 四川: '510000', 湖南: '430000', 陕西: '610000', 辽宁: '210000', 江西: '360000', 重庆: '500000', 甘肃: '620000' };
+  const CCODE = { 苏州市: '320500', 无锡市: '320200', 南京市: '320100', 常州市: '320400', 徐州市: '320300', 南通市: '320600', 扬州市: '321000', 连云港市: '320700', 宿迁市: '321300', 杭州市: '330100', 宁波市: '330200', 绍兴市: '330600', 温州市: '330300', 嘉兴市: '330400', 金华市: '330700', 上海市: '310100', 济南市: '370100', 青岛市: '370200', 临沂市: '371300', 潍坊市: '370700', 淄博市: '370300', 佛山市: '440600', 广州市: '440100', 东莞市: '441900', 深圳市: '440300', 唐山市: '130200', 石家庄市: '130100', 邯郸市: '130400', 合肥市: '340100', 马鞍山市: '340500', 芜湖市: '340200', 郑州市: '410100', 洛阳市: '410300', 天津市: '120100', 武汉市: '420100', 福州市: '350100', 厦门市: '350200', 成都市: '510100', 长沙市: '430100', 西安市: '610100', 沈阳市: '210100', 大连市: '210200', 南昌市: '360100', 重庆市: '500100', 兰州市: '620100' };
+  const DIST = {
+    苏州市: [['虎丘区', '320505'], ['吴中区', '320506'], ['相城区', '320507'], ['姑苏区', '320508'], ['吴江区', '320509'], ['常熟市', '320581'], ['张家港市', '320582'], ['昆山市', '320583'], ['太仓市', '320585']],
+    无锡市: [['锡山区', '320205'], ['惠山区', '320206'], ['滨湖区', '320211'], ['梁溪区', '320213'], ['新吴区', '320214'], ['江阴市', '320281'], ['宜兴市', '320282']],
+    上海市: [['黄浦区', '310101'], ['闵行区', '310112'], ['宝山区', '310113'], ['嘉定区', '310114'], ['浦东新区', '310115'], ['松江区', '310117'], ['青浦区', '310118']],
+    杭州市: [['上城区', '330102'], ['拱墅区', '330105'], ['萧山区', '330109'], ['余杭区', '330110'], ['临平区', '330113']],
+    唐山市: [['路北区', '130203'], ['丰南区', '130207'], ['丰润区', '130208'], ['曹妃甸区', '130209'], ['迁安市', '130283']],
+    佛山市: [['禅城区', '440604'], ['南海区', '440605'], ['顺德区', '440606'], ['三水区', '440607']],
+    天津市: [['东丽区', '120110'], ['北辰区', '120113'], ['滨海新区', '120116'], ['静海区', '120118']],
+  };
+  const tree = M.provinces.map((p) => {
+    const pe = Math.round(p.share * 26000);
+    return {
+      code: PCODE[p.name], name: p.name + (p.muni ? '市' : '省'), full: p.name + (p.muni ? '市' : '省'), level: 1, levelName: '省级', parent: '', ents: pe, whs: Math.round(pe / 5.6),
+      children: p.cities.map((c) => {
+        const ce = Math.round(pe * c[1] * (p.cities.length > 1 ? 1.08 : 1));
+        const ds = DIST[c[0]] || [];
+        const full = p.muni ? c[0] + '（市辖区）' : p.name + '省 · ' + c[0];
+        return {
+          code: CCODE[c[0]], name: p.muni ? '市辖区' : c[0], full, level: 2, levelName: '地级', parent: p.name + (p.muni ? '市' : '省'), ents: ce, whs: Math.round(ce / 5.6),
+          children: ds.map((d, i) => { const w = [0.22, 0.18, 0.16, 0.13, 0.1, 0.08, 0.06, 0.04, 0.03][i] || 0.03; const de = Math.round(ce * w * 1.2); return { code: d[1], name: d[0], full: full + ' · ' + d[0], level: 3, levelName: '县级', parent: c[0], ents: de, whs: Math.max(1, Math.round(de / 5.6)), city: c[0] }; }),
+        };
+      }),
+    };
+  });
+  const flat = []; tree.forEach((p) => { flat.push(p); p.children.forEach((c) => { c.prov = p.name; flat.push(c); c.children.forEach((d) => { d.prov = p.name; flat.push(d); }); }); });
+
+  const W = (code, name, prov, city, dist, addr, alias, ents, status) => ({ code, name, prov, city, dist, addr, alias, ents, status: status || '启用' });
+  const whs = [
+    W('WH-320500-001', '苏州望亭库', '江苏省', '苏州市', '相城区', '相城区望亭镇迎湖路 88 号', ['望亭库', '望亭钢材库', '苏州望亭', '望亭 1 号库', '望亭物流库', '望亭仓'], 84),
+    W('WH-320500-004', '苏州望亭物流园库', '江苏省', '苏州市', '相城区', '相城区望亭镇迎湖路 88 号东门', ['望亭物流园', '望亭园区库'], 9, '疑似重复'),
+    W('WH-320500-002', '苏州浒关钢材库', '江苏省', '苏州市', '虎丘区', '虎丘区浒墅关镇兴贤路 16 号', ['浒关库', '浒墅关库', '新区浒关', '浒关钢材市场库', '浒关仓'], 61),
+    W('WH-320500-003', '张家港金港物流 3 号库', '江苏省', '苏州市', '张家港市', '张家港市金港街道港华路 5 号', ['金港 3 号库', '张家港保税库', '港华路库'], 37),
+    W('WH-320200-001', '无锡惠山库', '江苏省', '无锡市', '惠山区', '惠山区钱桥街道盛岸西路 210 号', ['惠山库', '钱桥库', '无锡钱桥', '惠山钢材库', '盛岸库', '惠山 A 库', '钱桥钢材市场'], 126),
+    W('WH-320200-002', '无锡锡山东港库', '江苏省', '无锡市', '锡山区', '锡山区东港镇东湖塘路 36 号', ['东港库', '锡山东港', '东湖塘库', '东港钢材库'], 73),
+    W('WH-320200-003', '江阴滨江钢材库', '江苏省', '无锡市', '江阴市', '江阴市滨江西路 128 号', ['滨江库', '江阴滨江', '江阴港库'], 48),
+    W('WH-310100-001', '上海宝山库', '上海市', '上海市', '宝山区', '宝山区蕴川路 1500 号', ['宝山库', '蕴川路库', '上海宝山钢材库', '宝山 1 库', '蕴川库', '宝山仓', '月浦库', '宝山物流库'], 152),
+    W('WH-310100-002', '上海蕴川钢材库', '上海市', '上海市', '宝山区', '宝山区蕴川路 2666 号', ['蕴川钢材库', '罗泾库', '宝山罗泾', '蕴川 2 库', '罗泾钢材库'], 96),
+    W('WH-310100-003', '上海松江九亭库', '上海市', '上海市', '松江区', '松江区九亭镇久富路 300 号', ['九亭库', '松江九亭'], 34),
+    W('WH-330100-001', '杭州临平港区库', '浙江省', '杭州市', '临平区', '临平区崇贤街道运河路 9 号', ['崇贤库', '临平港库', '崇贤港', '杭州崇贤', '运河库', '崇贤钢材库'], 88),
+    W('WH-330100-002', '杭州半山钢材库', '浙江省', '杭州市', '拱墅区', '拱墅区半山街道石塘路 45 号', ['半山库', '石塘库', '杭州半山'], 42),
+    W('WH-130200-001', '唐山丰润物流园库', '河北省', '唐山市', '丰润区', '丰润区林荫南路 77 号', ['丰润库', '丰润物流园', '唐山丰润', '林荫路库'], 67),
+    W('WH-130200-002', '唐山曹妃甸港储库', '河北省', '唐山市', '曹妃甸区', '曹妃甸区通港大道 12 号', ['曹妃甸库', '港储库'], 29),
+    W('WH-440600-001', '佛山乐从钢材物流库', '广东省', '佛山市', '顺德区', '顺德区乐从镇兴乐路 168 号', ['乐从库', '乐从钢材库', '顺德乐从', '乐从一期', '乐从物流', '乐从仓', '兴乐路库', '乐从 A 区', '乐从钢材市场库'], 174),
+    W('WH-440600-002', '佛山南海里水库', '广东省', '佛山市', '南海区', '南海区里水镇和顺大道 58 号', ['里水库', '南海里水', '和顺库'], 51),
+    W('WH-120100-001', '天津北辰陆路港库', '天津市', '天津市', '北辰区', '北辰区陆路港物流园九纬路 6 号', ['北辰库', '陆路港库', '天津陆港', '北辰陆港', '九纬路库'], 92),
+  ];
+  const Q = (raw, city, ents, rec, conf) => ({ raw, city, ents, rec, conf });
+  const queue = [
+    Q('望亭库2号门', '江苏省苏州市', 12, '苏州望亭库', 0.94), Q('北辰陆港 B 区', '天津市', 6, '天津北辰陆路港库', 0.93), Q('惠山钱桥库(新)', '江苏省无锡市', 7, '无锡惠山库', 0.91),
+    Q('曹妃甸港库', '河北省唐山市', 4, '唐山曹妃甸港储库', 0.9), Q('宝山蕴川路库', '上海市', 18, '上海宝山库', 0.88), Q('乐从二期库', '广东省佛山市', 9, '佛山乐从钢材物流库', 0.84),
+    Q('崇贤库 3 号泊位', '浙江省杭州市', 11, '杭州临平港区库', 0.79), Q('自有仓（厂区）', '山东省临沂市', 3, '', 0.42),
+  ];
+
+  STP.mount({
+    data() {
+      return {
+        tree, treeKw: '', sel: flat.find((n) => n.code === '320500'),
+        whs, whKw: '', onlySel: true, queue, qSel: [],
+        whDlg: false, wf: { code: '', name: '', region: [], addr: '', alias: [], newAlias: '', status: '启用', fromQ: null },
+        mergeDlg: false, mg: { src: null, target: '' },
+        regionOpts: tree.map((p) => ({ value: p.name, label: p.name, children: p.children.map((c) => ({ value: c.name, label: c.name, children: c.children.length ? c.children.map((d) => ({ value: d.name, label: d.name })) : undefined })) })),
+        zones: [
+          { up: '东岳钢铁', name: '苏南大区', members: '苏州、无锡、常州', ok: true },
+          { up: '东岳钢铁', name: '苏中苏北大区', members: '南通、扬州、徐州、连云港、宿迁', ok: true },
+          { up: '东岳钢铁', name: '沪杭大区', members: '上海、杭州、嘉兴', ok: true },
+          { up: '金江钢铁', name: '华南一区', members: '广州、佛山', ok: true },
+          { up: '金江钢铁', name: '华南一区（含东莞）', members: '广州、佛山、东莞', ok: false, why: '与“华南一区”只相差东莞，差集不满足披露门槛' },
+          { up: '北辰钢铁', name: '京津冀大区', members: '天津、唐山、石家庄、邯郸', ok: true },
+        ],
+        logs: [
+          { time: '2026-11-23 15:40', by: '赵启明', obj: '仓库 · 无锡惠山库', what: '新增别名“钱桥钢材市场”', impact: '7 家企业的待映射数据自动回补' },
+          { time: '2026-11-20 10:12', by: '赵启明', obj: '仓库 · 上海宝山库', what: '合并“上海月浦钢材库”到“上海宝山库”（同属上海市）', impact: '23 家企业，省、市层级聚合不变' },
+          { time: '2026-11-17 09:30', by: '赵启明', obj: '仓库 · 佛山南海里水库', what: '新增标准仓库', impact: '来自仓库映射待确认队列，51 家企业' },
+          { time: '2026-11-12 14:05', by: '系统', obj: '行政区划', what: '与国家标准 2025 版比对，无新增、撤并', impact: '无' },
+          { time: '2026-11-05 11:20', by: '林若彤', obj: '仓库 · 唐山丰润物流园库', what: '地址更正：林荫路 → 林荫南路 77 号', impact: '所在市未变，不影响聚合' },
+        ],
+      };
+    },
+    computed: {
+      whRows() {
+        const s = this.sel, kw = this.whKw;
+        return this.whs.filter((w) => {
+          if (kw && (w.name + w.code + w.alias.join('')).indexOf(kw) < 0) return false;
+          if (!this.onlySel) return true;
+          if (s.level === 1) return w.prov === s.name;
+          if (s.level === 2) return w.city === (s.name === '市辖区' ? s.parent : s.name);
+          return w.dist === s.name && w.city === s.city;
+        });
+      },
+      mergeTargets() { const m = this.mg.src; return m ? this.whs.filter((w) => w.city === m.city && w.code !== m.code && w.status !== '停用') : []; },
+    },
+    watch: { treeKw(v) { this.$refs.tree.filter(v); } },
+    methods: {
+      filterNode(v, data) { return !v || data.name.indexOf(v) >= 0 || data.code.indexOf(v) >= 0; },
+      log(obj, what, impact) { this.logs.unshift({ time: '2026-11-24 14:' + (20 + this.logs.length), by: '林若彤', obj, what, impact }); },
+      openWh(row, q) {
+        if (row) this.wf = { code: row.code, name: row.name, region: [row.prov, row.city === row.prov ? '市辖区' : row.city, row.dist], addr: row.addr, alias: row.alias.slice(), newAlias: '', status: row.status === '停用' ? '停用' : '启用', fromQ: null };
+        else this.wf = { code: '', name: '', region: [], addr: '', alias: q ? [q.raw] : [], newAlias: '', status: '启用', fromQ: q || null };
+        this.whDlg = true;
+      },
+      addAlias() { const a = this.wf.newAlias.trim(); if (a && this.wf.alias.indexOf(a) < 0) this.wf.alias.push(a); this.wf.newAlias = ''; },
+      saveWh() {
+        const f = this.wf;
+        if (f.code) {
+          const w = this.whs.find((x) => x.code === f.code);
+          w.name = f.name; w.addr = f.addr; w.alias = f.alias.slice(); if (w.status !== '疑似重复' || f.status === '停用') w.status = f.status;
+          this.log('仓库 · ' + f.name, '编辑标准仓库信息与别名', '所在市未变，不影响聚合');
+          this.$demo('标准仓库已更新');
+        } else {
+          const prov = f.region[0], city = f.region[1] === '市辖区' ? prov : f.region[1];
+          const cc = CCODE[city] || '000000';
+          this.whs.unshift({ code: 'WH-' + cc + '-0' + (10 + this.whs.length), name: f.name, prov, city, dist: f.region[2] || '', addr: f.addr || '—', alias: f.alias.slice(), ents: f.fromQ ? f.fromQ.ents : 0, status: '启用' });
+          if (f.fromQ) { const i = this.queue.indexOf(f.fromQ); if (i >= 0) this.queue.splice(i, 1); }
+          this.onlySel = false;
+          this.log('仓库 · ' + f.name, '新增标准仓库', f.fromQ ? '来自仓库映射待确认队列，' + f.fromQ.ents + ' 家企业' : '新建，暂无企业使用');
+          this.$demo('标准仓库已新增，字典版本将在下次发布时下发');
+        }
+        this.whDlg = false;
+      },
+      openMerge(row) { const t = this.whs.find((w) => w.city === row.city && w.code !== row.code && w.addr.slice(0, 8) === row.addr.slice(0, 8)); this.mg = { src: row, target: row.status === '疑似重复' && t ? t.code : '' }; this.mergeDlg = true; },
+      doMerge() {
+        const s = this.mg.src, t = this.whs.find((w) => w.code === this.mg.target);
+        t.alias = t.alias.concat([s.name], s.alias); t.ents += s.ents;
+        this.whs.splice(this.whs.indexOf(s), 1);
+        this.log('仓库 · ' + t.name, '合并“' + s.name + '”到“' + t.name + '”（同属' + t.city + '）', s.ents + ' 家企业，省、市层级聚合不变');
+        this.mergeDlg = false;
+        this.$demo('已合并，别名已迁移，相关企业已通知');
+      },
+      confirmQ(rows) {
+        const list = rows.slice();
+        list.forEach((r) => { const w = this.whs.find((x) => x.name === r.rec); if (w) { w.alias.push(r.raw); w.ents += 0; } const i = this.queue.indexOf(r); if (i >= 0) this.queue.splice(i, 1); });
+        this.qSel = [];
+        this.log('仓库映射待确认队列', '确认 ' + list.length + ' 项：' + list.slice(0, 2).map((r) => r.raw + ' → ' + r.rec).join('；') + (list.length > 2 ? ' 等' : ''), '写入别名库，相关数据自动回补');
+        this.$demo('已确认 ' + list.length + ' 项仓库映射，已写入别名库并自动回补');
+      },
+    },
+  });
+})();
+</script>
+</body>
+</html>

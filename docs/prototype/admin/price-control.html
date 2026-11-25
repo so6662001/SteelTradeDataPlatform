@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>价格数据管控 · 平台运营后台 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.gate-head { display: flex; align-items: center; gap: 16px; padding: 14px 16px; border-radius: 8px; margin-bottom: 14px; }
+.gate-head.closed { background: #f4f5f7; border: 1px solid #dfe3ea; }
+.gate-head.open { background: #f0faf4; border: 1px solid #cfe9da; }
+.gate-head .big-ico { width: 52px; height: 52px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 26px; color: #fff; flex-shrink: 0; }
+.gate-head.closed .big-ico { background: #8a94a3; }
+.gate-head.open .big-ico { background: #18a058; }
+.gate-head h2 { margin: 0 0 4px; font-size: 18px; display: flex; align-items: center; gap: 10px; }
+.gate-head p { margin: 0; font-size: 13px; color: #4a5568; line-height: 1.7; }
+.outlets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+.outlets > div { border: 1px solid var(--stp-border); border-radius: 6px; padding: 10px 12px; font-size: 12px; color: var(--stp-sub); line-height: 1.6; }
+.outlets b { display: block; font-size: 13px; color: var(--stp-text); margin-bottom: 2px; }
+.step-panel { border: 1px dashed #c8d0db; border-radius: 6px; padding: 14px 16px; margin-top: 16px; background: #fafbfc; }
+.step-panel h4 { margin: 0 0 10px; font-size: 14px; }
+.file-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid #d5e4f5; background: #f1f7ff; border-radius: 4px; font-size: 13px; }
+.sec-title { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; font-size: 14px; font-weight: 600; }
+.sec-title i { width: 4px; height: 14px; border-radius: 2px; background: var(--el-color-primary); display: inline-block; }
+.sec-title small { font-weight: 400; color: var(--stp-sub); font-size: 12px; }
+.el-descriptions__label { white-space: nowrap; }
+.hidden-val { display: inline-flex; align-items: center; gap: 4px; color: #8a94a3; font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="admin" :user="me" :role="roleOf(me)" active="price-control" title="价格数据管控"
+  desc="价格与金额由下游自愿上传。上游能否看到价格聚合指标由本页的统一闸口控制，默认关闭；取得法务书面意见并经双人复核后才能开启，监管要求变化时可立即关闭。">
+  <template #actions>
+    <el-dropdown trigger="click" @command="v => me = v">
+      <el-button><el-icon><UserFilled /></el-icon>原型状态 · 当前操作人：{{ me }}（{{ roleOf(me) }}）<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+      <template #dropdown><el-dropdown-menu>
+        <el-dropdown-item v-for="s in staff" :key="s.n" :command="s.n" :disabled="s.n===me">{{ s.n }}（{{ s.r }}）</el-dropdown-item>
+      </el-dropdown-menu></template>
+    </el-dropdown>
+    <el-button type="primary" @click="$go('../upstream/dashboard.html')"><el-icon><View /></el-icon>到上游端查看效果</el-button>
+  </template>
+
+  <div class="grid c4">
+    <div class="stat">
+      <div class="label">上游价格功能闸口</div>
+      <div class="value" :style="{color: open ? '#18a058' : '#5b6778'}">{{ open ? '已开放' : '未开放' }}</div>
+      <div class="foot"><span v-if="open">{{ openInfo.t }} 开启</span><span v-else-if="flow.step===2" style="color:#409eff">开启申请待复核</span><span v-else>默认关闭，上游侧无任何价格内容</span></div>
+      <div class="ico"><el-icon><component :is="open ? 'Unlock' : 'Lock'" /></el-icon></div>
+    </div>
+    <stat-card label="已开启价格上传的下游企业" :value="6480" unit="家" icon="OfficeBuilding" tip="价格上传为企业级开关，默认关闭，仅企业管理员可开启"><span>占入驻企业 21,386 家的 <b>30.3%</b></span></stat-card>
+    <div class="stat">
+      <div class="label">平台级价格覆盖率<el-tooltip content="有价销量 ÷ 全部销量，全平台合计口径。后台只展示平台与大类级的比例，不展示单家企业的价格与销量" placement="top"><el-icon><QuestionFilled /></el-icon></el-tooltip></div>
+      <div class="value num">27.6<span class="unit">%</span></div>
+      <div class="foot"><span>较上月 <b class="up">+1.5 个百分点</b></span></div>
+      <div class="ico"><el-icon><PieChart /></el-icon></div>
+    </div>
+    <stat-card label="价格隔离待处置" :value="todoCount" unit="批" icon="Warning"><span>涉及 {{ todoEnt }} 家企业；销量照常入库</span></stat-card>
+  </div>
+
+  <!-- ① 闸口 -->
+  <div class="grid c-2-1">
+    <div class="card">
+      <div class="card-title"><span>上游价格功能闸口<small>全部上游价格功能的统一开关，开启与关闭均留痕</small></span>
+        <span class="right"><a href="../upstream/dashboard.html">到上游端查看效果 ›</a></span></div>
+
+      <div class="gate-head" :class="open ? 'open' : 'closed'">
+        <div class="big-ico"><el-icon><component :is="open ? 'Unlock' : 'Lock'" /></el-icon></div>
+        <div style="flex:1">
+          <h2>{{ open ? '已开放' : '未开放' }}<el-tag v-if="!open" type="info" size="small">默认关闭</el-tag><el-tag v-else type="success" size="small">受价格披露规则约束</el-tag></h2>
+          <p v-if="!open">关闭时，上游侧的<b>页面、导出、定时发送、数据拉取接口均不出现任何价格内容</b>：没有价格入口、没有价格指标、没有价格导出列。下游企业的价格上传与自查不受闸口影响。</p>
+          <p v-else>上游可在量价视图、看板、多维查询、导出、定时发送、数据拉取接口中看到价格聚合指标：加权均价、涨跌额与涨跌幅、价格覆盖率区间、有价企业数区间。不提供金额合计、最高最低价、价格分布。</p>
+        </div>
+        <el-button v-if="open" type="danger" @click="closeGate"><el-icon><SwitchButton /></el-icon>立即关闭</el-button>
+      </div>
+
+      <div class="outlets">
+        <div v-for="o in outlets" :key="o.t"><b><span class="dot" :class="open ? 'ok' : ''"></span>{{ o.t }}</b>{{ open ? o.on : o.off }}</div>
+      </div>
+
+      <el-descriptions v-if="open" :column="2" border size="small" class="mb16">
+        <el-descriptions-item label="开启时间"><span class="num">{{ openInfo.t }}</span></el-descriptions-item>
+        <el-descriptions-item label="法务意见文号">{{ openInfo.docNo }}</el-descriptions-item>
+        <el-descriptions-item label="申请人">{{ openInfo.applicant }}（{{ roleOf(openInfo.applicant) }}）</el-descriptions-item>
+        <el-descriptions-item label="批准人（复核人）">{{ openInfo.approver }}（{{ roleOf(openInfo.approver) }}）</el-descriptions-item>
+        <el-descriptions-item label="适用范围" :span="2">全部已付费上游企业（438 家）。上游成员首次进入价格视图须确认使用条款：不得用于与其他经营者协同定价，不得用于对经销商实施转售价格限制，不得对外传播。</el-descriptions-item>
+      </el-descriptions>
+
+      <el-steps :active="open ? 4 : flow.step" finish-status="success" align-center>
+        <el-step title="上传法务书面意见" :description="open ? openInfo.docNo : (flow.step > 0 ? flow.docNo : '由法务出具')" />
+        <el-step title="提交开启申请" :description="open ? openInfo.applicant + ' 提交' : (flow.step > 1 ? flow.applicant + ' 提交' : '填写说明并确认前置条件')" />
+        <el-step title="另一人复核" :description="open ? openInfo.approver + ' 复核通过' : (flow.step===2 ? '待复核' : '提交人不能复核自己的申请')" />
+        <el-step title="生效" :description="open ? '上游侧已开放' : '复核通过即时生效'" />
+      </el-steps>
+
+      <template v-if="!open">
+        <!-- 第 1 步 -->
+        <div v-if="flow.step===0" class="step-panel">
+          <h4>第 1 步：上传法务书面意见</h4>
+          <el-form label-width="96px" size="default">
+            <el-form-item label="书面意见" required>
+              <span v-if="flow.doc" class="file-chip"><el-icon><Document /></el-icon>{{ flow.doc }}<span class="muted small">2.4 MB</span><el-icon style="cursor:pointer" @click="flow.doc=''"><Close /></el-icon></span>
+              <el-button v-else @click="flow.doc='关于开放上游价格聚合指标的法律意见书.pdf'; $demo('原型演示：已模拟上传文件')"><el-icon><Upload /></el-icon>选择文件（PDF，须有签章）</el-button>
+            </el-form-item>
+            <el-form-item label="意见文号" required><el-input v-model="flow.docNo" style="width:260px" /></el-form-item>
+            <el-form-item label="出具人 / 日期">
+              <el-select v-model="flow.docBy" style="width:150px"><el-option label="唐蕾（法务）" value="唐蕾" /></el-select>
+              <el-date-picker v-model="flow.docDate" type="date" value-format="YYYY-MM-DD" :clearable="false" style="width:150px;margin-left:10px" />
+            </el-form-item>
+            <el-form-item label="意见结论">
+              <el-radio-group v-model="flow.concl"><el-radio value="同意开放">同意开放</el-radio><el-radio value="附条件同意">附条件同意</el-radio><el-radio value="不同意开放">不同意开放</el-radio></el-radio-group>
+            </el-form-item>
+            <el-form-item v-if="flow.concl==='附条件同意'" label="附带条件"><el-input v-model="flow.cond" type="textarea" :rows="2" /></el-form-item>
+          </el-form>
+          <div class="row" style="justify-content:flex-end">
+            <span v-if="flow.concl==='不同意开放'" class="small" style="color:#e5484d">法务意见为“不同意开放”时不能提交开启申请</span>
+            <el-button type="primary" :disabled="!flow.doc || !flow.docNo || flow.concl==='不同意开放'" @click="stepDoc">下一步：填写开启申请</el-button>
+          </div>
+        </div>
+        <!-- 第 2 步 -->
+        <div v-else-if="flow.step===1" class="step-panel">
+          <h4>第 2 步：提交开启申请</h4>
+          <el-alert v-if="flow.rejected" type="error" :closable="false" show-icon :title="'上一次申请被 ' + flow.rejected.by + ' 驳回：' + flow.rejected.why" />
+          <div class="small muted mb8">已上传：<span class="file-chip"><el-icon><Document /></el-icon>{{ flow.doc }}</span>　{{ flow.docNo }} · {{ flow.docBy }} · {{ flow.docDate }} · {{ flow.concl }}</div>
+          <el-form label-width="96px">
+            <el-form-item label="申请说明" required><el-input v-model="flow.note" type="textarea" :rows="2" placeholder="说明开启范围、时间与依据" /></el-form-item>
+            <el-form-item label="前置条件" required>
+              <el-checkbox-group v-model="flow.checks" style="display:flex;flex-direction:column;align-items:flex-start">
+                <el-checkbox v-for="(c,i) in checkList" :key="i" :value="i">{{ c }}</el-checkbox>
+              </el-checkbox-group>
+            </el-form-item>
+          </el-form>
+          <div class="row" style="justify-content:flex-end">
+            <el-button @click="flow.step=0">上一步</el-button>
+            <el-button type="primary" :disabled="!flow.note.trim() || flow.checks.length < checkList.length" @click="submitApply">提交开启申请</el-button>
+          </div>
+        </div>
+        <!-- 第 3 步 -->
+        <div v-else class="step-panel">
+          <h4>第 3 步：另一人复核<el-tag size="small" type="warning" style="margin-left:8px">待复核</el-tag></h4>
+          <el-descriptions :column="2" border size="small">
+            <el-descriptions-item label="申请人">{{ flow.applicant }}（{{ roleOf(flow.applicant) }}）</el-descriptions-item>
+            <el-descriptions-item label="申请时间"><span class="num">{{ flow.applyT }}</span></el-descriptions-item>
+            <el-descriptions-item label="法务意见">{{ flow.docNo }}（{{ flow.docBy }}，{{ flow.docDate }}）</el-descriptions-item>
+            <el-descriptions-item label="意见结论">{{ flow.concl }}</el-descriptions-item>
+            <el-descriptions-item v-if="flow.concl==='附条件同意'" label="附带条件" :span="2">{{ flow.cond }}</el-descriptions-item>
+            <el-descriptions-item label="申请说明" :span="2">{{ flow.note }}</el-descriptions-item>
+            <el-descriptions-item label="前置条件" :span="2">{{ checkList.length }} 项均已确认</el-descriptions-item>
+          </el-descriptions>
+          <div class="row between mt12">
+            <span class="small" v-if="flow.applicant===me" style="color:#b26a00"><el-icon style="vertical-align:-2px"><WarningFilled /></el-icon> 你是本申请的提交人，不能复核自己的申请。请在页面右上角切换为另一位复核人。</span>
+            <span class="small muted" v-else>当前复核人：{{ me }}（{{ roleOf(me) }}）。复核通过后闸口即时开启。</span>
+            <span>
+              <el-button v-if="flow.applicant===me" @click="withdraw">撤回申请</el-button>
+              <el-button type="danger" plain :disabled="flow.applicant===me" @click="rejectApply">驳回</el-button>
+              <el-button type="success" :disabled="flow.applicant===me" @click="approveApply"><el-icon><Check /></el-icon>复核通过并开启</el-button>
+            </span>
+          </div>
+        </div>
+      </template>
+      <div v-else class="tip-box green small mt16">
+        监管要求变化、法务复核结论变化或发现合规风险时，可点击右上方“立即关闭”。关闭属于收紧操作，<b>单人确认后即时生效</b>并通知法务与安全审计员；上游侧四个出口同步下线价格内容。再次开启须重新走完整流程。
+      </div>
+
+      <div class="tip-box orange small mt12">
+        <b>开放条件待确认（N-02）：</b>由谁出具法务书面意见、由谁批准开启尚未确定。原型暂按“法务出具书面意见 → 任一平台人员提交申请 → 另一人复核批准”演示。价格数据是否单独计价（N-04）同样待业务方确定。
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span>闸口操作记录<small>不可修改</small></span><span class="right"><a href="audit.html">审计日志 ›</a></span></div>
+      <el-timeline style="padding-left:2px;margin:0">
+        <el-timeline-item v-for="(l,i) in logs" :key="i" :timestamp="l.t" placement="top" :type="l.type" :hollow="!l.type">
+          <b>{{ l.who }}</b><span class="muted small" v-if="l.role">（{{ l.role }}）</span>
+          <div class="small" style="color:#4a5568;line-height:1.6;margin-top:2px">{{ l.act }}</div>
+        </el-timeline-item>
+      </el-timeline>
+    </div>
+  </div>
+
+  <div class="grid c2">
+    <div class="card">
+      <div class="card-title"><span>价格披露参数摘要</span><span class="right"><a href="privacy-params.html">防反推参数 ›</a></span></div>
+      <dl class="kv" style="grid-template-columns:120px 1fr">
+        <dt>最小有价企业数</dt><dd><b>k_价 = {{ $PV.kPrice }} 家</b>，不得低于 k（{{ $PV.k }} 家）</dd>
+        <dt>价格优势度</dt><dd>{{ $PV.dom1 }}% / {{ $PV.dom2 }}%，按有价销量计算</dd>
+        <dt>其他品牌构成</dt><dd>至少 {{ $PV.otherBrands }} 个品牌，单一品牌不超过 50%</dd>
+        <dt>时间粒度与延迟</dt><dd>日，T+1 <el-tag size="small" type="info">待法务意见</el-tag></dd>
+        <dt>均价取整</dt><dd>取整到 {{ $PV.roundPrice }} 元/吨，涨跌幅保留一位小数</dd>
+        <dt>覆盖率展示</dt><dd>只给区间：{{ $PV.coverBands.join('、') }}</dd>
+      </dl>
+      <div class="small muted mt8">建议默认值，示例参数，待业务方确定（N-03）。修改须在“防反推参数”页走双人复核。</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span>定期复核提醒</span><el-tag size="small" type="warning">距下次复核 {{ review.left }} 天</el-tag></div>
+      <dl class="kv" style="grid-template-columns:88px 1fr">
+        <dt>复核内容</dt><dd>价格披露参数；闸口状态；上游使用情况（价格视图访问、价格列导出、异常查询告警、使用条款确认记录）</dd>
+        <dt>复核人</dt><dd>法务（唐蕾）</dd>
+        <dt>复核周期</dt><dd>每季度 <span class="muted small">示例参数，待业务方确定</span></dd>
+        <dt>上次复核</dt><dd><span class="num">{{ review.last }}</span>　{{ review.concl }}</dd>
+        <dt>下次复核</dt><dd><b class="num">{{ review.next }}</b></dd>
+      </dl>
+      <div class="row mt12"><el-button size="small" @click="reviewDlg=true">登记复核结果</el-button><el-button size="small" @click="$demo('已向法务（唐蕾）发送复核提醒')">提醒法务</el-button></div>
+    </div>
+  </div>
+
+  <!-- ⑤ 监控 -->
+  <div class="card">
+    <div class="card-title"><span>价格上传企业数与覆盖率监控<small>只统计企业数与平台、大类级的覆盖比例，不含任何企业的价格与销量数值</small></span></div>
+    <div class="grid c-3-2" style="margin-bottom:0">
+      <div>
+        <div class="sec-title"><i></i>按大类：有价企业数与平台级价格覆盖率<small>按企业主营大类统计</small></div>
+        <ve-chart :option="catOption" height="280px"></ve-chart>
+      </div>
+      <div>
+        <div class="sec-title"><i></i>趋势<small>下游价格上传功能自 2026-06-01 上线</small></div>
+        <ve-chart :option="trendOption" height="280px"></ve-chart>
+      </div>
+    </div>
+    <el-table :data="catStats" border size="small" class="mt12" show-summary :summary-method="catSummary">
+      <el-table-column prop="name" label="主营大类" min-width="130" />
+      <el-table-column label="入驻企业数" width="120" align="right"><template #default="{row}"><span class="num">{{ $fmt(row.all) }}</span></template></el-table-column>
+      <el-table-column label="已开启价格上传" width="130" align="right"><template #default="{row}"><span class="num">{{ $fmt(row.on) }}</span></template></el-table-column>
+      <el-table-column label="开启比例" width="110" align="right"><template #default="{row}"><span class="num">{{ (row.on / row.all * 100).toFixed(1) }}%</span></template></el-table-column>
+      <el-table-column label="同意参与对上游披露" width="160" align="right"><template #default="{row}"><span class="num">{{ $fmt(row.share) }}</span></template></el-table-column>
+      <el-table-column label="平台级价格覆盖率（有价销量 ÷ 全部销量）" min-width="280"><template #default="{row}"><el-progress v-if="row.cover" :percentage="row.cover" :stroke-width="8" :format="p => p.toFixed(1) + '%'" /><span v-else class="muted">不适用（跨大类）</span></template></el-table-column>
+      <el-table-column label="较上月" width="110" align="right"><template #default="{row}"><span v-if="row.d" class="num up">+{{ row.d.toFixed(1) }} 个百分点</span><span v-else class="muted">—</span></template></el-table-column>
+    </el-table>
+    <div class="small muted mt8">企业可选择价格“参与对上游的聚合披露”或“仅用于本企业自查与行业对标”（N-06，待确认）；只有前者计入上游价格聚合。价格为自愿上传，不计入质量评分。</div>
+  </div>
+
+  <!-- ④ 隔离处置 -->
+  <div class="card">
+    <div class="card-title"><span>价格隔离数据处置<small>价格校验未通过的记录，按“企业 + 品名 + 原因”成批处置</small></span>
+      <span class="right">
+        <el-select v-model="qf.reason" clearable placeholder="全部隔离原因" style="width:260px"><el-option v-for="r in reasons" :key="r" :label="r" :value="r" /></el-select>
+        <el-select v-model="qf.st" clearable placeholder="全部状态" style="width:170px"><el-option v-for="s in qStatus" :key="s" :label="s" :value="s" /></el-select>
+      </span></div>
+    <el-alert type="info" show-icon :closable="false">
+      <template #title><b>只隔离价格字段，该行销量照常入库</b>并参与量指标聚合；被隔离的价格不参与价格聚合，企业确认“属实”或“更正”后释放。本页<b>不显示具体价格数值</b>：平台人员默认不可查看下游企业上传明细，确需查看须发起明细访问工单，经企业授权后限时查看。</template>
+    </el-alert>
+    <el-table :data="qRows" border size="small">
+      <template #empty><el-empty description="没有符合条件的隔离数据" :image-size="70" /></template>
+      <el-table-column label="企业" min-width="180"><template #default="{row}">{{ row.ent }}<div class="small muted">{{ row.city }} · {{ row.src }}</div></template></el-table-column>
+      <el-table-column prop="prod" label="品名" width="100" />
+      <el-table-column label="隔离原因" min-width="220"><template #default="{row}"><span class="dot" :class="row.lv"></span>{{ row.reason }}</template></el-table-column>
+      <el-table-column label="业务日期" width="106"><template #default="{row}"><span class="num">{{ row.date }}</span></template></el-table-column>
+      <el-table-column label="隔离条数" width="86" align="right"><template #default="{row}"><span class="num">{{ row.n }}</span></template></el-table-column>
+      <el-table-column label="价格数值" width="90" align="center"><template #default><el-tooltip content="平台人员默认不可查看下游企业上传明细。需发起明细访问工单，经企业授权后限时查看" placement="top"><span class="hidden-val"><el-icon><Lock /></el-icon>不显示</span></el-tooltip></template></el-table-column>
+      <el-table-column label="状态" width="160"><template #default="{row}"><el-tag size="small" :type="stType(row.st)" disable-transitions>{{ row.st }}</el-tag><div v-if="row.wo" class="small" style="color:#409eff">{{ row.wo }}</div></template></el-table-column>
+      <el-table-column label="操作" width="160" align="center">
+        <template #default="{row}">
+          <el-button link type="primary" :disabled="row.st==='已释放' || row.st==='已丢弃价格字段'" @click="openDispose(row)">处置</el-button>
+          <el-button link type="primary" :disabled="!!row.wo" @click="openWo(row)">申请查看明细</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+    <div class="tbl-foot"><span>共 {{ qRows.length }} 批，隔离价格字段 {{ $fmt(qRows.reduce((a, r) => a + r.n, 0)) }} 条　|　近 7 日价格字段隔离率 0.42%（隔离条数 ÷ 带价格的入库条数）</span><span>暂估价、送到价按标识分流，不进入默认口径，不属于隔离</span></div>
+  </div>
+
+  <!-- ③ 合理价格区间 -->
+  <div class="card">
+    <div class="card-title"><span>分品名合理价格区间<small>用于价格校验：单价超出区间的记录，价格字段进入隔离区。含税、自提、非暂估口径</small></span>
+      <span class="right">
+        <el-select v-model="rf" clearable placeholder="全部大类" style="width:150px"><el-option v-for="c in catNames" :key="c" :label="c" :value="c" /></el-select>
+        <el-button @click="shiftDlg=true"><el-icon><Sort /></el-icon>按行情整体平移</el-button>
+      </span></div>
+    <div class="row mb12 small">
+      <span class="muted">其他价格校验阈值：</span>
+      <span class="code">金额与“单价 × 重量”偏差容差 ±0.5%</span>
+      <span class="code">偏离本企业近 30 日均价 ±15%</span>
+      <span class="code">未单独配置的品名继承所属大类规则</span>
+      <span class="muted">示例参数，待业务方确定</span>
+    </div>
+    <el-table :data="rangeRows" border size="small" max-height="420">
+      <el-table-column prop="cat" label="大类" width="120" />
+      <el-table-column prop="name" label="品名" min-width="140" />
+      <el-table-column label="下限" width="110" align="right"><template #default="{row}"><span class="num">{{ $fmt(row.lo) }}</span></template></el-table-column>
+      <el-table-column label="上限" width="110" align="right"><template #default="{row}"><span class="num">{{ $fmt(row.hi) }}</span></template></el-table-column>
+      <el-table-column label="单位" width="80" align="center"><template #default>元/吨</template></el-table-column>
+      <el-table-column label="近 7 日越界隔离条数" width="160" align="right"><template #default="{row}"><span class="num">{{ row.out }}</span></template></el-table-column>
+      <el-table-column label="最近调整时间" width="160"><template #default="{row}"><span class="num">{{ row.t }}</span></template></el-table-column>
+      <el-table-column prop="by" label="调整人" width="100" />
+      <el-table-column label="操作" width="80" align="center"><template #default="{row}"><el-button link type="primary" @click="openRange(row)">编辑</el-button></template></el-table-column>
+    </el-table>
+    <div class="small muted mt8">区间随行情调整：行情单边波动较大时应及时平移，避免正常成交价被大量隔离。区间只用于入库校验，不对上游、下游展示。调整即时生效并写入操作日志。</div>
+  </div>
+
+  <!-- 弹窗：编辑区间 -->
+  <el-dialog v-model="rangeDlg.show" :title="'编辑合理价格区间：' + rangeDlg.name" width="500px">
+    <el-form label-width="96px">
+      <el-form-item label="下限"><el-input-number v-model="rangeDlg.lo" :step="10" :min="0" style="width:170px" /><span style="margin-left:8px">元/吨</span></el-form-item>
+      <el-form-item label="上限"><el-input-number v-model="rangeDlg.hi" :step="10" :min="0" style="width:170px" /><span style="margin-left:8px">元/吨</span></el-form-item>
+      <el-form-item label="调整原因"><el-input v-model="rangeDlg.why" placeholder="如：近两周行情下行约 120 元/吨" /></el-form-item>
+    </el-form>
+    <div class="tip-box small">只影响调整之后入库的数据；已隔离的记录不会自动释放，可在“价格隔离数据处置”中按批处理。</div>
+    <template #footer><el-button @click="rangeDlg.show=false">取消</el-button><el-button type="primary" @click="saveRange">保存</el-button></template>
+  </el-dialog>
+
+  <!-- 弹窗：整体平移 -->
+  <el-dialog v-model="shiftDlg" title="按行情整体平移价格区间" width="500px">
+    <el-form label-width="96px">
+      <el-form-item label="适用大类"><el-select v-model="shift.cat" style="width:220px"><el-option v-for="c in catNames" :key="c" :label="c" :value="c" /></el-select></el-form-item>
+      <el-form-item label="平移幅度"><el-input-number v-model="shift.d" :step="10" style="width:170px" /><span style="margin-left:8px">元/吨（负数为下移）</span></el-form-item>
+    </el-form>
+    <div class="tip-box small">所选大类下全部品名的上下限同时平移，区间宽度不变。</div>
+    <template #footer><el-button @click="shiftDlg=false">取消</el-button><el-button type="primary" :disabled="!shift.d" @click="doShift">应用</el-button></template>
+  </el-dialog>
+
+  <!-- 弹窗：隔离处置 -->
+  <el-dialog v-model="disp.show" title="处置价格隔离数据" width="560px">
+    <template v-if="disp.row">
+      <el-descriptions :column="1" border size="small" class="mb12">
+        <el-descriptions-item label="企业">{{ disp.row.ent }}</el-descriptions-item>
+        <el-descriptions-item label="品名 / 日期">{{ disp.row.prod }} · {{ disp.row.date }} · {{ disp.row.n }} 条</el-descriptions-item>
+        <el-descriptions-item label="隔离原因">{{ disp.row.reason }}</el-descriptions-item>
+        <el-descriptions-item label="当前状态">{{ disp.row.st }}</el-descriptions-item>
+      </el-descriptions>
+      <el-form label-width="84px">
+        <el-form-item label="处置方式">
+          <el-radio-group v-model="disp.act" style="display:flex;flex-direction:column;align-items:flex-start">
+            <el-radio value="通知企业确认">通知企业确认（企业在自查页选择“属实”或“更正”）</el-radio>
+            <el-radio value="释放" :disabled="disp.row.st==='待企业确认'">释放价格字段，进入价格聚合（须企业已更正或已确认属实）</el-radio>
+            <el-radio value="丢弃">丢弃价格字段，保留销量（不可恢复，企业可重新上传）</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="备注"><el-input v-model="disp.note" placeholder="处置说明（写入操作日志，企业侧可见）" /></el-form-item>
+      </el-form>
+      <div class="tip-box small">无论选择哪种方式，该批记录的销量都已正常入库并参与量指标聚合。处置过程中本页不展示价格数值。</div>
+    </template>
+    <template #footer><el-button @click="disp.show=false">取消</el-button><el-button type="primary" @click="doDispose">确认处置</el-button></template>
+  </el-dialog>
+
+  <!-- 弹窗：明细访问工单 -->
+  <el-dialog v-model="wo.show" title="发起明细访问工单" width="560px">
+    <template v-if="wo.row">
+      <el-alert type="warning" show-icon :closable="false" title="平台人员默认不可查看下游企业上传明细。工单须经该企业管理员授权后限时开放，全程留痕并在企业侧可见。" />
+      <el-form label-width="96px">
+        <el-form-item label="目标企业">{{ wo.row.ent }}</el-form-item>
+        <el-form-item label="查看范围">{{ wo.row.date }} · {{ wo.row.prod }} · 被隔离的 {{ wo.row.n }} 条记录的价格相关字段</el-form-item>
+        <el-form-item label="申请人">{{ me }}（{{ roleOf(me) }}）</el-form-item>
+        <el-form-item label="事由" required><el-input v-model="wo.why" type="textarea" :rows="2" /></el-form-item>
+        <el-form-item label="申请时限"><el-radio-group v-model="wo.hours"><el-radio :value="2">2 小时</el-radio><el-radio :value="4">4 小时</el-radio><el-radio :value="8">8 小时</el-radio><el-radio :value="24">24 小时</el-radio></el-radio-group></el-form-item>
+      </el-form>
+    </template>
+    <template #footer><el-button @click="wo.show=false">取消</el-button><el-button type="primary" :disabled="!wo.why.trim()" @click="submitWo">提交工单</el-button></template>
+  </el-dialog>
+
+  <!-- 弹窗：登记复核 -->
+  <el-dialog v-model="reviewDlg" title="登记定期复核结果" width="520px">
+    <el-form label-width="96px">
+      <el-form-item label="复核人">{{ me }}（{{ roleOf(me) }}）<span v-if="me!=='唐蕾'" class="small" style="color:#b26a00;margin-left:8px">定期复核应由法务登记，请切换操作人</span></el-form-item>
+      <el-form-item label="复核结论"><el-radio-group v-model="reviewForm.concl"><el-radio value="维持现状">维持现状</el-radio><el-radio value="建议调整披露参数">建议调整披露参数</el-radio><el-radio value="建议关闭闸口">建议关闭闸口</el-radio></el-radio-group></el-form-item>
+      <el-form-item label="说明"><el-input v-model="reviewForm.note" type="textarea" :rows="2" /></el-form-item>
+    </el-form>
+    <template #footer><el-button @click="reviewDlg=false">取消</el-button><el-button type="primary" :disabled="me!=='唐蕾'" @click="saveReview">登记</el-button></template>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const STAFF = [{ n: '林若彤', r: '运营主管' }, { n: '吴靖', r: '安全审计员' }, { n: '唐蕾', r: '法务' }, { n: '孙雅婷', r: '数据质量专员' }];
+  let tick = 0;
+  const nowStr = () => { const m = 32 + (tick++) * 4; return '2026-11-24 ' + (14 + Math.floor(m / 60)) + ':' + STP.pad(m % 60); };
+  const REASONS = ['金额与“单价 × 重量”偏差超出容差', '单价超出该品名合理区间', '偏离本企业近期均价超过阈值', '口径字段不完整（含税、价格条件或计重方式缺失）'];
+  const Q_ST = ['待企业确认', '企业已更正，待释放', '企业确认属实，待复核', '已释放', '已丢弃价格字段'];
+  const ents = M.enterprises(9, 31);
+  const QDEF = [[0, '螺纹钢', 1, '2026-11-23', 42, 0], [1, '热轧卷板', 1, '2026-11-22', 18, 0, { ent: '无锡荣昌实业有限公司', city: '江苏无锡市', src: '单据行级上传', wo: 'WO-20261124-001 开放中，至 15:30' }], [2, '镀锌板卷', 2, '2026-11-22', 9, 2], [3, '螺纹钢', 3, '2026-11-22', 126, 0], [4, '无缝管', 1, '2026-11-21', 7, 1],
+    [5, 'H 型钢', 0, '2026-11-21', 23, 1], [6, '盘螺', 2, '2026-11-20', 31, 2], [7, '不锈钢冷轧卷板', 1, '2026-11-20', 4, 3], [8, '普碳中厚板', 3, '2026-11-19', 58, 4]];
+  const CAT_STATS = [
+    { name: '建筑钢材', all: 7340, on: 2410, share: 2230, cover: 34.2, d: 1.8 }, { name: '热轧板卷', all: 3920, on: 1280, share: 1180, cover: 31.5, d: 1.6 }, { name: '中厚板', all: 2060, on: 620, share: 566, cover: 26.8, d: 1.4 },
+    { name: '冷轧及涂镀', all: 1880, on: 540, share: 490, cover: 24.1, d: 1.2 }, { name: '管材', all: 1790, on: 470, share: 424, cover: 19.6, d: 1.1 }, { name: '型钢', all: 1640, on: 430, share: 392, cover: 21.3, d: 0.9 },
+    { name: '优特钢', all: 1180, on: 290, share: 262, cover: 15.2, d: 0.8 }, { name: '不锈钢', all: 620, on: 140, share: 124, cover: 11.8, d: 0.6 }, { name: '综合', all: 956, on: 300, share: 262, cover: 0, d: 0 }];
+  const OPEN_DEFAULT = { t: '2026-11-24 11:30', docNo: '法务意见〔2026〕第 037 号', applicant: '林若彤', approver: '吴靖' };
+
+  STP.mount({
+    data() {
+      const logs = [
+        { t: '2026-11-10 15:30', who: '唐蕾', role: '法务', act: '完成季度定期复核：披露参数与闸口状态无需调整；开放上游价格功能的书面意见出具中。', type: 'primary' },
+        { t: '2026-10-21 00:00', who: '系统', role: '', act: '价格披露参数 k_价由 6 家调整为 8 家生效（吴靖提交，林若彤复核）。' },
+        { t: '2026-09-01 10:00', who: '林若彤', role: '运营主管', act: '上游价格聚合指标功能建成（量价视图、导出列、接口字段），闸口保持关闭。' },
+        { t: '2026-06-01 09:00', who: '系统', role: '', act: '下游价格上传功能上线；上游价格功能闸口创建，默认关闭。' }];
+      if (STP.state.gate === 'open') {
+        logs.unshift({ t: '2026-11-24 10:05', who: '林若彤', role: '运营主管', act: '上传法务书面意见（' + OPEN_DEFAULT.docNo + '），提交开启申请。', type: 'primary' });
+        logs.unshift({ t: OPEN_DEFAULT.t, who: '吴靖', role: '安全审计员', act: '复核通过，闸口开启。上游侧价格功能对全部已付费上游开放。', type: 'success' });
+      }
+      return {
+        staff: STAFF, me: '林若彤', selfChange: false,
+        flow: { step: 0, doc: '', docNo: '法务意见〔2026〕第 037 号', docBy: '唐蕾', docDate: '2026-11-20', concl: '附条件同意', cond: '价格最细时间粒度与延迟按法务意见执行；每季度复核一次披露参数与使用情况。', note: '', checks: [], applicant: '', applyT: '', rejected: null },
+        openInfo: Object.assign({}, OPEN_DEFAULT), logs,
+        checkList: [
+          '价格披露参数已按法务意见配置，并经双人复核生效',
+          '反推测试用例集中的价格类与闸口类用例全部通过',
+          '上游“价格视图使用条款”首次进入确认已启用',
+          '已知悉闸口开启后可随时立即关闭，关闭后上游侧不再出现任何价格内容'],
+        outlets: [
+          { t: '页面', off: '量价视图入口隐藏；看板、多维查询无价格指标', on: '量价视图、看板与多维查询中的价格指标' },
+          { t: '导出', off: '导出文件不含任何价格列', on: '导出文件含价格列，与页面完全一致' },
+          { t: '定时发送', off: '定时邮件不含价格内容', on: '定时邮件含价格内容，与页面完全一致' },
+          { t: '数据拉取接口', off: '接口不返回任何价格字段', on: '接口返回价格字段，同样经聚合引擎判定' }],
+        review: { last: '2026-11-10', concl: '维持现状', next: '2027-02-10', left: 78 }, reviewDlg: false, reviewForm: { concl: '维持现状', note: '' },
+        reasons: REASONS, qStatus: Q_ST, qf: { reason: '', st: '' },
+        quarantine: QDEF.map((a) => Object.assign({ ent: ents[a[0]].name, city: ents[a[0]].prov + ents[a[0]].city, src: ents[a[0]].grain + '上传', prod: a[1], reason: REASONS[a[2]], lv: a[2] === 1 ? 'err' : 'warn', date: a[3], n: a[4], st: Q_ST[a[5]], wo: '' }, a[6] || {})),
+        disp: { show: false, row: null, act: '通知企业确认', note: '' }, wo: { show: false, row: null, why: '', hours: 4 },
+        catNames: M.categories.map((c) => c.name), rf: '',
+        ranges: [].concat(...M.categories.map((c, ci) => c.products.map((p, pi) => ({ cat: c.name, name: p.name, lo: Math.round(p.price * 0.82 / 10) * 10, hi: Math.round(p.price * 1.18 / 10) * 10, out: (M.hash(p.name) % 60) + (ci < 2 ? 40 : 3), t: p.name === '低合金中厚板' ? '2026-11-19 14:20' : ['2026-11-18 09:40', '2026-11-04 10:15', '2026-10-21 14:30'][(ci + pi) % 3], by: (ci + pi) % 2 ? '赵启明' : '孙雅婷' })))),
+        rangeDlg: { show: false, row: null, name: '', lo: 0, hi: 0, why: '' }, shiftDlg: false, shift: { cat: '建筑钢材', d: -50 },
+        catStats: CAT_STATS,
+      };
+    },
+    watch: {
+      /* 闸口状态被本页流程以外的途径改变时（如上游端顶栏的原型开关），补齐操作记录 */
+      open(v) {
+        if (this.selfChange) { this.selfChange = false; return; }
+        const t = nowStr();
+        if (v) { this.openInfo = Object.assign({}, OPEN_DEFAULT, { t }); this.logs.unshift({ t, who: OPEN_DEFAULT.approver, role: '安全审计员', act: '复核通过，闸口开启。上游侧价格功能对全部已付费上游开放。', type: 'success' }); }
+        else this.logs.unshift({ t, who: this.me, role: this.roleOf(this.me), act: '立即关闭闸口。已通知法务与安全审计员。', type: 'danger' });
+      },
+    },
+    computed: {
+      open() { return this.$state.gate === 'open'; },
+      qRows() { return this.quarantine.filter((r) => (!this.qf.reason || r.reason === this.qf.reason) && (!this.qf.st || r.st === this.qf.st)); },
+      todoCount() { return this.quarantine.filter((r) => r.st !== '已释放' && r.st !== '已丢弃价格字段').length; },
+      todoEnt() { return new Set(this.quarantine.filter((r) => r.st !== '已释放' && r.st !== '已丢弃价格字段').map((r) => r.ent)).size; },
+      rangeRows() { return this.ranges.filter((r) => !this.rf || r.cat === this.rf); },
+      catOption() {
+        const rows = CAT_STATS.filter((c) => c.cover);
+        const o = STP.chart.line({ x: rows.map((c) => c.name), yName: '企业数（家）', y2: '覆盖率', grid: { top: 58 }, series: [
+          { name: '已开启价格上传企业数', type: 'bar', data: rows.map((c) => c.on), unit: '家', barMaxWidth: 26, itemStyle: { borderRadius: [3, 3, 0, 0] } },
+          { name: '平台级价格覆盖率', data: rows.map((c) => c.cover), yAxisIndex: 1, unit: '%', color: '#f7b500', showSymbol: true, smooth: false }] });
+        o.xAxis.axisLabel = { color: '#6b7787', interval: 0 };
+        o.yAxis.forEach((y) => { y.scale = false; }); o.yAxis[1].max = 50; o.yAxis[1].axisLabel = { color: '#6b7787', formatter: '{value}%' };
+        return o;
+      },
+      trendOption() {
+        const o = STP.chart.line({ x: ['2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11'], yName: '企业数（家）', y2: '覆盖率', grid: { top: 58 }, series: [
+          { name: '已开启价格上传企业数', data: [1860, 2940, 3910, 4850, 5730, 6480], unit: '家', areaStyle: { opacity: 0.08 } },
+          { name: '平台级价格覆盖率', data: [9.6, 14.8, 19.3, 23.2, 26.1, 27.6], yAxisIndex: 1, unit: '%', color: '#f7b500' }] });
+        o.yAxis.forEach((y) => { y.scale = false; }); o.yAxis[1].max = 40; o.yAxis[1].axisLabel = { color: '#6b7787', formatter: '{value}%' };
+        return o;
+      },
+    },
+    methods: {
+      roleOf(n) { const s = STAFF.find((x) => x.n === n); return s ? s.r : ''; },
+      log(act, type) { this.logs.unshift({ t: nowStr(), who: this.me, role: this.roleOf(this.me), act, type }); },
+      stepDoc() { this.flow.step = 1; this.log('上传法务书面意见：' + this.flow.docNo + '（' + this.flow.docBy + '出具，结论：' + this.flow.concl + '）。', 'primary'); },
+      submitApply() {
+        Object.assign(this.flow, { step: 2, applicant: this.me, applyT: nowStr(), rejected: null });
+        this.logs.unshift({ t: this.flow.applyT, who: this.me, role: this.roleOf(this.me), act: '提交开启申请，等待另一人复核。', type: 'primary' });
+        this.$demo('开启申请已提交。须由另一位平台人员复核，提交人不能复核自己的申请。');
+      },
+      withdraw() { this.flow.step = 1; this.log('撤回开启申请。'); this.$demo('已撤回申请'); },
+      rejectApply() {
+        if (this.flow.applicant === this.me) return;
+        ElementPlus.ElMessageBox.prompt('请填写驳回意见（写入闸口操作记录）', '驳回开启申请', { confirmButtonText: '确认驳回', cancelButtonText: '取消', inputValidator: (v) => !!(v && v.trim()) || '请填写驳回意见' }).then(({ value }) => {
+          this.flow.step = 1; this.flow.rejected = { by: this.me, why: value };
+          this.log('驳回开启申请：' + value, 'danger');
+          this.$demo('已驳回，闸口保持关闭');
+        }).catch(() => {});
+      },
+      approveApply() {
+        if (this.flow.applicant === this.me) return this.$info('提交人不能复核自己的申请');
+        ElementPlus.ElMessageBox.confirm('复核通过后，上游价格功能将立即对全部已付费上游开放（页面、导出、定时发送、数据拉取接口）。确认开启？', '复核通过并开启闸口', { type: 'warning', confirmButtonText: '确认开启', cancelButtonText: '取消' }).then(() => {
+          const t = nowStr();
+          this.openInfo = { t, docNo: this.flow.docNo, applicant: this.flow.applicant, approver: this.me };
+          this.logs.unshift({ t, who: this.me, role: this.roleOf(this.me), act: '复核通过，闸口开启。上游侧价格功能对全部已付费上游开放。', type: 'success' });
+          this.selfChange = true; this.$setState('gate', 'open');
+          this.$demo('闸口已开启。可到上游端查看量价视图与价格指标。');
+        }).catch(() => {});
+      },
+      closeGate() {
+        ElementPlus.ElMessageBox.prompt('关闭后即时生效：上游侧页面、导出、定时发送、数据拉取接口均不再出现任何价格内容。请填写关闭原因。', '立即关闭上游价格功能', { type: 'warning', confirmButtonText: '立即关闭', cancelButtonText: '取消', inputPlaceholder: '如：监管要求变化 / 法务复核建议关闭', inputValidator: (v) => !!(v && v.trim()) || '请填写关闭原因' }).then(({ value }) => {
+          this.log('立即关闭闸口，原因：' + value + '。已通知法务与安全审计员。', 'danger');
+          this.selfChange = true; this.$setState('gate', 'closed');
+          Object.assign(this.flow, { step: 0, doc: '', note: '', checks: [], applicant: '', applyT: '', rejected: null });
+          this.$demo('闸口已关闭，上游侧不再出现任何价格内容');
+        }).catch(() => {});
+      },
+      saveReview() {
+        this.review = { last: M.TODAY, concl: this.reviewForm.concl, next: '2027-02-24', left: 92 };
+        this.log('登记定期复核结果：' + this.reviewForm.concl + (this.reviewForm.note ? '。' + this.reviewForm.note : '。'), 'primary');
+        this.reviewDlg = false; this.$demo('复核结果已登记');
+      },
+      stType(s) { return { 待企业确认: 'warning', '企业已更正，待释放': 'primary', '企业确认属实，待复核': 'primary', 已释放: 'success', 已丢弃价格字段: 'info' }[s]; },
+      openDispose(row) { this.disp = { show: true, row, act: row.st === '待企业确认' ? '通知企业确认' : '释放', note: '' }; },
+      doDispose() {
+        const r = this.disp.row, a = this.disp.act;
+        if (a === '释放') r.st = '已释放'; else if (a === '丢弃') r.st = '已丢弃价格字段'; else r.st = '待企业确认';
+        this.disp.show = false;
+        this.$demo(a === '通知企业确认' ? '已通知企业管理员与数据管理员在自查页确认' : a === '释放' ? '价格字段已释放，将在下一批次进入价格聚合' : '价格字段已丢弃，销量保留');
+      },
+      openWo(row) { this.wo = { show: true, row, why: '核查“' + row.reason + '”是否由接口字段映射错误导致', hours: 4 }; },
+      submitWo() { this.wo.row.wo = '明细访问工单待企业授权'; this.wo.show = false; this.$demo('工单已提交，待企业管理员授权。可在“审计日志 → 平台人员明细访问工单”跟踪。'); },
+      openRange(row) { this.rangeDlg = { show: true, row, name: row.name, lo: row.lo, hi: row.hi, why: '' }; },
+      saveRange() {
+        const d = this.rangeDlg;
+        if (!(d.lo < d.hi)) return ElementPlus.ElMessage({ message: '下限须小于上限', type: 'warning' });
+        Object.assign(d.row, { lo: d.lo, hi: d.hi, t: nowStr(), by: this.me });
+        d.show = false; this.$demo('价格区间已更新，对之后入库的数据生效');
+      },
+      doShift() {
+        const t = nowStr();
+        this.ranges.filter((r) => r.cat === this.shift.cat).forEach((r) => { r.lo += this.shift.d; r.hi += this.shift.d; r.t = t; r.by = this.me; });
+        this.shiftDlg = false; this.rf = this.shift.cat;
+        this.$demo(this.shift.cat + '下全部品名的价格区间已平移 ' + (this.shift.d > 0 ? '+' : '') + this.shift.d + ' 元/吨');
+      },
+      catSummary({ columns }) {
+        const sum = (k) => CAT_STATS.reduce((a, c) => a + c[k], 0);
+        return columns.map((c, i) => (i === 0 ? '合计' : i === 1 ? STP.fmt(sum('all')) : i === 2 ? STP.fmt(sum('on')) : i === 3 ? (sum('on') / sum('all') * 100).toFixed(1) + '%' : i === 4 ? STP.fmt(sum('share')) : i === 5 ? '全平台 27.6%' : i === 6 ? '+1.5 个百分点' : ''));
+      },
+    },
+  });
+})();
+</script>
+</body>
+</html>

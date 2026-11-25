@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>订单与计费 · 平台运营后台 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.el-descriptions__label { white-space: nowrap; }
+.sec-title { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; font-size: 14px; font-weight: 600; }
+.sec-title i { width: 4px; height: 14px; border-radius: 2px; background: var(--el-color-primary); display: inline-block; }
+.sec-title small { font-weight: 400; color: var(--stp-sub); font-size: 12px; }
+.sec-title .sp { flex: 1; }
+.sec-title.mt16 { margin-top: 18px; }
+.demo-tag { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 11px; line-height: 18px; background: #fff8eb; color: #9a6400; border: 1px solid #f3dfb8; font-weight: 400; }
+.filter-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.calc { border: 1px solid var(--stp-border); border-radius: 6px; padding: 14px 16px; background: #fafbfc; }
+.calc .line { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13px; }
+.calc .line.sum { border-top: 1px dashed #c8d0db; margin-top: 6px; padding-top: 10px; font-weight: 600; }
+.formula { font-family: "SFMono-Regular", Consolas, Menlo, monospace; font-size: 12px; background: #f4f6f8; border: 1px solid var(--stp-border); border-radius: 4px; padding: 8px 10px; color: #3d4b5c; line-height: 1.7; }
+.match-ok { color: #18a058; } .match-bad { color: #e5484d; } .match-wait { color: #b26a00; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="admin" :user="me" :role="roleOf(me)" active="billing" title="订单与计费"
+  desc="只向上游收费，按数据池内下游企业数（名额）计费，订阅制、年付为主。本页处理订单查询、对公到账核销、退款审核、发票，并维护商品与定价；定价修改须经双人复核。">
+  <template #actions>
+    <el-dropdown trigger="click" @command="v => me = v">
+      <el-button><el-icon><UserFilled /></el-icon>原型状态 · 当前操作人：{{ me }}（{{ roleOf(me) }}）<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+      <template #dropdown><el-dropdown-menu>
+        <el-dropdown-item v-for="s in staff" :key="s.n" :command="s.n" :disabled="s.n===me">{{ s.n }}（{{ s.r }}）</el-dropdown-item>
+      </el-dropdown-menu></template>
+    </el-dropdown>
+    <el-button @click="$demo('2026-11 月账单导出任务已提交')"><el-icon><Download /></el-icon>导出月账单</el-button>
+  </template>
+
+  <div class="grid c5">
+    <stat-card label="本月新签订单金额" :value="1267.4" :d="1" unit="万元" icon="Tickets" :mom="8.5"><span>58 笔（含待支付）</span></stat-card>
+    <stat-card label="在订名额" :value="86400" unit="个" icon="Coin"><span>付费上游 438 家</span></stat-card>
+    <div class="stat" style="cursor:pointer" @click="tab='recon'">
+      <div class="label">对公转账待核销</div><div class="value num">{{ recons.length }}<span class="unit">笔</span></div>
+      <div class="foot"><span>合计 {{ $fmt(recons.reduce((a, r) => a + r.amount, 0)) }} 元</span></div>
+      <div class="ico"><el-icon><Stamp /></el-icon></div>
+    </div>
+    <div class="stat" style="cursor:pointer" @click="tab='refund'">
+      <div class="label">待处理退款</div><div class="value num">{{ refunds.filter(r => r.st==='待审核').length }}<span class="unit">笔</span></div>
+      <div class="foot"><span>退款须同步冲正已计提分成</span></div>
+      <div class="ico"><el-icon><RefreshLeft /></el-icon></div>
+    </div>
+    <div class="stat" style="cursor:pointer" @click="tab='invoice'">
+      <div class="label">待开发票</div><div class="value num">{{ invoices.filter(r => r.st==='待开具').length }}<span class="unit">张</span></div>
+      <div class="foot"><span>增值税专用发票为主</span></div>
+      <div class="ico"><el-icon><Document /></el-icon></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <el-tabs v-model="tab">
+      <!-- ============ 订单查询 ============ -->
+      <el-tab-pane label="订单查询" name="orders">
+        <div class="filter-bar">
+          <el-input v-model="of.kw" placeholder="订单号 / 购买主体" clearable style="width:240px"><template #prefix><el-icon><Search /></el-icon></template></el-input>
+          <el-select v-model="of.prod" clearable placeholder="全部商品" style="width:150px"><el-option v-for="p in ['单选订阅','名额包','周期内加购']" :key="p" :label="p" :value="p" /></el-select>
+          <el-select v-model="of.st" clearable placeholder="全部状态" style="width:160px"><el-option v-for="s in orderStatus" :key="s" :label="s" :value="s" /></el-select>
+          <el-select v-model="of.pay" clearable placeholder="全部支付方式" style="width:150px"><el-option label="对公转账" value="对公转账" /><el-option label="在线支付" value="在线支付" /></el-select>
+          <el-button @click="of = { kw: '', prod: '', st: '', pay: '' }">重置</el-button>
+          <span style="flex:1"></span>
+          <span class="small muted">购买主体按集团归并；每个购买主体同一时间只有一个生效数据池</span>
+        </div>
+        <el-table :data="orderRows" border size="small">
+          <template #empty><el-empty description="没有符合条件的订单" :image-size="70" /></template>
+          <el-table-column label="订单号" width="162"><template #default="{row}"><a href="javascript:;" @click="openOrder(row)" class="num">{{ row.no }}</a></template></el-table-column>
+          <el-table-column prop="buyer" label="购买主体" min-width="190" />
+          <el-table-column prop="prod" label="商品" width="100" />
+          <el-table-column label="名额数" width="72" align="right"><template #default="{row}"><span class="num">{{ $fmt(row.qty) }}</span></template></el-table-column>
+          <el-table-column label="周期" width="196"><template #default="{row}"><span class="num">{{ row.from }} 至 {{ row.to }}</span><div class="small muted">{{ row.cycle }}</div></template></el-table-column>
+          <el-table-column label="金额（元）" width="112" align="right"><template #default="{row}"><span class="num">{{ $fmt(row.amount) }}</span></template></el-table-column>
+          <el-table-column prop="pay" label="支付方式" width="86" />
+          <el-table-column label="状态" width="150"><template #default="{row}"><el-tag size="small" :type="stType(row.st)" disable-transitions>{{ row.st }}</el-tag><div v-if="row.sub" class="small muted">{{ row.sub }}</div></template></el-table-column>
+          <el-table-column label="操作" width="70" align="center"><template #default="{row}"><el-button link type="primary" @click="openOrder(row)">详情</el-button></template></el-table-column>
+        </el-table>
+        <div class="tbl-foot"><span>当前显示 {{ orderRows.length }} 条（原型示例数据）；全部订单共 742 条。订单号 = DO-下单日期-当月流水号</span><el-pagination layout="prev, pager, next" :total="742" :page-size="20" small background /></div>
+      </el-tab-pane>
+
+      <!-- ============ 对公到账核销 ============ -->
+      <el-tab-pane name="recon">
+        <template #label>对公到账核销<el-badge v-if="recons.length" :value="recons.length" style="margin-left:6px" /></template>
+        <div class="tip-box blue small mb12">钢厂采购以对公转账和合同付款为主。上游上传转账凭证后，系统按“金额 + 付款户名”自动匹配银行到账流水；财务核销后订单才生效。金额或户名不一致的不能直接核销。</div>
+        <el-table :data="recons" border size="small">
+          <template #empty><el-empty description="暂无待核销的对公转账" :image-size="70" /></template>
+          <el-table-column label="订单号" width="162"><template #default="{row}"><a href="javascript:;" class="num" @click="openOrderNo(row.no)">{{ row.no }}</a></template></el-table-column>
+          <el-table-column label="付款方" min-width="200"><template #default="{row}">{{ row.payer }}<div class="small muted">{{ row.prod }} · {{ row.qty }} 个名额</div></template></el-table-column>
+          <el-table-column label="应收金额（元）" width="126" align="right"><template #default="{row}"><span class="num">{{ $fmt(row.amount) }}</span></template></el-table-column>
+          <el-table-column label="转账凭证" width="170"><template #default="{row}"><a href="javascript:;" @click="$info('原型演示：打开转账凭证图片预览')"><el-icon style="vertical-align:-2px"><Picture /></el-icon> 查看凭证</a><div class="small muted num">上传于 {{ row.upT }}</div></template></el-table-column>
+          <el-table-column label="到账流水匹配情况" min-width="280">
+            <template #default="{row}">
+              <span :class="row.m==='ok' ? 'match-ok' : row.m==='wait' ? 'match-wait' : 'match-bad'"><el-icon style="vertical-align:-2px"><component :is="row.m==='ok' ? 'CircleCheck' : row.m==='wait' ? 'Clock' : 'CircleClose'" /></el-icon> {{ row.mt }}</span>
+              <div class="small muted">{{ row.md }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="150" align="center">
+            <template #default="{row}">
+              <el-button link type="primary" @click="openRecon(row)">核销</el-button>
+              <el-button link type="info" @click="$demo('已通知购买主体补充或更正转账凭证')">退回补充</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
+
+      <!-- ============ 退款审核 ============ -->
+      <el-tab-pane label="退款审核" name="refund">
+        <div class="grid c2 mb12" style="margin-bottom:12px">
+          <div class="tip-box small"><b>退款规则：</b>未生效订单可全额退；已生效订单按合同约定的规则退款。<span class="demo-tag">示例规则，待业务方确定（D-18）</span><br>原型示例：已生效订单按剩余服务天数比例退还实付金额。</div>
+          <div class="tip-box orange small"><b>退款须同步冲正已计提的分成：</b>退款覆盖的期间若已计提分成，系统自动生成冲正记录；未付部分直接冲正，已付部分从该下游企业的后续结算中扣减。<a href="settlement.html">去分成结算查看冲正记录 ›</a></div>
+        </div>
+        <el-table :data="refunds" border size="small">
+          <el-table-column label="退款单号" width="146"><template #default="{row}"><span class="num">{{ row.id }}</span></template></el-table-column>
+          <el-table-column label="订单 / 购买主体" min-width="190"><template #default="{row}"><a href="javascript:;" class="num" @click="openOrderNo(row.no)">{{ row.no }}</a><div class="small muted">{{ row.buyer }}</div></template></el-table-column>
+          <el-table-column label="订单情况" width="90"><template #default="{row}"><el-tag size="small" :type="row.eff ? 'warning' : 'info'" disable-transitions>{{ row.eff ? '已生效' : '未生效' }}</el-tag></template></el-table-column>
+          <el-table-column label="实付金额（元）" width="114" align="right"><template #default="{row}"><span class="num">{{ $fmt(row.paid) }}</span></template></el-table-column>
+          <el-table-column label="可退金额（元）" width="114" align="right"><template #default="{row}"><b class="num">{{ $fmt(row.refund) }}</b></template></el-table-column>
+          <el-table-column label="需冲正分成（元）" width="124" align="right"><template #default="{row}"><span class="num">{{ row.rev ? $fmt(row.rev) : '0' }}</span></template></el-table-column>
+          <el-table-column label="申请时间" width="136"><template #default="{row}"><span class="num">{{ row.t }}</span></template></el-table-column>
+          <el-table-column label="状态" width="116"><template #default="{row}"><el-tag size="small" :type="row.st==='待审核' ? 'warning' : row.st==='已驳回' ? 'danger' : row.st==='已退款' ? 'info' : 'success'" disable-transitions>{{ row.st }}</el-tag></template></el-table-column>
+          <el-table-column label="操作" width="76" align="center"><template #default="{row}"><el-button link type="primary" @click="openRefund(row)">{{ row.st==='待审核' ? '审核' : '查看' }}</el-button></template></el-table-column>
+        </el-table>
+      </el-tab-pane>
+
+      <!-- ============ 发票处理 ============ -->
+      <el-tab-pane label="发票处理" name="invoice">
+        <div class="filter-bar">
+          <el-radio-group v-model="invF"><el-radio-button value="">全部</el-radio-button><el-radio-button value="待开具">待开具</el-radio-button><el-radio-button value="已开具">已开具</el-radio-button></el-radio-group>
+          <span style="flex:1"></span><span class="small muted">开票能力复用货袋子平台；发票抬头须与购买主体的认证主体一致</span>
+        </div>
+        <el-table :data="invoices.filter(r => !invF || r.st===invF)" border size="small">
+          <el-table-column label="申请编号" width="150"><template #default="{row}"><span class="num">{{ row.id }}</span></template></el-table-column>
+          <el-table-column label="订单号" width="162"><template #default="{row}"><a href="javascript:;" class="num" @click="openOrderNo(row.no)">{{ row.no }}</a></template></el-table-column>
+          <el-table-column prop="buyer" label="发票抬头（购买主体）" min-width="190" />
+          <el-table-column prop="type" label="发票类型" width="130" />
+          <el-table-column label="开票金额（元）" width="126" align="right"><template #default="{row}"><span class="num">{{ $fmt(row.amount) }}</span></template></el-table-column>
+          <el-table-column label="申请时间" width="140"><template #default="{row}"><span class="num">{{ row.t }}</span></template></el-table-column>
+          <el-table-column label="状态" width="100"><template #default="{row}"><el-tag size="small" :type="row.st==='待开具' ? 'warning' : 'success'" disable-transitions>{{ row.st }}</el-tag></template></el-table-column>
+          <el-table-column label="操作" width="120" align="center">
+            <template #default="{row}">
+              <el-button v-if="row.st==='待开具'" link type="primary" @click="issue(row)">开具</el-button>
+              <el-button v-else link type="primary" @click="$info('原型演示：下载电子发票 ' + row.invNo)">下载</el-button>
+              <el-button v-if="row.st==='待开具'" link type="info" @click="$demo('已退回，请购买主体更正开票信息')">退回</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
+
+      <!-- ============ 商品与定价 ============ -->
+      <el-tab-pane name="pricing">
+        <template #label>商品与定价<el-badge v-if="pp.length" :value="pp.length" style="margin-left:6px" /></template>
+        <el-alert type="warning" show-icon :closable="false">
+          <template #title>本页全部价格参数均为<b>示例参数，待业务方确定</b>（D-15）。定价修改须经“提交 → 另一人复核 → 生效”，只影响生效日之后新下的订单；定价时需把分成成本计入，见<a href="share-rules.html">分成规则与台账</a>。</template>
+        </el-alert>
+
+        <div v-if="pp.length" class="mb16">
+          <div class="sec-title"><i></i>待复核的定价变更<small>当前操作人：{{ me }}（{{ roleOf(me) }}）。提交人不能复核自己的申请</small></div>
+          <el-table :data="pp" border size="small">
+            <el-table-column prop="id" label="申请编号" width="140" />
+            <el-table-column label="变更内容" min-width="300"><template #default="{row}"><b>{{ row.title }}</b><div class="small"><span v-if="row.from" class="muted">{{ row.from }} → </span>{{ row.to }}</div></template></el-table-column>
+            <el-table-column prop="reason" label="原因" min-width="200" />
+            <el-table-column prop="eff" label="生效日期" width="110" />
+            <el-table-column label="提交人" width="140"><template #default="{row}">{{ row.by }}<div class="small muted num">{{ row.t }}</div></template></el-table-column>
+            <el-table-column label="操作" width="150" align="center">
+              <template #default="{row}">
+                <template v-if="row.by===me">
+                  <el-tooltip content="提交人不能复核自己的申请，请切换为另一位复核人" placement="top"><span><el-button link type="primary" disabled>通过</el-button></span></el-tooltip>
+                  <el-button link type="info" @click="ppDone(row, '已撤回')">撤回</el-button>
+                </template>
+                <template v-else>
+                  <el-button link type="success" @click="ppDone(row, '已生效')">通过</el-button>
+                  <el-button link type="danger" @click="ppDone(row, '已驳回')">驳回</el-button>
+                </template>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+
+        <div class="grid c-3-2" style="margin-bottom:0">
+          <div>
+            <div class="sec-title"><i></i>价格结构<span class="demo-tag">示例参数，待业务方确定</span><span class="sp"></span><el-button size="small" type="primary" @click="openPrice()"><el-icon><Edit /></el-icon>修改定价参数</el-button></div>
+            <div class="formula mb12">应付金额 = Σ（名额数 × 周期数 × 基础单价 × 周期折扣 × 数量阶梯折扣 × 企业等级系数）− 优惠</div>
+            <table class="plain-table">
+              <thead><tr><th style="width:150px">参数</th><th>当前值</th><th>说明</th></tr></thead>
+              <tbody>
+                <tr><td>基础单价</td><td><b class="num">{{ pr.base }}</b> 元/名额·月</td><td class="muted">1 个名额 = 1 家下游企业 × 1 个计费周期</td></tr>
+                <tr><td>周期折扣</td><td>月付 原价；季付 <b>{{ offText(pr.quarter) }}</b>；年付 <b>{{ offText(pr.year) }}</b></td><td class="muted">年付为主</td></tr>
+                <tr><td>最小购买量</td><td><b class="num">{{ pr.minQty }}</b> 个名额</td><td class="muted">等于最小数据池规模，不得低于防反推参数 N_min</td></tr>
+                <tr><td>赠送历史深度</td><td><b class="num">{{ pr.hist }}</b> 个月</td><td class="muted">随订阅赠送，更长的历史另计</td></tr>
+                <tr><td>企业等级系数</td><td>统一为 <b>1</b></td><td class="muted">一期不启用，保留字段；启用时分成基数是否同步提高待定（N-15）</td></tr>
+                <tr><td>价格数据加价</td><td><el-tag size="small" type="info">待确认</el-tag></td><td class="muted">包含在名额价格内还是作为加价项，待业务方确定（N-04）</td></tr>
+              </tbody>
+            </table>
+
+            <div class="sec-title mt16"><i></i>数量阶梯<span class="demo-tag">示例参数，待业务方确定</span><small>按订单生效后的在订名额总数取档</small></div>
+            <table class="plain-table">
+              <thead><tr><th>名额数</th><th v-for="t in tiers" :key="t.label" class="c">{{ t.label }}</th></tr></thead>
+              <tbody>
+                <tr><td>折扣</td><td v-for="t in tiers" :key="t.label" class="c"><b>{{ offText(t.off) }}</b></td></tr>
+                <tr><td>年付折后单价（元/名额·月）</td><td v-for="t in tiers" :key="t.label" class="c num">{{ (pr.base * pr.year * t.off / 10000).toFixed(1) }}</td></tr>
+              </tbody>
+            </table>
+
+            <div class="sec-title mt16"><i></i>商品形态</div>
+            <el-table :data="products" border size="small">
+              <el-table-column prop="n" label="商品" width="130" />
+              <el-table-column prop="d" label="说明" min-width="260" />
+              <el-table-column label="状态" width="110"><template #default="{row}"><span class="dot" :class="row.s==='在售' ? 'ok' : row.s==='免费' ? 'info' : ''"></span>{{ row.s }}</template></el-table-column>
+            </el-table>
+          </div>
+
+          <div>
+            <div class="sec-title"><i></i>价格试算</div>
+            <div class="calc">
+              <el-form label-width="76px" size="default">
+                <el-form-item label="名额数" style="margin-bottom:10px"><el-input-number v-model="calc.qty" :min="pr.minQty" :max="5000" :step="10" style="width:160px" /></el-form-item>
+                <el-form-item label="付款周期" style="margin-bottom:6px"><el-radio-group v-model="calc.cycle"><el-radio-button value="月付">月付</el-radio-button><el-radio-button value="季付">季付</el-radio-button><el-radio-button value="年付">年付</el-radio-button></el-radio-group></el-form-item>
+              </el-form>
+              <div class="line"><span class="muted">目录金额（{{ calc.qty }} × {{ pr.base }} × {{ calcR.months }} 个月）</span><span class="num">{{ $fmt(calcR.list) }} 元</span></div>
+              <div class="line"><span class="muted">周期折扣</span><span>{{ offText(calcR.cOff) }}</span></div>
+              <div class="line"><span class="muted">数量阶梯（{{ calcR.tier.label }}）</span><span>{{ offText(calcR.tier.off) }}</span></div>
+              <div class="line sum"><span>应付金额</span><span class="price-big num" style="font-size:20px">{{ $fmt(calcR.amount) }} 元</span></div>
+              <div class="line"><span class="muted">实收单价</span><span class="num">{{ calcR.unit.toFixed(1) }} 元/名额·月</span></div>
+              <div class="line"><span class="muted">分成成本（目录价 × 20% × 平均系数 0.98）</span><span class="num">{{ calcR.share.toFixed(1) }} 元/名额·月</span></div>
+              <div class="line"><span class="muted">分成成本占实收</span><b :style="{color: calcR.rate > 30 ? '#e5484d' : '#1f2d3d'}" class="num">{{ calcR.rate.toFixed(1) }}%</b></div>
+              <div class="small muted mt8">分成基数按目录价时，上游折扣全部由平台承担：折扣越深，分成成本占实收的比例越高。分成参数同为示例参数。</div>
+            </div>
+
+            <div class="sec-title mt16"><i></i>合同价与折扣码<span class="sp"></span><el-button size="small" @click="openCc()"><el-icon><Plus /></el-icon>新增</el-button></div>
+            <el-table :data="deals" border size="small">
+              <el-table-column label="类型" width="76"><template #default="{row}"><el-tag size="small" :type="row.kind==='合同价' ? 'primary' : 'success'" disable-transitions>{{ row.kind }}</el-tag></template></el-table-column>
+              <el-table-column label="对象 / 折扣码" min-width="140"><template #default="{row}">{{ row.target }}</template></el-table-column>
+              <el-table-column prop="rule" label="优惠内容" min-width="120" />
+              <el-table-column prop="exp" label="有效期至" width="96" />
+            </el-table>
+            <div class="small muted mt8">合同价为大客户一客一价；折扣码可限定次数与有效期。新增与修改同样须双人复核。</div>
+          </div>
+        </div>
+
+        <div class="sec-title mt16"><i></i>定价变更历史</div>
+        <el-table :data="ph" border size="small">
+          <el-table-column prop="id" label="申请编号" width="140" />
+          <el-table-column label="变更内容" min-width="300"><template #default="{row}"><b>{{ row.title }}</b><div class="small"><span v-if="row.from" class="muted">{{ row.from }} → </span>{{ row.to }}</div></template></el-table-column>
+          <el-table-column prop="reason" label="原因" min-width="180" />
+          <el-table-column prop="eff" label="生效日期" width="110" />
+          <el-table-column label="提交" width="130"><template #default="{row}">{{ row.by }}<div class="small muted num">{{ row.t }}</div></template></el-table-column>
+          <el-table-column label="复核" width="130"><template #default="{row}"><template v-if="row.rv">{{ row.rv }}<div class="small muted num">{{ row.rvT }}</div></template><span v-else class="muted">—</span></template></el-table-column>
+          <el-table-column label="状态" width="90" align="center"><template #default="{row}"><el-tag size="small" :type="row.st==='已生效' ? 'success' : row.st==='已驳回' ? 'danger' : 'info'" disable-transitions>{{ row.st }}</el-tag></template></el-table-column>
+        </el-table>
+      </el-tab-pane>
+
+      <!-- ============ 收入报表 ============ -->
+      <el-tab-pane label="收入报表" name="report" lazy>
+        <div class="grid c4">
+          <stat-card label="2026-10 平台收入" :value="2425.3" :d="1" unit="万元" :mom="2.5" icon="Money" tip="按名额日确认的收入，不是当月收款金额"></stat-card>
+          <stat-card label="2026-10 分成成本" :value="614.9" :d="1" unit="万元" :mom="2.5" icon="Coin"><span>占收入 25.4%</span></stat-card>
+          <stat-card label="2026-10 净收入" :value="1810.4" :d="1" unit="万元" :mom="2.5" icon="TrendCharts"></stat-card>
+          <stat-card label="近 12 个月平台收入" :value="24611.3" :d="1" unit="万元" icon="DataLine"><span>其中 2026-11 截至 23 日</span></stat-card>
+        </div>
+        <div class="grid c-2-1" style="margin-bottom:0">
+          <div>
+            <div class="sec-title"><i></i>按月收入<small>单位：万元；收入按名额日确认</small></div>
+            <ve-chart :option="revOption" height="320px"></ve-chart>
+          </div>
+          <div>
+            <div class="sec-title"><i></i>2026-10 收入构成<small>按商品</small></div>
+            <ve-chart :option="prodOption" height="200px"></ve-chart>
+            <div class="tip-box small mt8">
+              净收入 = 平台收入 − 分成成本。分成按名额日台账计提，规则与台账见<a href="share-rules.html">分成规则与台账</a>，付款见<a href="settlement.html">分成结算</a>。<br>
+              未分配名额、冻结名额不计提分成，对应收入全部归平台。
+            </div>
+          </div>
+        </div>
+      </el-tab-pane>
+    </el-tabs>
+  </div>
+
+  <!-- 订单详情 -->
+  <el-drawer v-model="od.show" :title="'订单详情 ' + (od.o ? od.o.no : '')" size="560px">
+    <template v-if="od.o">
+      <div class="row between mb12"><b style="font-size:15px">{{ od.o.buyer }}</b><el-tag :type="stType(od.o.st)" disable-transitions>{{ od.o.st }}</el-tag></div>
+      <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="商品">{{ od.o.prod }}</el-descriptions-item>
+        <el-descriptions-item label="名额数"><span class="num">{{ $fmt(od.o.qty) }}</span> 个</el-descriptions-item>
+        <el-descriptions-item :label="od.o.prod==='周期内加购' ? '计费起止日' : '服务周期'" :span="2"><span class="num">{{ od.o.from }} 至 {{ od.o.to }}</span>（{{ od.o.cycle }}）</el-descriptions-item>
+        <template v-if="od.o.prod==='周期内加购'">
+          <el-descriptions-item label="计划生效日"><b class="num">{{ od.o.from }}</b><span class="muted small">（即计费起始日）</span></el-descriptions-item>
+          <el-descriptions-item label="指定新增企业"><span class="num">{{ od.o.qty }}</span> 家</el-descriptions-item>
+          <el-descriptions-item label="不收费期间" :span="2"><span class="num">{{ od.o.created.slice(0, 10) }} 至 2026-11-30</span>（下单日至生效日前一日）。生效前名额为“已分配（待生效）”：不计费、不计提分成，企业数据不进入聚合，没有台账行。</el-descriptions-item>
+          <el-descriptions-item v-if="od.o.st==='待支付'" label="截单时点" :span="2">须在 <span class="num">2026-11-28 18:00</span> 前完成支付或核销；逾期自动顺延到 2027-01-01 生效并重新计价，通知上游。<span class="demo-tag">截单时点与差额处理待确认（N-27）</span></el-descriptions-item>
+        </template>
+        <el-descriptions-item label="订单金额"><b class="num">{{ $fmt(od.o.amount) }}</b> 元</el-descriptions-item>
+        <el-descriptions-item label="支付方式">{{ od.o.pay }}</el-descriptions-item>
+        <el-descriptions-item label="下单时间"><span class="num">{{ od.o.created }}</span></el-descriptions-item>
+        <el-descriptions-item label="发票">{{ od.o.inv || '未申请' }}</el-descriptions-item>
+        <el-descriptions-item label="电子合同" :span="2"><a href="javascript:;" @click="$info('原型演示：下载电子合同')">数据服务协议（含禁止再识别条款）.pdf</a></el-descriptions-item>
+      </el-descriptions>
+      <div class="sec-title mt16"><i></i>金额计算<span class="demo-tag">示例参数</span></div>
+      <div class="formula">{{ od.o.calc }}</div>
+      <template v-if="od.o.alloc">
+        <div class="sec-title mt16"><i></i>名额使用</div>
+        <div class="grid c3" style="margin-bottom:0">
+          <div class="stat"><div class="label">已购名额</div><div class="value num" style="font-size:20px">{{ od.o.alloc[0] }}</div></div>
+          <div class="stat"><div class="label">已分配</div><div class="value num" style="font-size:20px">{{ od.o.alloc[1] }}</div></div>
+          <div class="stat"><div class="label">{{ od.o.alloc[2] != null ? '待生效 / 未分配' : '未分配' }}</div><div class="value num" style="font-size:20px"><template v-if="od.o.alloc[2] != null">{{ od.o.alloc[2] }} / </template>{{ od.o.alloc[0] - od.o.alloc[1] - (od.o.alloc[2] || 0) }}</div></div>
+        </div>
+        <div class="small muted mt8">未分配名额不延长有效期，也不计提分成。名额每日的归属与状态见<a href="share-rules.html">名额日台账</a>；数据池成员见<a href="pools.html">数据池管理</a>。</div>
+      </template>
+      <div class="sec-title mt16"><i></i>状态记录</div>
+      <el-timeline style="padding-left:2px">
+        <el-timeline-item v-for="(l,i) in od.o.logs" :key="i" :timestamp="l[0]" placement="top" :type="i===0 ? 'primary' : ''">{{ l[1] }}</el-timeline-item>
+      </el-timeline>
+    </template>
+  </el-drawer>
+
+  <!-- 核销 -->
+  <el-dialog v-model="rc.show" title="对公到账核销" width="620px">
+    <template v-if="rc.r">
+      <el-descriptions :column="2" border size="small" class="mb12">
+        <el-descriptions-item label="订单号"><span class="num">{{ rc.r.no }}</span></el-descriptions-item>
+        <el-descriptions-item label="商品">{{ rc.r.prod }} · {{ rc.r.qty }} 个名额</el-descriptions-item>
+        <el-descriptions-item label="购买主体" :span="2">{{ rc.r.payer }}</el-descriptions-item>
+        <el-descriptions-item label="应收金额"><b class="num">{{ $fmt(rc.r.amount) }}</b> 元</el-descriptions-item>
+        <el-descriptions-item label="凭证上传"><span class="num">{{ rc.r.upT }}</span></el-descriptions-item>
+      </el-descriptions>
+      <div class="sec-title"><i></i>匹配到的到账流水</div>
+      <table v-if="rc.r.flow" class="plain-table mb12">
+        <thead><tr><th>银行流水号</th><th>到账时间</th><th>付款户名</th><th class="r">到账金额（元）</th></tr></thead>
+        <tbody><tr><td class="num">{{ rc.r.flow[0] }}</td><td class="num">{{ rc.r.flow[1] }}</td><td>{{ rc.r.flow[2] }}</td><td class="r num">{{ $fmt(rc.r.flow[3], 2) }}</td></tr></tbody>
+      </table>
+      <div v-else class="empty-block" style="padding:18px 0">未匹配到到账流水，款项可能在途</div>
+      <div v-if="rc.r.m==='ok'" class="tip-box green small">金额与付款户名均一致。核销后订单{{ rc.r.prod==='周期内加购' ? '变为“已支付待生效”，指定的新增企业列为“待生效”，到计划生效日生效并开始计费' : rc.r.future ? '变为“已支付待生效”，名额即可分配，到服务起始日自动生效并开始计费' : '立即生效，名额可分配' }}；名额日台账自生效日起记账。<template v-if="rc.r.prod==='周期内加购'">周期内加购从新增企业生效日起计费，下单日至生效日之间不收费；须在 2026-11-28 18:00 截单前核销，逾期顺延到 2027-01-01 生效并重新计价。</template></div>
+      <div v-else class="tip-box red small">{{ rc.r.mt }}：{{ rc.r.md }}。不能直接核销，请退回购买主体补充凭证或补足差额。</div>
+      <el-checkbox v-if="rc.r.m==='ok'" v-model="rc.ok" class="mt12">我已核对转账凭证与银行到账流水</el-checkbox>
+    </template>
+    <template #footer>
+      <el-button @click="rc.show=false">取消</el-button>
+      <el-button type="primary" :disabled="!rc.r || rc.r.m!=='ok' || !rc.ok" @click="doRecon">确认核销</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 退款审核 -->
+  <el-dialog v-model="rf.show" title="退款审核" width="640px">
+    <template v-if="rf.r">
+      <el-descriptions :column="2" border size="small" class="mb12">
+        <el-descriptions-item label="退款单号"><span class="num">{{ rf.r.id }}</span></el-descriptions-item>
+        <el-descriptions-item label="订单号"><span class="num">{{ rf.r.no }}</span></el-descriptions-item>
+        <el-descriptions-item label="购买主体" :span="2">{{ rf.r.buyer }}</el-descriptions-item>
+        <el-descriptions-item label="订单情况">{{ rf.r.eff ? '已生效' : '未生效' }}</el-descriptions-item>
+        <el-descriptions-item label="实付金额"><span class="num">{{ $fmt(rf.r.paid) }}</span> 元</el-descriptions-item>
+        <el-descriptions-item label="退款原因" :span="2">{{ rf.r.why }}</el-descriptions-item>
+      </el-descriptions>
+      <div class="sec-title"><i></i>可退金额<span class="demo-tag">示例规则，待业务方确定</span></div>
+      <div class="formula mb12">{{ rf.r.calc }}</div>
+      <div class="sec-title"><i></i>对分成的影响</div>
+      <div v-if="rf.r.rev" class="tip-box orange small">退款覆盖期间（{{ rf.r.revRange }}）已计提分成 <b class="num">{{ $fmt(rf.r.rev) }}</b> 元（{{ rf.r.revDays }} 个名额日），均未付款。审核通过后系统自动生成冲正记录，来源标记为“上游退款”。<a href="settlement.html">分成结算 › 冲正记录</a></div>
+      <div v-else class="tip-box small">订单尚未生效，没有名额日台账记录，未计提分成，无需冲正。</div>
+      <el-form v-if="rf.r.st==='待审核'" label-width="84px" class="mt12"><el-form-item label="审核意见" style="margin-bottom:0"><el-input v-model="rf.note" placeholder="选填；驳回时必填" /></el-form-item></el-form>
+    </template>
+    <template #footer>
+      <template v-if="rf.r && rf.r.st==='待审核'">
+        <el-button @click="rf.show=false">取消</el-button>
+        <el-button type="danger" plain @click="doRefund(false)">驳回</el-button>
+        <el-button type="primary" @click="doRefund(true)">通过并发起退款</el-button>
+      </template>
+      <el-button v-else type="primary" @click="rf.show=false">关闭</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 修改定价参数 -->
+  <el-dialog v-model="pd.show" title="修改定价参数" width="560px">
+    <el-form label-width="96px">
+      <el-form-item label="参数" required><el-select v-model="pd.k" style="width:300px" @change="pd.v = getP(pd.k)"><el-option v-for="o in priceOpts" :key="o.k" :label="o.n" :value="o.k" /></el-select></el-form-item>
+      <el-form-item label="当前值">{{ pText(pd.k, getP(pd.k)) }}</el-form-item>
+      <el-form-item label="新值" required><el-input-number v-model="pd.v" :min="pd.k==='base' ? 10 : 1" :max="pd.k==='base' ? 5000 : pd.k==='minQty' ? 500 : 100" :step="pd.k==='base' ? 10 : 1" style="width:160px" /><span style="margin-left:8px">{{ unitOf(pd.k) }}</span></el-form-item>
+      <el-form-item label="生效日期" required><el-date-picker v-model="pd.eff" type="date" value-format="YYYY-MM-DD" :clearable="false" style="width:160px" /></el-form-item>
+      <el-form-item label="变更原因" required><el-input v-model="pd.reason" type="textarea" :rows="2" placeholder="如：业务方定价决策编号、市场调研结论" /></el-form-item>
+    </el-form>
+    <div class="tip-box blue small">提交后进入“待复核的定价变更”，须由<b>另一位</b>平台人员复核通过后生效。新价格只适用于生效日之后新下的订单与续费，不影响已生效订单。</div>
+    <template #footer><el-button @click="pd.show=false">取消</el-button><el-button type="primary" @click="submitPrice">提交复核</el-button></template>
+  </el-dialog>
+
+  <!-- 新增合同价 / 折扣码 -->
+  <el-dialog v-model="cc.show" title="新增合同价 / 折扣码" width="560px">
+    <el-form label-width="96px">
+      <el-form-item label="类型"><el-radio-group v-model="cc.kind"><el-radio value="合同价">合同价（一客一价）</el-radio><el-radio value="折扣码">折扣码</el-radio></el-radio-group></el-form-item>
+      <el-form-item v-if="cc.kind==='合同价'" label="购买主体" required><el-select v-model="cc.target" style="width:300px"><el-option v-for="b in buyers" :key="b" :label="b" :value="b" /></el-select></el-form-item>
+      <el-form-item v-else label="折扣码" required><el-input v-model="cc.code" style="width:200px" /></el-form-item>
+      <el-form-item v-if="cc.kind==='合同价'" label="合同单价" required><el-input-number v-model="cc.price" :min="10" :step="5" style="width:160px" /><span style="margin-left:8px">元/名额·月</span></el-form-item>
+      <el-form-item v-else label="折扣" required><el-input-number v-model="cc.off" :min="50" :max="99" style="width:160px" /><span style="margin-left:8px">%（95 即 95 折），限 {{ cc.limit }} 次</span></el-form-item>
+      <el-form-item label="有效期至"><el-date-picker v-model="cc.exp" type="date" value-format="YYYY-MM-DD" :clearable="false" style="width:160px" /></el-form-item>
+      <el-form-item label="原因" required><el-input v-model="cc.reason" /></el-form-item>
+    </el-form>
+    <template #footer><el-button @click="cc.show=false">取消</el-button><el-button type="primary" @click="submitCc">提交复核</el-button></template>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const STAFF = [{ n: '林若彤', r: '运营主管' }, { n: '何志远', r: '财务' }, { n: '吴靖', r: '安全审计员' }];
+  let tick = 0;
+  const nowStr = () => { const m = 32 + (tick++) * 4; return '2026-11-24 ' + (14 + Math.floor(m / 60)) + ':' + STP.pad(m % 60); };
+  const warn = (m) => ElementPlus.ElMessage({ message: m, type: 'warning' });
+  const B = { dy: '东岳钢铁集团有限公司', jj: '金江钢铁股份有限公司', hc: '海川特钢有限公司', yl: '云岭钢铁集团有限公司', bc: '北辰钢铁有限责任公司', hy: '瀚阳钢铁集团有限公司', kl: '昆仑钢铁股份有限公司', ny: '南粤钢铁有限公司', zz: '中洲钢铁集团有限公司', hj: '汉江钢铁有限公司', bh: '渤海钢铁股份有限公司', ql: '祁连钢铁集团有限公司' };
+  const O = (no, buyer, prod, qty, from, to, cycle, amount, pay, st, created, calc, ext) => Object.assign({ no, buyer, prod, qty, from, to, cycle, amount, pay, st, created, calc, sub: '', inv: '', alloc: null, logs: [[created, '下单，生成订单与电子合同']] }, ext);
+  const ORDERS = [
+    O('DO-20261123-0058', B.hy, '周期内加购', 35, '2026-12-01', '2027-04-30', '计费 151 天，含首尾', 53169, '在线支付', '待支付', '2026-11-23 16:20', '35 × 400 × 12 × 151 ÷ 365 × 年付 85 折 × 阶梯（100–199，加购后共 115）9 折 = 53,169 元。计划生效日 2026-12-01，自生效日起计费，计费天数含首尾两日，下单日至生效日之间不收费；到期日与主订单对齐（数据池有效期至 2027-04-30）'),
+    O('DO-20261122-0057', B.kl, '周期内加购', 50, '2026-12-01', '2027-10-31', '计费 335 天，含首尾', 159148, '对公转账', '待支付', '2026-11-22 15:08', '50 × 400 × 12 × 335 ÷ 365 × 年付 85 折 × 阶梯（200–499，加购后共 300）85 折 = 159,148 元。计划生效日 2026-12-01，自生效日起计费，计费天数含首尾两日，下单日至生效日之间不收费；到期日与主订单 DO-20261015-0038 对齐', { sub: '凭证已上传，待核销' }),
+    O('DO-20261122-0056', B.hj, '名额包', 50, '2026-12-01', '2027-11-30', '年付', 193800, '对公转账', '待支付', '2026-11-22 10:41', '50 × 400 × 12 × 年付 85 折 × 阶梯（50–99）95 折 = 193,800 元', { sub: '凭证已上传，待核销' }),
+    O('DO-20261121-0054', B.bh, '名额包', 120, '2026-12-01', '2027-02-28', '季付', 123120, '对公转账', '待支付', '2026-11-21 14:30', '120 × 400 × 3 × 季付 95 折 × 阶梯（100–199）9 折 = 123,120 元', { sub: '凭证已上传，待核销' }),
+    O('DO-20261121-0053', B.jj, '周期内加购', 40, '2026-12-01', '2027-01-31', '计费 62 天，含首尾', 22177, '对公转账', '待支付', '2026-11-21 09:52', '40 × 400 × 12 × 62 ÷ 365 × 年付 85 折 × 阶梯（500–999，加购后共 540）8 折 = 22,177 元。计划生效日 2026-12-01，自生效日起计费，计费天数含首尾两日，下单日至生效日之间不收费；到期日与主订单 DO-20260105-0002 对齐', { sub: '凭证已上传，待核销' }),
+    O('DO-20261120-0052', B.dy, '周期内加购', 30, '2026-12-01', '2027-03-31', '计费 121 天，含首尾', 34490, '对公转账', '待支付', '2026-11-20 16:42', '30 × 400 × 12 × 121 ÷ 365 × 年付 85 折 × 阶梯（200–499，加购后共 230）85 折 = 34,490 元。计划生效日 2026-12-01，自生效日起计费，计费天数含首尾两日，下单日至生效日之间不收费；到期日与主订单 DO-20260318-0007 对齐', { sub: '凭证已上传，待核销' }),
+    O('DO-20261119-0050', B.hc, '周期内加购', 10, '2026-12-01', '2027-06-30', '计费 212 天，含首尾', 22513, '对公转账', '待支付', '2026-11-19 16:33', '10 × 400 × 12 × 212 ÷ 365 × 年付 85 折 × 阶梯（50–99，加购后共 70）95 折 = 22,513 元。计划生效日 2026-12-01，自生效日起计费，计费天数含首尾两日，下单日至生效日之间不收费；到期日与主订单 DO-20260612-0019 对齐', { sub: '凭证已上传，待核销' }),
+    O('DO-20261118-0049', B.bc, '名额包', 1200, '2027-03-01', '2028-02-29', '年付', 3456000, '对公转账', '已支付待生效', '2026-11-18 10:05', '1,200 × 合同价 240 元/名额·月 × 12 = 3,456,000 元（提前续费，现有数据池 2027-02-28 到期后接续，成员保持不变；合同价见定价变更 PRC-20260910-01）', { inv: '已申请，待开具', logs: [['2026-11-20 15:12', '对公到账核销（何志远），订单已支付，2027-03-01 生效'], ['2026-11-18 10:05', '续费下单，生成订单与电子合同']] }),
+    O('DO-20261116-0047', B.ql, '名额包', 100, '2026-12-01', '2027-11-30', '年付', 367200, '对公转账', '退款中', '2026-11-16 09:30', '100 × 400 × 12 × 年付 85 折 × 阶梯（100–199）9 折 = 367,200 元', { logs: [['2026-11-21 10:02', '购买主体申请退款（订单未生效）'], ['2026-11-17 14:20', '对公到账核销（何志远）'], ['2026-11-16 09:30', '下单，生成订单与电子合同']] }),
+    O('DO-20261109-0044', B.hj, '单选订阅', 20, '2026-12-01', '2027-02-28', '季付', 22800, '在线支付', '已取消', '2026-11-09 13:44', '20 × 400 × 3 × 季付 95 折 × 阶梯（20–49）原价 = 22,800 元', { logs: [['2026-11-12 13:44', '超过 72 小时未支付，订单自动取消'], ['2026-11-09 13:44', '下单，生成订单与电子合同']] }),
+    O('DO-20261028-0041', B.hj, '名额包', 80, '2026-11-01', '2027-10-31', '年付', 310080, '对公转账', '已退款', '2026-10-28 11:20', '80 × 400 × 12 × 年付 85 折 × 阶梯（50–99）95 折 = 310,080 元', { logs: [['2026-10-30 16:40', '退款完成，全额 310,080 元原路退回（订单未生效，无需冲正分成）'], ['2026-10-30 09:15', '购买主体申请退款，财务审核通过'], ['2026-10-29 10:10', '对公到账核销（何志远）'], ['2026-10-28 11:20', '下单，生成订单与电子合同']] }),
+    O('DO-20261015-0038', B.kl, '名额包', 250, '2026-11-01', '2027-10-31', '年付', 867000, '对公转账', '生效中', '2026-10-15 09:48', '250 × 400 × 12 × 年付 85 折 × 阶梯（200–499）85 折 = 867,000 元（续费，数据池保持不变）', { inv: '已申请，待开具', alloc: [250, 241], logs: [['2026-11-01 00:00', '订单生效，名额日台账开始记账'], ['2026-10-16 11:30', '对公到账核销（何志远）'], ['2026-10-15 09:48', '续费下单']] }),
+    O('DO-20260612-0019', B.hc, '单选订阅', 60, '2026-07-01', '2027-06-30', '年付', 232560, '在线支付', '生效中', '2026-06-12 15:02', '60 × 400 × 12 × 年付 85 折 × 阶梯（50–99）95 折 = 232,560 元', { inv: '已开具', alloc: [60, 60], logs: [['2026-07-01 00:00', '订单生效，名额日台账开始记账'], ['2026-06-12 15:06', '在线支付成功'], ['2026-06-12 15:02', '下单，生成订单与电子合同']] }),
+    O('DO-20260520-0015', B.ny, '名额包', 100, '2026-06-01', '2027-05-31', '年付', 367200, '对公转账', '退款中', '2026-05-20 10:18', '100 × 400 × 12 × 年付 85 折 × 阶梯（100–199）9 折 = 367,200 元', { inv: '已开具', alloc: [100, 96], logs: [['2026-11-16 09:20', '购买主体申请退款（订单已生效，按合同规则处理）'], ['2026-06-01 00:00', '订单生效，名额日台账开始记账'], ['2026-05-21 14:36', '对公到账核销（何志远）'], ['2026-05-20 10:18', '下单，生成订单与电子合同']] }),
+    O('DO-20260318-0007', B.dy, '名额包', 200, '2026-04-01', '2027-03-31', '年付', 693600, '对公转账', '生效中', '2026-03-18 10:26', '200 × 400 × 12 × 年付 85 折 × 阶梯（200–499）85 折 = 693,600 元', { inv: '已开具', alloc: [200, 186, 14], logs: [['2026-04-08 14:20', '增值税专用发票已开具'], ['2026-04-01 00:00', '订单生效，名额日台账开始记账'], ['2026-03-20 15:42', '对公到账核销（何志远）'], ['2026-03-18 10:26', '下单，生成订单与电子合同']] }),
+    O('DO-20260105-0002', B.jj, '名额包', 500, '2026-02-01', '2027-01-31', '年付', 1632000, '对公转账', '生效中', '2026-01-05 14:11', '500 × 400 × 12 × 年付 85 折 × 阶梯（500–999）8 折 = 1,632,000 元', { inv: '已开具', alloc: [500, 478], logs: [['2026-02-01 00:00', '订单生效，名额日台账开始记账'], ['2026-01-07 10:30', '对公到账核销（何志远）'], ['2026-01-05 14:11', '下单，生成订单与电子合同']] }),
+    O('DO-20251020-0011', B.kl, '名额包', 200, '2025-11-01', '2026-10-31', '年付', 693600, '对公转账', '已到期', '2025-10-20 09:40', '200 × 400 × 12 × 年付 85 折 × 阶梯（200–499）85 折 = 693,600 元', { inv: '已开具', sub: '已续费', logs: [['2026-10-31 24:00', '订单到期；已由 DO-20261015-0038 续费'], ['2025-11-01 00:00', '订单生效'], ['2025-10-20 09:40', '下单，生成订单与电子合同']] }),
+  ];
+  const R = (no, upT, m, mt, md, flow, future) => { const o = ORDERS.find((x) => x.no === no); return { no, payer: o.buyer, prod: o.prod, qty: o.qty, amount: o.amount, upT, m, mt, md, flow, future }; };
+  const RECONS = [
+    R('DO-20261120-0052', '2026-11-23 10:42', 'ok', '已匹配', '金额、付款户名均一致，到账 2026-11-23', ['BK2026112300418', '2026-11-23 10:15', B.dy, 34490], true),
+    R('DO-20261121-0054', '2026-11-23 09:10', 'ok', '已匹配', '金额、付款户名均一致，到账 2026-11-22', ['BK2026112200377', '2026-11-22 16:48', B.bh, 123120], true),
+    R('DO-20261121-0053', '2026-11-22 11:25', 'ok', '已匹配', '金额、付款户名均一致，到账 2026-11-22', ['BK2026112200291', '2026-11-22 10:02', B.jj, 22177], true),
+    R('DO-20261122-0056', '2026-11-23 17:30', 'wait', '未匹配到到账流水', '凭证日期 2026-11-23，款项可能在途', null, true),
+    R('DO-20261119-0050', '2026-11-20 14:05', 'bad', '金额不一致', '到账 22,500.00 元，应收 22,513.00 元，差额 13.00 元', ['BK2026112000155', '2026-11-20 11:37', B.hc, 22500], true),
+    R('DO-20261122-0057', '2026-11-23 15:48', 'bad', '付款户名与购买主体不一致', '付款户名“昆仑钢铁股份有限公司销售分公司”，须确认关联关系或更换付款账户', ['BK2026112300502', '2026-11-23 14:20', '昆仑钢铁股份有限公司销售分公司', 159148], true),
+  ];
+  /* 待开具：只有订单“发票”一栏为“已申请，待开具”的两笔；其余已生效订单的发票均已开具 */
+  const INV = [['0058', 'DO-20261118-0049', '2026-11-20 16:02'], ['0057', 'DO-20261015-0038', '2026-11-20 10:11']];
+  const INV_DONE = [['INV-202607-0004', 'DO-20260612-0019', '2026-07-02 10:12', '26112000000067250418'], ['INV-202606-0002', 'DO-20260520-0015', '2026-06-02 09:41', '26112000000058113907'], ['INV-202604-0012', 'DO-20260318-0007', '2026-04-01 09:30', '26112000000041873562'],
+    ['INV-202602-0003', 'DO-20260105-0002', '2026-02-02 10:05', '26112000000018440291'], ['INV-202511-0001', 'DO-20251020-0011', '2025-11-03 14:05', '25112000000007316458']];
+  const MONTHS = ['2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11'];
+  const REV = [1664.5, 1741.7, 1784.6, 1910.5, 2016.3, 2093.5, 2170.7, 2239.4, 2305.2, 2365.2, 2425.3, 1894.4];
+  const SHARE = [422.0, 441.6, 452.5, 484.4, 511.2, 530.8, 550.4, 567.8, 584.5, 599.7, 614.9, 480.3];
+
+  STP.mount({
+    data() {
+      return {
+        staff: STAFF, me: '林若彤', tab: 'orders',
+        orders: ORDERS, of: { kw: '', prod: '', st: '', pay: '' }, orderStatus: ['待支付', '已支付待生效', '生效中', '已到期', '已取消', '退款中', '已退款'],
+        od: { show: false, o: null },
+        recons: RECONS, rc: { show: false, r: null, ok: false },
+        refunds: [
+          { id: 'RF-20261121-0006', no: 'DO-20261116-0047', buyer: B.ql, eff: false, paid: 367200, refund: 367200, rev: 0, t: '2026-11-21 10:02', st: '待审核', why: '集团预算调整，暂缓采购。', calc: '订单未生效（服务起始日 2026-12-01），可全额退款：367,200 元' },
+          { id: 'RF-20261116-0005', no: 'DO-20260520-0015', buyer: B.ny, eff: true, paid: 367200, refund: 198187, rev: 2130, revRange: '2026-11-16 至 2026-11-23', revDays: 768, t: '2026-11-16 09:20', st: '待审核', why: '业务重组，申请自 2026-11-16 起终止订阅。', calc: '按剩余服务天数比例退还：367,200 × 197 ÷ 365 = 198,187 元（终止日 2026-11-16，剩余 197 天；已使用 168 天不退）' },
+          { id: 'RF-20261030-0004', no: 'DO-20261028-0041', buyer: B.hj, eff: false, paid: 310080, refund: 310080, rev: 0, t: '2026-10-30 09:15', st: '已退款', why: '下单名额数有误（应为 50 个，误下 80 个），重新下单。', calc: '订单未生效，全额退款：310,080 元' }],
+        rf: { show: false, r: null, note: '' },
+        invoices: INV.map((a) => { const o = ORDERS.find((x) => x.no === a[1]); return { id: 'INV-202611-' + a[0], no: a[1], buyer: o.buyer, type: '增值税专用发票', amount: o.amount, t: a[2], st: '待开具', invNo: '' }; })
+          .concat(INV_DONE.map((a) => { const o = ORDERS.find((x) => x.no === a[1]); return { id: a[0], no: a[1], buyer: o.buyer, type: '增值税专用发票', amount: o.amount, t: a[2], st: '已开具', invNo: a[3] }; })),
+        invF: '',
+        pr: { base: M.PRICING.base, quarter: 95, year: 85, minQty: M.PRICING.minQty, hist: 12 },
+        tiers: M.PRICING.tiers.map((t) => ({ label: t.label, min: t.min, max: t.max, off: Math.round(t.off * 100) })),
+        products: [
+          { n: '单选订阅', d: '从名录中逐家选择，按家数 × 周期计费', s: '在售' }, { n: '名额包', d: '一次购买 N 个名额，有效期内自由分配；N 越大单价越低', s: '在售' },
+          { n: '周期内加购', d: '下单时指定新增企业；从新增企业生效日起计费，下单日至生效日之间不收费；计费天数为生效日至原订单到期日（含首尾），到期日与原订单对齐', s: '在售' }, { n: '预置组合包', d: '平台编排的区域或品类组合，整体定价', s: '二期' }, { n: '全量包', d: '订阅全部已上架企业，新上架企业自动加入', s: '二期' },
+          { n: '模拟数据演示', d: '只提供模拟数据的演示看板，不提供真实数据试用', s: '免费' }, { n: '价格数据权益', d: '是否单独计价待确认（N-04）；随上游价格功能闸口开放', s: '待确认' }],
+        calc: { qty: 200, cycle: '年付' },
+        deals: [
+          { kind: '合同价', target: B.bc, rule: '1,000 名额以上按 240 元/名额·月（目录价年付 1000+ 档为 255 元）', exp: '2027-11-30' },
+          { kind: '折扣码', target: 'RENEW2026（续费专用）', rule: '续费订单 97 折，已用 38 / 200 次', exp: '2026-12-31' }],
+        pp: [{ id: 'PRC-20261123-01', kind: 'deal', title: '新增折扣码 STEEL2026Q4', from: '', to: '新客首单 95 折，限 50 次，有效期至 2026-12-31', reason: '四季度新客拓展活动，市场部申请。', eff: '2026-11-25', by: '何志远', t: '2026-11-23 11:15', payload: { kind: '折扣码', target: 'STEEL2026Q4（新客首单）', rule: '95 折，已用 0 / 50 次', exp: '2026-12-31' } }],
+        ph: [
+          { id: 'PRC-20260910-01', title: '新增合同价：' + B.bc, from: '', to: '1,000 名额以上按 240 元/名额·月，有效期至 2027-11-30', reason: '大客户框架协议。', eff: '2026-09-15', by: '何志远', t: '2026-09-10 10:20', rv: '林若彤', rvT: '2026-09-10 15:42', st: '已生效' },
+          { id: 'PRC-20260601-01', title: '数量阶梯 1000+ 档折扣', from: '8 折', to: '75 折', reason: '鼓励集团客户整体采购。', eff: '2026-07-01', by: '林若彤', t: '2026-06-01 11:05', rv: '何志远', rvT: '2026-06-02 09:30', st: '已生效' }],
+        pd: { show: false, k: 'base', v: 400, eff: '2026-12-01', reason: '' },
+        cc: { show: false, kind: '合同价', target: B.jj, code: 'SPRING2027', price: 300, off: 95, limit: 100, exp: '2027-03-31', reason: '' },
+        buyers: Object.values(B),
+      };
+    },
+    computed: {
+      orderRows() { const f = this.of; return this.orders.filter((o) => (!f.kw || (o.no + o.buyer).indexOf(f.kw.trim()) >= 0) && (!f.prod || o.prod === f.prod) && (!f.st || o.st === f.st) && (!f.pay || o.pay === f.pay)); },
+      priceOpts() { return [{ k: 'base', n: '基础单价' }, { k: 'quarter', n: '季付折扣' }, { k: 'year', n: '年付折扣' }, { k: 'minQty', n: '最小购买量' }, { k: 'hist', n: '赠送历史深度' }].concat(this.tiers.map((t, i) => ({ k: 'tier:' + i, n: '数量阶梯 ' + t.label + ' 档折扣' }))); },
+      calcR() {
+        const c = this.calc, months = { 月付: 1, 季付: 3, 年付: 12 }[c.cycle], cOff = { 月付: 100, 季付: this.pr.quarter, 年付: this.pr.year }[c.cycle];
+        const tier = this.tiers.find((t) => c.qty >= t.min && c.qty <= t.max) || this.tiers[0];
+        const list = c.qty * this.pr.base * months, amount = Math.round(list * cOff * tier.off / 10000), unit = this.pr.base * cOff * tier.off / 10000, share = this.pr.base * 0.2 * 0.98;
+        return { months, cOff, tier, list, amount, unit, share, rate: share / unit * 100 };
+      },
+      revOption() {
+        const o = STP.chart.line({ x: MONTHS.map((m, i) => (i === 11 ? m + '\n（截至 23 日）' : m)), unit: '万元', smooth: false, series: [
+          { name: '平台收入', type: 'bar', data: REV, barMaxWidth: 26, itemStyle: { borderRadius: [3, 3, 0, 0] } },
+          { name: '分成成本', type: 'bar', data: SHARE, barMaxWidth: 26, color: '#f7b500', itemStyle: { borderRadius: [3, 3, 0, 0] } },
+          { name: '净收入', data: REV.map((v, i) => +(v - SHARE[i]).toFixed(1)), color: '#18a058', showSymbol: true }] });
+        o.yAxis[0].scale = false; o.xAxis.axisLabel = { color: '#6b7787', interval: 0, fontSize: 11 };
+        return o;
+      },
+      prodOption() { return STP.chart.pie({ unit: '万元', name: '收入构成', data: [{ name: '名额包', value: 1746.2 }, { name: '单选订阅', value: 412.3 }, { name: '周期内加购', value: 266.8 }] }); },
+    },
+    methods: {
+      roleOf(n) { return STAFF.find((s) => s.n === n).r; },
+      stType(s) { return { 待支付: 'warning', 已支付待生效: 'primary', 生效中: 'success', 已到期: 'info', 已取消: 'info', 退款中: 'danger', 已退款: 'info' }[s]; },
+      offText(n) { return n >= 100 ? '原价' : (n % 10 === 0 ? n / 10 : n) + ' 折'; },
+      openOrder(o) { this.od = { show: true, o }; },
+      openOrderNo(no) { this.openOrder(this.orders.find((o) => o.no === no)); },
+      openRecon(r) { this.rc = { show: true, r, ok: false }; },
+      doRecon() {
+        const r = this.rc.r, o = this.orders.find((x) => x.no === r.no), t = nowStr();
+        o.st = r.future ? '已支付待生效' : '生效中'; o.sub = '';
+        o.logs.unshift([t, '对公到账核销（' + this.me + '），流水号 ' + r.flow[0] + (r.future ? '；订单已支付，' + o.from + ' 生效' : '；订单生效，名额日台账开始记账')]);
+        this.recons = this.recons.filter((x) => x !== r);
+        this.rc.show = false;
+        this.$demo('核销完成，订单 ' + r.no + (r.future ? ' 已支付，待 ' + o.from + ' 生效' : ' 已生效'));
+      },
+      openRefund(r) { this.rf = { show: true, r, note: '' }; },
+      doRefund(pass) {
+        const r = this.rf.r, o = this.orders.find((x) => x.no === r.no), t = nowStr();
+        if (!pass && !this.rf.note.trim()) return warn('驳回时请填写审核意见');
+        if (pass) { r.st = '已通过，待打款'; o.logs.unshift([t, '退款审核通过（' + this.me + '），退款 ' + STP.fmt(r.refund) + ' 元' + (r.rev ? '；同步生成分成冲正 ' + STP.fmt(r.rev) + ' 元' : '')]); }
+        else { r.st = '已驳回'; o.st = r.eff ? '生效中' : '已支付待生效'; o.logs.unshift([t, '退款申请被驳回（' + this.me + '）：' + this.rf.note]); }
+        this.rf.show = false;
+        this.$demo(pass ? '退款审核通过' + (r.rev ? '，已生成分成冲正记录' : '') : '已驳回退款申请');
+      },
+      issue(row) { row.st = '已开具'; row.invNo = '2611200000005' + String(M.hash(row.id) % 10000000).padStart(7, '0'); this.$demo('发票已开具，已通知购买主体下载'); },
+      getP(k) { return k.indexOf('tier:') === 0 ? this.tiers[+k.slice(5)].off : this.pr[k]; },
+      unitOf(k) { return k === 'base' ? '元/名额·月' : k === 'minQty' ? '个名额' : k === 'hist' ? '个月' : '%（85 即 85 折）'; },
+      pText(k, v) { return k === 'base' ? v + ' 元/名额·月' : k === 'minQty' ? v + ' 个名额' : k === 'hist' ? v + ' 个月' : this.offText(v); },
+      openPrice() { this.pd = { show: true, k: 'base', v: this.pr.base, eff: '2026-12-01', reason: '' }; },
+      nextId() { return 'PRC-20261124-0' + (this.pp.concat(this.ph).filter((x) => x.id.indexOf('20261124') > 0).length + 1); },
+      submitPrice() {
+        const d = this.pd, cur = this.getP(d.k);
+        if (d.v === cur || d.v == null) return warn('新值与当前值相同，无需提交');
+        if (!d.reason.trim()) return warn('请填写变更原因');
+        if (d.k === 'minQty' && d.v < this.$PV.nMin) return warn('最小购买量不得低于最小数据池规模（' + this.$PV.nMin + ' 家）');
+        if (d.eff <= M.TODAY) return warn('生效日期须晚于今天');
+        this.pp.unshift({ id: this.nextId(), kind: 'param', title: this.priceOpts.find((o) => o.k === d.k).n, from: this.pText(d.k, cur), to: this.pText(d.k, d.v), reason: d.reason, eff: d.eff, by: this.me, t: nowStr(), payload: { k: d.k, v: d.v } });
+        d.show = false; this.$demo('已提交，等待另一位平台人员复核');
+      },
+      openCc() { this.cc.show = true; this.cc.reason = ''; },
+      submitCc() {
+        const c = this.cc;
+        if (!c.reason.trim()) return warn('请填写原因');
+        if (c.kind === '折扣码' && !c.code.trim()) return warn('请填写折扣码');
+        const payload = c.kind === '合同价' ? { kind: '合同价', target: c.target, rule: '按 ' + c.price + ' 元/名额·月', exp: c.exp } : { kind: '折扣码', target: c.code, rule: this.offText(c.off) + '，已用 0 / ' + c.limit + ' 次', exp: c.exp };
+        this.pp.unshift({ id: this.nextId(), kind: 'deal', title: '新增' + c.kind + (c.kind === '合同价' ? '：' + c.target : ' ' + c.code), from: '', to: payload.rule + '，有效期至 ' + c.exp, reason: c.reason, eff: STP.addDays(M.TODAY, 1), by: this.me, t: nowStr(), payload });
+        c.show = false; this.$demo('已提交，等待另一位平台人员复核');
+      },
+      ppDone(row, st) {
+        const done = (extra) => {
+          this.pp = this.pp.filter((x) => x !== row);
+          this.ph.unshift(Object.assign({}, row, { st, rv: st === '已撤回' ? '' : this.me, rvT: st === '已撤回' ? '' : nowStr() }, extra));
+        };
+        if (st === '已撤回') { done(); return this.$demo('已撤回申请'); }
+        if (row.by === this.me) return this.$info('提交人不能复核自己的申请');
+        if (st === '已驳回') {
+          return ElementPlus.ElMessageBox.prompt('请填写驳回意见', '驳回定价变更', { confirmButtonText: '确认驳回', cancelButtonText: '取消', inputValidator: (v) => !!(v && v.trim()) || '请填写驳回意见' })
+            .then(({ value }) => { done({ reason: row.reason + '（驳回意见：' + value + '）' }); this.$demo('已驳回，定价保持不变'); }).catch(() => {});
+        }
+        ElementPlus.ElMessageBox.confirm('确认通过“' + row.title + '”？将于 ' + row.eff + ' 起对新订单生效。', '复核定价变更', { type: 'warning', confirmButtonText: '确认通过', cancelButtonText: '取消' }).then(() => {
+          if (row.kind === 'param') { const k = row.payload.k; if (k.indexOf('tier:') === 0) this.tiers[+k.slice(5)].off = row.payload.v; else this.pr[k] = row.payload.v; } else this.deals.push(row.payload);
+          done(); this.$demo('复核通过，定价变更已生效并写入变更历史');
+        }).catch(() => {});
+      },
+    },
+  });
+})();
+</script>
+</body>
+</html>

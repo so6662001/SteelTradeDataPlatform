@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>钢贸上下游数据平台 · 高保真原型入口</title>
+<link rel="stylesheet" href="assets/lib/element-plus.css">
+<link rel="stylesheet" href="assets/css/app.css">
+<style>
+body { background: #f3f5f8; }
+.portal-hero .ver { display: inline-block; margin-bottom: 14px; padding: 2px 10px; border-radius: 12px; background: rgba(255,255,255,.16); font-size: 12px; letter-spacing: .5px; }
+.portal-hero .facts { display: flex; gap: 26px; margin-top: 18px; font-size: 13px; color: #dbe7f8; flex-wrap: wrap; }
+.portal-hero .facts b { color: #fff; font-size: 18px; margin-right: 4px; }
+.portal-card .enter { display: inline-flex; align-items: center; justify-content: center; height: 36px; border-radius: 6px; color: #fff; font-weight: 600; text-decoration: none; }
+.portal-card .enter:hover { filter: brightness(1.08); }
+.portal-card .flow { font-size: 12px; color: var(--stp-sub); line-height: 1.8; margin-bottom: 14px; padding: 8px 10px; background: #f7f9fc; border-radius: 6px; }
+.portal-card .flow a { white-space: nowrap; }
+.pl { background: #fff; border: 1px solid var(--stp-border); border-radius: 10px; overflow: hidden; }
+.pl table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.pl th { text-align: left; background: #f7f9fc; color: #5b6676; font-weight: 600; padding: 9px 14px; border-bottom: 1px solid var(--stp-border); }
+.pl td { padding: 8px 14px; border-bottom: 1px solid #eef1f5; vertical-align: top; line-height: 1.7; }
+.pl tr:last-child td { border-bottom: none; }
+.pl td.g { width: 118px; color: #5b6676; font-weight: 600; background: #fbfcfe; border-right: 1px solid #eef1f5; }
+.pl td.n { width: 190px; white-space: nowrap; }
+.pl td.n a { font-weight: 600; }
+.pl td.f { width: 210px; color: #8a94a3; font-family: Consolas, Menlo, monospace; font-size: 12px; }
+.pl .hd { display: flex; align-items: center; gap: 10px; padding: 12px 14px; font-weight: 600; font-size: 15px; border-bottom: 1px solid var(--stp-border); }
+.pl .hd i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.pl .hd small { font-weight: 400; color: var(--stp-sub); font-size: 12px; }
+.tag-new { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 3px; font-size: 11px; line-height: 17px; background: #fff3e0; color: #b25e00; border: 1px solid #ffd9a8; font-weight: 400; }
+.tag-gate { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 3px; font-size: 11px; line-height: 17px; background: #eef4fb; color: #2b5d9b; border: 1px solid #d5e4f5; font-weight: 400; }
+.sw-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.sw { background: #fff; border: 1px solid var(--stp-border); border-radius: 10px; padding: 16px 18px; }
+.sw h4 { margin: 0 0 6px; font-size: 15px; display: flex; align-items: center; gap: 10px; }
+.sw p { margin: 0 0 12px; font-size: 13px; color: #5b6676; line-height: 1.8; }
+.sw .st { font-size: 12px; padding: 1px 8px; border-radius: 10px; font-weight: 400; }
+.sw .st.off { background: #f1f3f6; color: #6b7787; }
+.sw .st.on { background: #e6f6ec; color: #18794e; }
+.seg { display: inline-flex; border: 1px solid #cfd6e0; border-radius: 6px; overflow: hidden; }
+.seg button { border: none; background: #fff; padding: 6px 14px; font-size: 13px; cursor: pointer; color: #4a5568; font-family: inherit; }
+.seg button + button { border-left: 1px solid #cfd6e0; }
+.seg button.cur { background: var(--el-color-primary); color: #fff; }
+.sw .lk { margin-left: 14px; font-size: 13px; }
+.rules { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.rules .r { background: #fff; border: 1px solid var(--stp-border); border-radius: 10px; padding: 14px 16px; font-size: 13px; line-height: 1.8; color: #4a5568; }
+.rules .r b { display: block; color: #1f2d3d; font-size: 14px; margin-bottom: 2px; }
+.notes { background: #fff; border: 1px solid var(--stp-border); border-radius: 10px; padding: 14px 18px 14px 34px; font-size: 13px; line-height: 2; color: #4a5568; margin: 0; }
+.foot { text-align: center; color: #8a94a3; font-size: 12px; padding: 18px 0 30px; }
+</style>
+</head>
+<body>
+<div class="portal-hero">
+  <div class="portal-wrap">
+    <span class="ver">高保真原型 · 对应需求文档 V0.2 · 2026-11-24</span>
+    <h1>钢贸上下游数据平台</h1>
+    <p>货袋子平台的数据板块：下游钢贸企业通过 ERP 接口按自己设定的条件上传进销存数据，平台做清洗、标准化与聚合脱敏，上游钢厂按“数据池内的下游企业数”付费，只能看到聚合后的销量与库存。本原型覆盖三个端的主流程，全部为静态页面，可离线打开。</p>
+    <div class="facts">
+      <span><b>3</b>个端</span><span><b>34</b>个页面</span><span><b>全部</b>为模拟数据，企业名称均为虚构</span><span>页面内的弹窗、抽屉、状态切换均可点击</span>
+    </div>
+  </div>
+</div>
+
+<div class="portal-wrap">
+  <div class="portal-cards">
+    <div class="portal-card">
+      <h2><span class="ic" style="background:#409eff">钢</span>上游钢厂端</h2>
+      <div class="who">演示身份：东岳钢铁集团有限公司 · 周立明（企业管理员）</div>
+      <ul>
+        <li>聚合看板、多维查询、导出中心</li>
+        <li>数据来源企业名单（只到数据池级别）</li>
+        <li>企业名录选购、批量购买名额包、订单与订阅</li>
+        <li>量价视图（受法务闸口控制，默认未开放）</li>
+        <li>模拟数据演示看板</li>
+      </ul>
+      <div class="flow">主流程：<a data-p href="upstream/demo.html">演示看板</a> → <a data-p href="upstream/directory.html">选购企业</a> → <a data-p href="upstream/quota-package.html">购买名额包</a> → <a data-p href="upstream/orders.html">订单</a> → <a data-p href="upstream/pool.html">数据池名单</a> → <a data-p href="upstream/dashboard.html">看板</a> → <a data-p href="upstream/query.html">查询</a> → <a data-p href="upstream/export.html">导出</a></div>
+      <a class="enter" data-p style="background:#409eff" href="upstream/dashboard.html">进入上游钢厂端</a>
+    </div>
+    <div class="portal-card">
+      <h2><span class="ic" style="background:#18a058">贸</span>下游钢贸端</h2>
+      <div class="who">演示身份：苏州恒运钢铁贸易有限公司 · 陈海峰（企业管理员）</div>
+      <ul>
+        <li>ERP 接口接入、接口文档、联调状态</li>
+        <li>上传条件规则、上传粒度、价格上传开关</li>
+        <li>名称可见性（实名、匿名、定向可见）</li>
+        <li>每日上传汇总、已上传数据自查</li>
+        <li>透明账本、行业对标、我的收益、暂停与退出</li>
+      </ul>
+      <div class="flow">主流程：<a data-p href="downstream/api-access.html">接口接入</a> → <a data-p href="downstream/upload-rules.html">上传规则</a> → <a data-p href="downstream/upload-settings.html">上传设置</a> → <a data-p href="downstream/visibility.html">可见性</a> → <a data-p href="downstream/daily-summary.html">每日汇总</a> → <a data-p href="downstream/data-check.html">自查</a> → <a data-p href="downstream/ledger.html">账本</a> → <a data-p href="downstream/revenue.html">收益</a></div>
+      <a class="enter" data-p style="background:#18a058" href="downstream/home.html">进入下游钢贸端</a>
+    </div>
+    <div class="portal-card">
+      <h2><span class="ic" style="background:#f0a020">运</span>平台运营后台</h2>
+      <div class="who">演示身份：货袋子平台 · 数据板块 · 林若彤（运营主管）</div>
+      <ul>
+        <li>企业管理、数据池管理</li>
+        <li>全品类主数据工作台、地区与仓库</li>
+        <li>数据质量监控、上传粒度监控</li>
+        <li>防反推参数、价格数据管控（法务闸口）</li>
+        <li>订单与计费、分成规则与台账、分成结算、审计日志</li>
+      </ul>
+      <div class="flow">主流程：<a data-p href="admin/workbench.html">工作台</a> → <a data-p href="admin/enterprises.html">企业审核</a> → <a data-p href="admin/master-category.html">主数据</a> → <a data-p href="admin/quality.html">质量</a> → <a data-p href="admin/privacy-params.html">防反推</a> → <a data-p href="admin/billing.html">计费</a> → <a data-p href="admin/settlement.html">结算</a> → <a data-p href="admin/audit.html">审计</a></div>
+      <a class="enter" data-p style="background:#f0a020" href="admin/workbench.html">进入平台运营后台</a>
+    </div>
+  </div>
+
+  <div class="portal-section">
+    <h3>原型状态开关</h3>
+    <div class="sw-grid">
+      <div class="sw">
+        <h4>上游价格闸口 <span class="st" id="st-gate"></span></h4>
+        <p>上游侧的价格功能由平台法务闸口统一控制，<b>默认关闭</b>。关闭时上游菜单没有“量价视图”，看板、查询、导出都不出现价格；开放后出现入口，首次进入需确认使用条款。价格只展示加权均价、涨跌和覆盖率区间。</p>
+        <span class="seg" id="seg-gate"><button data-v="closed">未开放（默认）</button><button data-v="open">已开放</button></span>
+        <a class="lk" data-p href="upstream/price.html">打开量价视图</a>
+        <a class="lk" data-p href="admin/price-control.html">运营后台闸口流程</a>
+      </div>
+      <div class="sw">
+        <h4>下游价格上传开关 <span class="st" id="st-dnPrice"></span></h4>
+        <p>示例下游企业是否上传价格与金额，<b>默认不上传</b>。不上传不影响上架与被订阅；开启需确认条款，可设置范围，可随时关闭并清除已上传的历史价格。开关会影响“上传设置”“行业对标”等页面的展示。</p>
+        <span class="seg" id="seg-dnPrice"><button data-v="off">不上传（默认）</button><button data-v="on">已开启</button></span>
+        <a class="lk" data-p href="downstream/upload-settings.html">打开上传设置</a>
+        <a class="lk" data-p href="downstream/benchmark.html">行业对标</a>
+      </div>
+    </div>
+    <div class="small muted" style="margin-top:8px">两个开关也可以在对应页面内切换（上游端顶栏、运营后台“价格数据管控”、下游“上传设置”）。状态保存在浏览器本地并随链接传递，跨页面保持。</div>
+  </div>
+
+  <div class="portal-section">
+    <h3>全部页面</h3>
+    <div class="pl">
+      <div class="hd"><i style="background:#409eff"></i>上游钢厂端<small>9 个页面 · 目录 upstream/</small></div>
+      <table>
+        <tr><th>分组</th><th>页面</th><th>内容</th><th>文件</th></tr>
+        <tr><td class="g" rowspan="4">数据洞察</td><td class="n"><a data-p href="upstream/dashboard.html">聚合看板</a></td><td>概览指标、地区地图（省到地级市下钻）、销量与库存趋势、品类结构、本厂品牌视图；含“数据池低于最小规模”空状态</td><td class="f">dashboard.html</td></tr>
+        <tr><td class="n"><a data-p href="upstream/query.html">多维查询</a></td><td>地区、品类、规格、品牌、时间自由组合；合并披露、追加屏蔽、多选提示；各品类可查粒度；交叉表与图表视图</td><td class="f">query.html</td></tr>
+        <tr><td class="n"><a data-p href="upstream/price.html">量价视图</a><span class="tag-new">V0.2</span><span class="tag-gate">受闸口控制</span></td><td>“未开放”与“已开放”两种状态；加权均价、涨跌、覆盖率区间；量价联动、品牌价差、分地区量价；首次进入确认条款</td><td class="f">price.html</td></tr>
+        <tr><td class="n"><a data-p href="upstream/export.html">导出中心</a></td><td>导出任务、定时发送、配额与水印、导出规则说明</td><td class="f">export.html</td></tr>
+        <tr><td class="g" rowspan="3">数据池与选购</td><td class="n"><a data-p href="upstream/pool.html">数据来源企业名单</a></td><td>池内企业名单与名额状态（只到数据池级别，不含任何单家数据）、调整记录、冻结与替换</td><td class="f">pool.html</td></tr>
+        <tr><td class="n"><a data-p href="upstream/directory.html">企业名录选购</a></td><td>按地区、品类、规模、质量筛选下游企业，实名与匿名展示，加入清单并计价</td><td class="f">directory.html</td></tr>
+        <tr><td class="n"><a data-p href="upstream/quota-package.html">批量购买名额包</a></td><td>阶梯价、订阅周期、下单与支付步骤</td><td class="f">quota-package.html</td></tr>
+        <tr><td class="g">订单与账务</td><td class="n"><a data-p href="upstream/orders.html">订单与订阅</a></td><td>订阅批次、订单、续费与加购、合同与发票</td><td class="f">orders.html</td></tr>
+        <tr><td class="g">试用</td><td class="n"><a data-p href="upstream/demo.html">模拟数据演示看板</a></td><td>购买前的演示看板，带醒目“模拟数据”标识，不提供导出与名单</td><td class="f">demo.html</td></tr>
+      </table>
+    </div>
+    <div class="pl" style="margin-top:16px">
+      <div class="hd"><i style="background:#18a058"></i>下游钢贸端<small>12 个页面 · 目录 downstream/</small></div>
+      <table>
+        <tr><th>分组</th><th>页面</th><th>内容</th><th>文件</th></tr>
+        <tr><td class="g">总览</td><td class="n"><a data-p href="downstream/home.html">工作台</a></td><td>上传状态、被订阅家数、待办、质量评级与收益概览</td><td class="f">home.html</td></tr>
+        <tr><td class="g" rowspan="4">数据接入</td><td class="n"><a data-p href="downstream/api-access.html">ERP 接口接入</a></td><td>应用密钥、IP 白名单、沙箱与正式环境、联调状态、批次记录</td><td class="f">api-access.html</td></tr>
+        <tr><td class="n"><a data-p href="downstream/api-docs.html">接口文档中心</a></td><td>鉴权签名、各接口字段、示例代码、错误码</td><td class="f">api-docs.html</td></tr>
+        <tr><td class="n"><a data-p href="downstream/upload-rules.html">上传条件规则</a></td><td>按仓库、品类、品牌、客户类型等配置上传范围，规则试算与生效记录</td><td class="f">upload-rules.html</td></tr>
+        <tr><td class="n"><a data-p href="downstream/upload-settings.html">上传设置</a><span class="tag-new">V0.2</span></td><td>上传粒度（单据行级或按日汇总，按来源系统选择）与价格金额上传开关（默认关闭）</td><td class="f">upload-settings.html</td></tr>
+        <tr><td class="g" rowspan="2">数据自查</td><td class="n"><a data-p href="downstream/daily-summary.html">每日上传汇总</a></td><td>按业务日期核对批次、条数、吨位、隔离与对账结果</td><td class="f">daily-summary.html</td></tr>
+        <tr><td class="n"><a data-p href="downstream/data-check.html">已上传数据自查</a></td><td>逐条查看已上传数据与平台标准化结果，作废、更正、导出</td><td class="f">data-check.html</td></tr>
+        <tr><td class="g" rowspan="3">数据安全中心</td><td class="n"><a data-p href="downstream/visibility.html">名称可见性设置</a></td><td>实名、匿名、定向可见，名录中的展示预览</td><td class="f">visibility.html</td></tr>
+        <tr><td class="n"><a data-p href="downstream/ledger.html">数据使用透明账本</a></td><td>被订阅家数（不显示钢厂名称）、钢厂能看到什么、平台人员访问记录</td><td class="f">ledger.html</td></tr>
+        <tr><td class="n"><a data-p href="downstream/pause-exit.html">暂停与退出</a></td><td>暂停上传、恢复、退出板块及数据处置</td><td class="f">pause-exit.html</td></tr>
+        <tr><td class="g" rowspan="2">权益回馈</td><td class="n"><a data-p href="downstream/benchmark.html">行业对标数据</a></td><td>本企业与同地区同品类聚合水平的对比</td><td class="f">benchmark.html</td></tr>
+        <tr><td class="n"><a data-p href="downstream/revenue.html">我的收益</a><span class="tag-new">V0.2</span></td><td>收益分成规则、预计收益、结算单、开票与提现</td><td class="f">revenue.html</td></tr>
+      </table>
+    </div>
+    <div class="pl" style="margin-top:16px">
+      <div class="hd"><i style="background:#f0a020"></i>平台运营后台<small>13 个页面 · 目录 admin/</small></div>
+      <table>
+        <tr><th>分组</th><th>页面</th><th>内容</th><th>文件</th></tr>
+        <tr><td class="g">总览</td><td class="n"><a data-p href="admin/workbench.html">运营工作台</a></td><td>平台规模、T+1 发布状态、各模块待办</td><td class="f">workbench.html</td></tr>
+        <tr><td class="g" rowspan="2">企业与数据池</td><td class="n"><a data-p href="admin/enterprises.html">企业管理</a></td><td>上下游准入审核、身份认定、画像与上架审核</td><td class="f">enterprises.html</td></tr>
+        <tr><td class="n"><a data-p href="admin/pools.html">数据池管理</a></td><td>各上游的名额与数据池、被动减员、补偿处理</td><td class="f">pools.html</td></tr>
+        <tr><td class="g" rowspan="2">主数据</td><td class="n"><a data-p href="admin/master-category.html">全品类主数据工作台</a><span class="tag-new">V0.2</span></td><td>分品类标准化深度、披露粒度、映射队列、拆分合并</td><td class="f">master-category.html</td></tr>
+        <tr><td class="n"><a data-p href="admin/master-region.html">地区与仓库</a></td><td>行政区划、仓库归属地映射</td><td class="f">master-region.html</td></tr>
+        <tr><td class="g" rowspan="4">数据治理</td><td class="n"><a data-p href="admin/quality.html">数据质量监控</a></td><td>质量指标、断传跟进、隔离数据、补传审核、质量规则</td><td class="f">quality.html</td></tr>
+        <tr><td class="n"><a data-p href="admin/grain-monitor.html">上传粒度监控</a><span class="tag-new">V0.2</span></td><td>行级与日汇总的分布、切换记录、对聚合维度的影响</td><td class="f">grain-monitor.html</td></tr>
+        <tr><td class="n"><a data-p href="admin/privacy-params.html">防反推参数</a></td><td>最小数据池、最小贡献企业数、优势度、区间、修约等参数，双人复核与影响试算</td><td class="f">privacy-params.html</td></tr>
+        <tr><td class="n"><a data-p href="admin/price-control.html">价格数据管控</a><span class="tag-new">V0.2</span></td><td>上游价格法务闸口（默认关闭，双人复核开启，可立即关闭）、价格披露参数</td><td class="f">price-control.html</td></tr>
+        <tr><td class="g" rowspan="3">交易与结算</td><td class="n"><a data-p href="admin/billing.html">订单与计费</a></td><td>订单、对公收款确认、退款、价目与优惠</td><td class="f">billing.html</td></tr>
+        <tr><td class="n"><a data-p href="admin/share-rules.html">分成规则与台账</a><span class="tag-new">V0.2</span></td><td>分成规则版本、名额日台账、计提明细、冻结与复核</td><td class="f">share-rules.html</td></tr>
+        <tr><td class="n"><a data-p href="admin/settlement.html">分成结算</a><span class="tag-new">V0.2</span></td><td>结算单生成、下游确认与开票、付款批次、对账</td><td class="f">settlement.html</td></tr>
+        <tr><td class="g">安全</td><td class="n"><a data-p href="admin/audit.html">审计日志</a></td><td>上游查询与导出记录、异常查询告警、平台人员明细访问审批</td><td class="f">audit.html</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="portal-section">
+    <h3>防反推规则在界面上的体现</h3>
+    <div class="rules">
+      <div class="r"><b>屏蔽单元格</b>不满足披露条件的数值显示为灰色“—”，鼠标悬停统一提示“样本不足，不予披露”，不区分具体原因。见 <a data-p href="upstream/dashboard.html">聚合看板</a>、<a data-p href="upstream/query.html">多维查询</a>。</div>
+      <div class="r"><b>贡献企业数只给区间</b>5–9、10–19、20–49、50+ 家，不出现精确家数；价格覆盖率同样只给区间。</div>
+      <div class="r"><b>合并披露与追加屏蔽</b>列表中的小样本成员合并为“其他（合并披露）”；交叉表追加屏蔽，防止用合计倒推。见多维查询的“省 × 大类交叉表”方案。</div>
+      <div class="r"><b>没有单家企业明细</b>上游任何页面都没有“企业”维度，名单只到数据池级别；筛选不支持“排除某项”。见 <a data-p href="upstream/pool.html">数据来源企业名单</a>。</div>
+      <div class="r"><b>最小数据池规模</b>池内有效企业少于 20 家时，看板、查询、导出都不提供数值。在聚合看板右上角“原型状态”切换查看。</div>
+      <div class="r"><b>价格约束更严</b>有价企业数不少于 8 家，只展示加权均价、涨跌、覆盖率区间，不展示金额合计与有价销量；销量被屏蔽的单元格价格一并屏蔽。</div>
+    </div>
+  </div>
+
+  <div class="portal-section">
+    <h3>说明</h3>
+    <ul class="notes">
+      <li>全部数据为程序生成的模拟数据，企业、钢厂、人员名称均为虚构；价目、分成比例、披露参数标注为“示例参数”的，取自需求文档的建议值，尚待业务方确认。</li>
+      <li>纯静态文件，不依赖网络与后端：Vue 3、Element Plus、ECharts 与地图数据都保存在 <span class="code">assets/lib/</span>，双击本页即可使用。建议使用 Chrome 或 Edge，窗口宽度不小于 1366 像素。</li>
+      <li>页面右上角的“原型导航”可随时回到本页，“切换身份”可在三个端之间跳转。表单提交、支付、导出等操作只做演示提示，不会产生真实数据。</li>
+    </ul>
+  </div>
+  <div class="foot">货袋子 · 钢贸上下游数据平台 高保真原型 · 页面数据均为模拟数据</div>
+</div>
+
+<script>
+(function () {
+  var DEF = { gate: 'closed', dnPrice: 'off' };
+  var LABEL = { gate: { closed: '未开放', open: '已开放' }, dnPrice: { off: '不上传', on: '已开启' } };
+  var st = { gate: DEF.gate, dnPrice: DEF.dnPrice };
+  try { var s = JSON.parse(localStorage.getItem('stp-proto-state') || '{}'); for (var k in DEF) if (typeof s[k] === 'string') st[k] = s[k]; } catch (e) { /* ignore */ }
+  var m = /#s=([^&]*)/.exec(location.hash || '');
+  if (m) m[1].split(',').forEach(function (kv) { var a = kv.split(':'); if (a[0] in DEF && a[1]) st[a[0]] = a[1]; });
+  function hashOf() { var d = []; for (var k in DEF) if (st[k] !== DEF[k]) d.push(k + ':' + st[k]); return d.length ? '#s=' + d.join(',') : ''; }
+  function render() {
+    try { localStorage.setItem('stp-proto-state', JSON.stringify(st)); } catch (e) { /* ignore */ }
+    try { history.replaceState(null, '', location.pathname + location.search + (hashOf() || '#')); } catch (e) { /* ignore */ }
+    Object.keys(DEF).forEach(function (k) {
+      var on = st[k] !== DEF[k], el = document.getElementById('st-' + k);
+      el.textContent = '当前：' + LABEL[k][st[k]]; el.className = 'st ' + (on ? 'on' : 'off');
+      Array.prototype.forEach.call(document.querySelectorAll('#seg-' + k + ' button'), function (b) { b.className = b.getAttribute('data-v') === st[k] ? 'cur' : ''; });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('a[data-p]'), function (a) { a.setAttribute('href', a.getAttribute('href').replace(/#.*$/, '') + hashOf()); });
+  }
+  Object.keys(DEF).forEach(function (k) {
+    Array.prototype.forEach.call(document.querySelectorAll('#seg-' + k + ' button'), function (b) { b.addEventListener('click', function () { st[k] = b.getAttribute('data-v'); render(); }); });
+  });
+  render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>订单与订阅 · 上游钢厂端 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.od-tbl .el-table .cell { padding: 0 8px; }
+.od-no { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: 12px; }
+.two { line-height: 18px; font-size: 12.5px; }
+.two span { display: block; color: var(--stp-sub); font-size: 12px; }
+.ex-tag { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 11px; line-height: 18px; background: #fff8eb; color: #9a6400; border: 1px solid #f3dfb8; font-weight: 400; white-space: nowrap; }
+.drawer-sec { font-size: 14px; font-weight: 600; margin: 18px 0 10px; display: flex; align-items: center; gap: 6px; }
+.drawer-sec::before { content: ""; width: 3px; height: 14px; background: var(--el-color-primary); border-radius: 2px; }
+.file-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--stp-border); border-radius: 6px; font-size: 13px; margin-bottom: 8px; }
+.file-row .el-icon { font-size: 20px; color: #409eff; }
+.file-row .meta { flex: 1; min-width: 0; }
+.file-row .meta span { display: block; color: var(--stp-sub); font-size: 12px; }
+.el-descriptions__label { white-space: nowrap; }
+.rule-ol { margin: 0; padding-left: 20px; line-height: 1.9; font-size: 13px; }
+.sum-line { display: flex; justify-content: space-between; align-items: baseline; padding: 10px 14px; background: #f6f8fa; border-radius: 6px; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="upstream" active="orders" title="订单与订阅" watermark
+  desc="查看名额与订阅批次、订单与支付状态，下载合同与发票，办理续费与扩容。计费单位为名额：1 个名额 = 1 家下游企业 × 1 个计费周期。">
+  <template #actions>
+    <el-button @click="openInvoice()"><el-icon><Document /></el-icon>申请发票</el-button>
+    <el-button @click="openRenew(batches[0])"><el-icon><Refresh /></el-icon>续费</el-button>
+    <el-button type="primary" @click="$go('directory.html')"><el-icon><Plus /></el-icon>扩容（加购名额）</el-button>
+  </template>
+
+  <el-alert type="info" show-icon :closable="false">
+    <template #title>
+      到期提醒：当前订阅将于 <b>2027-03-31</b> 到期，剩余 <b>128</b> 天。平台会在到期前 30 天、7 天、1 天通过站内信、短信和邮件提醒；到期未续费，数据池失效并停止访问。
+      <a href="javascript:;" @click="openRenew(batches[0])">提前续费 ›</a>
+    </template>
+  </el-alert>
+  <el-alert v-if="unpaid" type="warning" show-icon :closable="false">
+    <template #title>
+      有 1 笔订单待支付：<b>{{ unpaid.id }}</b>（{{ unpaid.goods }}，{{ $fmt(unpaid.amount) }} 元）。
+      <template v-if="!unpaid.proof">请上传转账凭证，平台财务核销后生效。<a href="javascript:;" @click="openProof(unpaid)">上传转账凭证 ›</a></template>
+      <template v-else>转账凭证已上传，等待平台财务核销。</template>
+    </template>
+  </el-alert>
+
+  <div class="grid c5">
+    <stat-card label="已购名额" :value="200" unit="个" icon="Tickets" tip="当前生效批次的名额总数">
+      <span>订阅期 2026-04-01 至 2027-03-31</span><span>年付</span>
+    </stat-card>
+    <stat-card label="已分配" :value="186" unit="个" icon="OfficeBuilding" tip="已分配给数据池内企业的名额。冻结名额可免费替换或顺延">
+      <span>有效 <b>183</b></span><span>冻结 <b style="color:#e5484d">3</b></span><a href="pool.html">查看数据池 ›</a>
+    </stat-card>
+    <stat-card label="待生效" :value="14" unit="个" icon="Clock" tip="已分配（待生效）：已指定企业、等待下一个数据池调整周期生效的名额。生效前企业数据不进入聚合。这 14 个都是主批次内的未分配名额分配出去的（2026-11-19 数据池调整新增 1 家，2026-11-20 企业名录选购 13 家），不属于加购，不产生新费用；加购名额的计划生效日同时是计费起始日">
+      <span>计划生效日 <b>2026-12-01</b></span><span>另有加购 <b>30</b> 个待核销</span>
+    </stat-card>
+    <stat-card label="未分配" :value="0" unit="个" icon="Box" tip="主批次 200 个名额已全部分配：在池 186 个、待生效 14 个。未分配名额在 2026-11-20 的选购中用完，再新增企业需要加购。分配未分配名额不属于加购，不产生新费用">
+      <span>名额包已全部分配</span><a href="directory.html">去加购 ›</a>
+    </stat-card>
+    <div class="stat">
+      <div class="label">最近到期</div>
+      <div class="value num">2027-03-31</div>
+      <div class="foot"><span>剩余 <b>128</b> 天</span><span>提前 30、7、1 天提醒</span></div>
+      <div class="ico"><el-icon><Timer /></el-icon></div>
+    </div>
+  </div>
+
+  <div class="card od-tbl">
+    <div class="card-title"><span>订阅批次<small>各批次的名额数与到期日；周期内加购的名额并入主批次，到期日对齐，起始日为计划生效日（即计费起始日）</small></span></div>
+    <el-table :data="batches" size="default">
+      <el-table-column label="批次" min-width="200"><template #default="{row}"><b>{{ row.name }}</b><div class="muted small" style="line-height:18px"><span class="od-no">{{ row.id }}</span> · 来源订单 <a href="javascript:;" class="od-no" @click="openDetailById(row.order)">{{ row.order }}</a></div></template></el-table-column>
+      <el-table-column label="名额数" width="230"><template #default="{row}"><b class="num">{{ row.qty }}</b> 个<span v-if="row.assigned" class="muted small">（已分配 {{ row.assigned }}<template v-if="row.wait">，待生效 {{ row.wait }}</template>）</span></template></el-table-column>
+      <el-table-column label="起止" width="210"><template #default="{row}"><span class="num">{{ row.start }} 至 {{ row.end }}</span></template></el-table-column>
+      <el-table-column label="剩余天数" width="110"><template #default="{row}"><span v-if="row.left" class="num">{{ row.left }} 天</span><span v-else class="muted">—</span></template></el-table-column>
+      <el-table-column label="状态" width="190">
+        <template #default="{row}"><el-tag size="small" :type="BST[row.status]">{{ row.status }}</el-tag><span v-if="row.note" class="muted small" style="margin-left:6px">{{ row.note }}</span></template>
+      </el-table-column>
+      <el-table-column label="操作" width="130">
+        <template #default="{row}">
+          <template v-if="row.status === '生效中'">
+            <el-button link type="primary" @click="openRenew(row)">续费</el-button>
+            <el-button link type="primary" @click="$go('directory.html')">扩容</el-button>
+          </template>
+          <el-button v-else-if="row.status === '待支付'" link type="primary" @click="openDetailById(row.order)">查看订单</el-button>
+          <span v-else class="muted">—</span>
+        </template>
+      </el-table-column>
+    </el-table>
+  </div>
+
+  <div class="card od-tbl">
+    <div class="card-title" style="margin-bottom:4px"><span>我的订单</span><span class="ex-tag">金额按示例参数计算，待业务方确定</span></div>
+    <el-tabs v-model="tab">
+      <el-tab-pane v-for="t in tabs" :key="t.k" :name="t.k"><template #label>{{ t.t }} <span class="muted small">&nbsp;{{ countOf(t.k) }}</span></template></el-tab-pane>
+    </el-tabs>
+    <el-table :data="shown" size="default">
+      <el-table-column label="订单号" width="146"><template #default="{row}"><a href="javascript:;" class="od-no" @click="openDetail(row)">{{ row.id }}</a><div class="muted small num" style="line-height:16px">{{ row.at }}</div></template></el-table-column>
+      <el-table-column label="商品" min-width="140"><template #default="{row}">{{ row.goods }}<div class="muted small" style="line-height:16px">{{ row.sub }}</div></template></el-table-column>
+      <el-table-column label="名额数" width="60" align="right"><template #default="{row}"><span class="num">{{ row.qty }}</span></template></el-table-column>
+      <el-table-column label="周期" width="176"><template #default="{row}"><div class="two">{{ row.cycle }}<span class="num">{{ row.start }} 至 {{ row.end }}</span></div></template></el-table-column>
+      <el-table-column label="金额（元）" width="92" align="right"><template #default="{row}"><b class="num">{{ $fmt(row.amount) }}</b></template></el-table-column>
+      <el-table-column label="支付方式" width="130"><template #default="{row}"><div class="two">{{ row.pay }}<span :style="{color: row.status === '待支付' ? '#b26a00' : ''}">{{ row.payNote }}</span></div></template></el-table-column>
+      <el-table-column label="状态" width="78"><template #default="{row}"><el-tag size="small" :type="OST[row.status]" :effect="row.status === '已取消' || row.status === '已到期' ? 'plain' : 'light'">{{ row.status }}</el-tag></template></el-table-column>
+      <el-table-column label="合同" width="56">
+        <template #default="{row}"><el-button v-if="row.contract" link type="primary" @click="$demo('已开始下载合同 ' + row.contract + '.pdf')">下载</el-button><span v-else class="muted">—</span></template>
+      </el-table-column>
+      <el-table-column label="发票" width="84">
+        <template #default="{row}">
+          <template v-if="row.invoice === '已开票'"><span class="dot ok"></span><a href="javascript:;" @click="$demo('已开始下载发票（' + row.id + '）')">已开票</a></template>
+          <template v-else-if="row.invoice === '开票中'"><span class="dot info"></span>开票中</template>
+          <el-button v-else-if="canInvoice(row)" link type="primary" @click="openInvoice(row)">申请开票</el-button>
+          <el-tooltip v-else-if="row.status === '待支付'" content="订单支付并核销后可申请开票" placement="top"><span class="muted">待支付</span></el-tooltip>
+          <span v-else class="muted">—</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="172">
+        <template #default="{row}">
+          <template v-if="row.status === '待支付'">
+            <el-button v-if="row.pay === '对公转账' && !row.proof" link type="primary" @click="openProof(row)">上传凭证</el-button>
+            <el-tooltip v-else-if="row.pay === '对公转账'" content="原型演示：模拟平台财务核销通过" placement="top"><el-button link type="warning" @click="verify(row)">模拟核销</el-button></el-tooltip>
+            <el-button link type="primary" @click="openDetail(row)">详情</el-button>
+            <el-button link type="info" @click="cancel(row)">取消</el-button>
+          </template>
+          <template v-else>
+            <el-button link type="primary" @click="openDetail(row)">详情</el-button>
+            <el-button v-if="row.status === '生效中'" link type="primary" @click="openRenew(batches[0])">续费</el-button>
+            <el-button v-if="row.status === '已到期' || row.status === '已取消'" link type="primary" @click="$go('quota-package.html')">再次购买</el-button>
+          </template>
+        </template>
+      </el-table-column>
+      <template #empty><el-empty :description="'暂无' + tabs.find(t => t.k === tab).t + '的订单'" :image-size="80"><el-button v-if="tab === 'wait'" size="small" @click="tab = 'unpaid'">查看待支付订单</el-button></el-empty></template>
+    </el-table>
+    <div class="tbl-foot">
+      <span>订单状态：待支付 → 已支付（待生效）→ 生效中 → 已到期；未生效订单可全额退款，已生效订单的退款规则以合同约定为准</span>
+      <span>共 {{ shown.length }} 笔</span>
+    </div>
+  </div>
+
+  <!-- 订单详情 -->
+  <el-drawer v-model="drawer" size="620px" :title="cur ? '订单详情 · ' + cur.id : '订单详情'">
+    <template v-if="cur">
+      <div class="row between">
+        <div class="row"><el-tag :type="OST[cur.status]">{{ cur.status }}</el-tag><b>{{ cur.goods }}</b></div>
+        <div>
+          <el-button v-if="cur.status === '待支付' && cur.pay === '对公转账' && !cur.proof" type="primary" size="small" @click="openProof(cur)"><el-icon><Upload /></el-icon>上传转账凭证</el-button>
+          <el-button v-if="cur.status === '待支付' && cur.proof" type="warning" plain size="small" @click="verify(cur)">原型演示：模拟财务核销</el-button>
+          <el-button v-if="canInvoice(cur)" size="small" @click="openInvoice(cur)">申请发票</el-button>
+        </div>
+      </div>
+      <div class="drawer-sec">订单信息</div>
+      <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="订单号"><span class="od-no">{{ cur.id }}</span></el-descriptions-item>
+        <el-descriptions-item label="下单时间"><span class="num">{{ cur.at }}</span></el-descriptions-item>
+        <el-descriptions-item label="购买主体" :span="2">东岳钢铁集团有限公司<span class="muted small">（集团关联企业归并为同一购买主体）</span></el-descriptions-item>
+        <el-descriptions-item label="商品">{{ cur.goods }}</el-descriptions-item>
+        <el-descriptions-item label="名额数"><span class="num">{{ cur.qty }}</span> 个</el-descriptions-item>
+        <template v-if="cur.eff">
+          <el-descriptions-item label="计划生效日"><b class="num">{{ cur.eff }}</b><span class="muted small">（即计费起始日）</span></el-descriptions-item>
+          <el-descriptions-item label="指定新增企业">{{ cur.ents }}</el-descriptions-item>
+          <el-descriptions-item v-if="cur.pick" label="本次选购" :span="2">{{ cur.pick }}</el-descriptions-item>
+          <el-descriptions-item label="计费起止日"><span class="num">{{ cur.start }} 至 {{ cur.end }}</span></el-descriptions-item>
+          <el-descriptions-item label="计费天数"><b class="num">{{ cur.billDays }}</b> 天（含首尾）</el-descriptions-item>
+          <el-descriptions-item label="不收费期间" :span="2"><span class="num">{{ cur.freeSpan }}</span>（下单日至生效日前一日）</el-descriptions-item>
+          <el-descriptions-item v-if="cur.cutoff && cur.status === '待支付'" label="截单时点" :span="2">{{ cur.cutoff }} <span class="ex-tag">截单时点与差额处理待确认（N-27）</span></el-descriptions-item>
+        </template>
+        <template v-else>
+          <el-descriptions-item label="周期">{{ cur.cycle }}</el-descriptions-item>
+          <el-descriptions-item label="有效期"><span class="num">{{ cur.start }} 至 {{ cur.end }}</span></el-descriptions-item>
+        </template>
+        <el-descriptions-item label="金额构成" :span="2">{{ cur.formula }} = <b class="num">{{ $fmt(cur.amount) }}</b> 元 <span class="ex-tag">示例参数，待业务方确定</span></el-descriptions-item>
+        <el-descriptions-item v-if="cur.rule" label="计费规则" :span="2">{{ cur.rule }}</el-descriptions-item>
+        <el-descriptions-item label="支付方式">{{ cur.pay }}</el-descriptions-item>
+        <el-descriptions-item label="支付状态">{{ cur.payNote }}</el-descriptions-item>
+        <el-descriptions-item label="发票">{{ cur.invoice || '—' }}<span v-if="cur.invoiceNote" class="muted small">（{{ cur.invoiceNote }}）</span></el-descriptions-item>
+        <el-descriptions-item label="下单人">{{ cur.by }}</el-descriptions-item>
+        <el-descriptions-item v-if="cur.remark" label="备注" :span="2">{{ cur.remark }}</el-descriptions-item>
+      </el-descriptions>
+
+      <div class="drawer-sec">状态流转</div>
+      <el-timeline style="padding-left:2px">
+        <el-timeline-item v-for="(s, i) in cur.flow" :key="i" :timestamp="s.at" :type="s.type || 'primary'" placement="top">
+          <b>{{ s.t }}</b><span v-if="s.who" class="muted small">　{{ s.who }}</span>
+          <div v-if="s.d" class="muted small">{{ s.d }}</div>
+        </el-timeline-item>
+        <el-timeline-item v-for="s in cur.next" :key="s" type="info" hollow placement="top"><span class="muted">{{ s }}</span></el-timeline-item>
+      </el-timeline>
+
+      <div class="drawer-sec">合同</div>
+      <div v-if="cur.contract" class="file-row">
+        <el-icon><Document /></el-icon>
+        <div class="meta">《钢贸数据服务订单合同》<span>合同编号 {{ cur.contract }} · {{ cur.contractNote }} · 含禁止再识别条款</span></div>
+        <el-button size="small" @click="$demo('已开始下载合同 ' + cur.contract + '.pdf')"><el-icon><Download /></el-icon>下载</el-button>
+      </div>
+      <div v-else class="muted small">订单未生效，合同未签署。</div>
+
+      <div class="drawer-sec">支付凭证</div>
+      <div v-if="cur.proof" class="file-row">
+        <el-icon><Picture /></el-icon>
+        <div class="meta">{{ cur.proof.file }}<span>上传人 {{ cur.proof.by }} · {{ cur.proof.at }} · {{ cur.proof.note }}</span></div>
+        <el-button size="small" @click="$info('原型演示：预览转账凭证')">查看</el-button>
+      </div>
+      <div v-else-if="cur.pay === '在线支付'" class="muted small">在线支付订单无需上传凭证，支付流水可在货袋子账户中心查看。</div>
+      <div v-else-if="cur.status === '待支付'" class="tip-box orange small">尚未上传转账凭证。请向平台收款账户转账并在附言中填写订单号，上传凭证后由平台财务核销。<a href="javascript:;" @click="openProof(cur)">上传转账凭证 ›</a></div>
+      <div v-else class="muted small">未上传支付凭证。</div>
+    </template>
+  </el-drawer>
+
+  <!-- 续费 -->
+  <el-dialog v-model="renew.show" title="续费" width="640px" top="7vh">
+    <div class="tip-box orange">
+      <ol class="rule-ol">
+        <li><b>保持数据池不变：</b>到期前续费，数据池成员与历史数据保持不变，新周期紧接当前到期日。</li>
+        <li><b>到期未续费：</b>数据池失效，停止访问看板、查询与导出。</li>
+        <li><b>降配：</b>减少名额只能在续费时进行，下一周期生效；周期内不能减少名额。</li>
+      </ol>
+    </div>
+    <el-form label-width="96px" class="mt16">
+      <el-form-item label="续费批次">主批次 · 200 个名额（已分配 186，待生效 14）· 当前到期日 <b class="num" style="margin-left:4px">2027-03-31</b></el-form-item>
+      <el-form-item label="续费周期">
+        <el-radio-group v-model="renew.cycle">
+          <el-radio-button value="year">年付 · 八五折</el-radio-button>
+          <el-radio-button value="quarter">季付 · 九五折</el-radio-button>
+          <el-radio-button value="month">月付</el-radio-button>
+        </el-radio-group>
+      </el-form-item>
+      <el-form-item label="名额数">
+        <el-input-number v-model="renew.qty" :min="20" :max="200" :step="10" style="width:160px" />
+        <span class="muted small" style="margin-left:12px">最多 200 个；需要更多名额请使用 <a href="directory.html">扩容</a></span>
+      </el-form-item>
+      <el-form-item label="新周期"><span class="num">2027-04-01 至 {{ renewCalc.end }}</span></el-form-item>
+    </el-form>
+    <el-alert v-if="renew.qty < 200" type="warning" show-icon :closable="false" style="margin-bottom:10px">
+      <template #title>降配 {{ 200 - renew.qty }} 个名额，2027-04-01 起生效。<template v-if="renew.qty < 199">2026-12-01 调整生效后在池 199 家（现有 186 家，新增 14 家，移出 1 家），需在新周期生效前从数据池移出 {{ 199 - renew.qty }} 家企业。</template><template v-if="renew.qty < 200 && renewCalc.tier.off > 0.85">名额数降到 {{ renewCalc.tier.label }} 档，阶梯折扣随之变化。</template></template>
+    </el-alert>
+    <div class="sum-line">
+      <span>{{ renew.qty }} × 400 × {{ renewCalc.months }} × {{ renewCalc.cOff }} × {{ renewCalc.tier.off }}<span class="muted small">（{{ renewCalc.tier.label }} 档）</span> <span class="ex-tag">示例参数，待业务方确定</span></span>
+      <span>应付 <span class="price-big num" style="font-size:22px">¥ {{ $fmt(renewCalc.total) }}</span></span>
+    </div>
+    <template #footer>
+      <el-button @click="renew.show = false">取消</el-button>
+      <el-button type="primary" @click="submitRenew">提交续费订单</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 申请发票 -->
+  <el-dialog v-model="inv.show" title="申请发票" width="600px">
+    <el-alert v-if="!invoiceable.length" type="info" show-icon :closable="false" title="当前没有可开票的订单。订单支付并经平台财务核销后可申请开票；已开票的订单可在订单列表下载发票。" />
+    <el-form label-width="110px" :disabled="!invoiceable.length">
+      <el-form-item label="开票订单">
+        <el-select v-model="inv.orderId" placeholder="请选择已支付且未开票的订单" style="width:100%">
+          <el-option v-for="o in orders.filter(x => x.status !== '已取消' && x.status !== '已退款')" :key="o.id" :value="o.id" :disabled="!canInvoice(o)" :label="o.id + ' · ' + o.goods + ' · ' + $fmt(o.amount) + ' 元' + (canInvoice(o) ? '' : '（' + (o.invoice || (o.status === '待支付' ? '待支付' : '不可开票')) + '）')" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="开票金额"><b class="num">{{ invOrder ? $fmt(invOrder.amount) : '—' }}</b>&nbsp;元<span class="muted small" style="margin-left:10px">按订单实付金额开具</span></el-form-item>
+      <el-form-item label="发票类型"><el-radio-group v-model="inv.type"><el-radio value="special">增值税专用发票</el-radio><el-radio value="normal">增值税普通发票</el-radio></el-radio-group></el-form-item>
+      <el-form-item label="发票抬头"><el-input v-model="inv.title" /></el-form-item>
+      <el-form-item label="纳税人识别号"><el-input v-model="inv.tax" /></el-form-item>
+      <el-form-item label="开户行及账号"><el-input v-model="inv.bank" /></el-form-item>
+      <el-form-item label="收票邮箱"><el-input v-model="inv.mail" /></el-form-item>
+    </el-form>
+    <div class="muted small">电子发票开具后发送到收票邮箱，并可在订单列表下载。发票能力复用货袋子平台。</div>
+    <template #footer>
+      <el-button @click="inv.show = false">取消</el-button>
+      <el-button type="primary" :disabled="!invOrder || !canInvoice(invOrder)" @click="submitInvoice">提交申请</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 上传转账凭证 -->
+  <el-dialog v-model="proof.show" title="上传转账凭证" width="620px">
+    <template v-if="proofOrder">
+      <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="订单号"><span class="od-no">{{ proofOrder.id }}</span></el-descriptions-item>
+        <el-descriptions-item label="应付金额"><b class="num">{{ $fmt(proofOrder.amount) }}</b> 元</el-descriptions-item>
+        <el-descriptions-item label="收款户名">货袋子平台运营主体（以合同载明为准）</el-descriptions-item>
+        <el-descriptions-item label="开户行">示例银行 · 营业部</el-descriptions-item>
+        <el-descriptions-item label="收款账号"><span class="num">6222 **** **** 0188</span><span class="muted small">（示例）</span></el-descriptions-item>
+        <el-descriptions-item label="转账附言"><span class="od-no">{{ proofOrder.id }}</span></el-descriptions-item>
+      </el-descriptions>
+      <el-form label-width="96px" class="mt16">
+        <el-form-item label="转账凭证" required>
+          <el-upload action="#" :auto-upload="false" :limit="1" accept=".pdf,.jpg,.png" :on-change="f => proof.file = f.name" :on-remove="() => proof.file = ''">
+            <el-button><el-icon><Upload /></el-icon>选择文件</el-button>
+            <template #tip><div class="muted small">银行回单或网银截图，支持 PDF、JPG、PNG，不超过 10 MB。<a href="javascript:;" @click="proof.file = '转账回单_20261124.pdf'">原型演示：使用示例凭证</a></div></template>
+          </el-upload>
+          <div v-if="proof.file" class="small" style="color:#18a058;width:100%"><el-icon style="vertical-align:-2px"><CircleCheckFilled /></el-icon> 已选择：{{ proof.file }}</div>
+        </el-form-item>
+        <el-form-item label="付款账户名"><el-input v-model="proof.payer" /></el-form-item>
+        <el-form-item label="转账日期"><el-date-picker v-model="proof.date" type="date" value-format="YYYY-MM-DD" style="width:200px" /></el-form-item>
+        <el-form-item label="备注" style="margin-bottom:0"><el-input v-model="proof.note" placeholder="选填，例如分两笔转账的说明" /></el-form-item>
+      </el-form>
+      <div class="tip-box blue small mt12">提交后由平台财务核销（一般 1–2 个工作日）。核销通过后订单进入“已支付（待生效）”，指定的新增企业在数据池页面列为“待生效”；2026-12-01 生效并从当天起计费，下单日至生效日之间不收费。须在 2026-11-28 18:00 截单前完成核销，逾期顺延到下一个生效日并重新计价。</div>
+    </template>
+    <template #footer>
+      <el-button @click="proof.show = false">取消</el-button>
+      <el-button type="primary" :disabled="!proof.file" @click="submitProof">提交凭证</el-button>
+    </template>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const P = M.PRICING;
+  /* 业务方 2026-11-25 确认：订阅期内加购从新增企业生效日起计费，下单日至生效日之间不收费（需求文档 V0.3 第 8.9 节） */
+  const ADD_RULE = '周期内加购从新增企业的生效日起计费，下单日至生效日之间不收费；计费天数为生效日至原订单到期日（含首尾），到期日与主批次对齐。新增企业在下一个数据池调整周期生效，生效前为“已分配（待生效）”：不计费、不计提分成，数据不进入聚合。按日折算口径（N-24）与适用阶梯（N-25）待确认。';
+  const ORDERS = [
+    {
+      id: 'DO-20261120-0052', at: '2026-11-20 16:42', by: '周立明', goods: '名额包（周期内加购）', sub: '并入主批次，到期日对齐', qty: 30, cycle: '计费 121 天（含首尾）', start: '2026-12-01', end: '2027-03-31', rule: ADD_RULE, eff: '2026-12-01', billDays: 121, freeSpan: '2026-11-20 至 2026-11-30，共 11 天', ents: '30 家（实名 22 家、匿名 8 家）', pick: '共选 43 家：13 家使用主批次的未分配名额，不属于加购，不产生费用，已列为待生效；其余 30 家为加购，计入本订单', cutoff: '须在 2026-11-28 18:00 前完成核销；逾期顺延到 2027-01-01 生效并重新计价',
+      amount: 34490, formula: '30 × 适用日单价约 9.50 元 × 121 天，即 30 × 400 × 12 × 0.85（年付）× 0.85（200–499 档，累计 230 个）× 121/365', pay: '对公转账', payNote: '凭证已上传，待核销', status: '待支付', contract: 'DC-20261120-0052', contractNote: '已生成，记载计划生效日与计费起止日；支付核销后生效', invoice: '',
+      proof: { file: '转账回单_20261123.pdf', by: '周立明', at: '2026-11-23 10:42', note: '付款账户 东岳钢铁集团有限公司，转账日期 2026-11-23' },
+      flow: [{ at: '2026-11-20 16:42', t: '提交订单', who: '周立明', d: '企业名录选购共选 43 家：13 家使用未分配名额（不产生费用），其余 30 家为加购并计入本订单；计划生效日 2026-12-01，自生效日起计费' }, { at: '2026-11-20 16:43', t: '电子合同生成', who: '系统', d: '合同编号 DC-20261120-0052，双方电子签章' }, { at: '2026-11-23 10:42', t: '上传转账凭证', who: '周立明', d: '转账回单_20261123.pdf' }],
+      next: ['平台财务核销（截单时点 2026-11-28 18:00），30 家企业列为“待生效”', '2026-12-01 新增企业生效，开始计费，数据进入聚合'],
+    },
+    {
+      id: 'DO-20260318-0007', at: '2026-03-18 10:26', by: '周立明', goods: '名额包 · 200 个名额', sub: '到期续订并扩容（120 → 200）', qty: 200, cycle: '年付 · 12 个月', start: '2026-04-01', end: '2027-03-31',
+      amount: 693600, formula: '200 × 400 × 12 × 0.85（年付）× 0.85（200–499 档）', pay: '对公转账', payNote: '已核销 2026-03-20', status: '生效中', contract: 'DC-20260318-0007', contractNote: '2026-03-18 签署', invoice: '已开票', invoiceNote: '增值税专用发票，2026-04-08 开具',
+      proof: { file: '转账回单_20260319.pdf', by: '周立明', at: '2026-03-19 15:08', note: '已核销' },
+      flow: [
+        { at: '2026-03-18 10:26', t: '提交订单', who: '周立明' }, { at: '2026-03-18 10:31', t: '电子合同签署完成', who: '系统', d: '合同编号 DC-20260318-0007' },
+        { at: '2026-03-19 15:08', t: '上传转账凭证', who: '周立明', d: '转账回单_20260319.pdf' }, { at: '2026-03-20 11:42', t: '平台财务核销通过，订单已支付（待生效）', who: '平台财务 何志远', type: 'success' },
+        { at: '2026-04-01 00:00', t: '订单生效', who: '系统', d: '200 个名额可用；原数据池成员保持不变，历史数据延续', type: 'success' }, { at: '2026-04-08 14:20', t: '发票已开具', who: '平台财务', d: '增值税专用发票，693,600 元' },
+      ],
+      next: ['2027-03-31 到期'],
+    },
+    {
+      id: 'DO-20260312-0003', at: '2026-03-12 14:05', by: '周立明', goods: '名额包 · 150 个名额', sub: '未支付，已取消', qty: 150, cycle: '年付 · 12 个月', start: '2026-04-01', end: '2027-03-31',
+      amount: 550800, formula: '150 × 400 × 12 × 0.85（年付）× 0.9（100–199 档）', pay: '对公转账', payNote: '未支付', status: '已取消', contract: '', invoice: '', remark: '用户取消：改为 200 个名额重新下单（DO-20260318-0007）',
+      flow: [{ at: '2026-03-12 14:05', t: '提交订单', who: '周立明' }, { at: '2026-03-18 10:20', t: '订单已取消', who: '周立明', d: '改为 200 个名额重新下单', type: 'info' }], next: [],
+    },
+    {
+      id: 'DO-20250926-0011', at: '2025-09-26 09:30', by: '周立明', goods: '名额包（周期内加购）', sub: '生效前申请退款，已全额退回', qty: 20, cycle: '计费 182 天（含首尾）', start: '2025-10-01', end: '2026-03-31', rule: ADD_RULE, eff: '2025-10-01', billDays: 182, freeSpan: '2025-09-26 至 2025-09-30，共 5 天', ents: '20 家',
+      amount: 36619, formula: '20 × 适用日单价约 10.06 元 × 182 天，即 20 × 400 × 12 × 0.85（年付）× 0.9（100–199 档，累计 140 个）× 182/365', pay: '在线支付', payNote: '已退款 2025-09-28', status: '已退款', contract: '', invoice: '', remark: '生效日之前取消，全额退款，退款原路退回；没有台账行，也不产生分成冲正',
+      flow: [
+        { at: '2025-09-26 09:30', t: '提交订单', who: '周立明' }, { at: '2025-09-26 09:34', t: '在线支付成功，订单已支付（待生效）', who: '货袋子收银台', type: 'success' },
+        { at: '2025-09-27 16:10', t: '申请退款', who: '周立明', d: '订单尚未生效，申请全额退款', type: 'warning' }, { at: '2025-09-28 10:05', t: '退款完成', who: '平台财务', d: '36,619 元原路退回', type: 'info' },
+      ], next: [],
+    },
+    {
+      id: 'DO-20250320-0004', at: '2025-03-20 11:18', by: '周立明', goods: '名额包 · 120 个名额', sub: '首次购买', qty: 120, cycle: '年付 · 12 个月', start: '2025-04-01', end: '2026-03-31',
+      amount: 440640, formula: '120 × 400 × 12 × 0.85（年付）× 0.9（100–199 档）', pay: '对公转账', payNote: '已核销 2025-03-24', status: '已到期', contract: 'DC-20250320-0004', contractNote: '2025-03-20 签署', invoice: '已开票', invoiceNote: '增值税专用发票，2025-04-10 开具',
+      proof: { file: '转账回单_20250321.pdf', by: '周立明', at: '2025-03-21 10:02', note: '已核销' },
+      flow: [
+        { at: '2025-03-20 11:18', t: '提交订单', who: '周立明' }, { at: '2025-03-21 10:02', t: '上传转账凭证', who: '周立明' }, { at: '2025-03-24 09:40', t: '平台财务核销通过', who: '平台财务', type: 'success' },
+        { at: '2025-04-01 00:00', t: '订单生效', who: '系统', type: 'success' }, { at: '2026-03-31 24:00', t: '订单到期', who: '系统', d: '已由 DO-20260318-0007 续订，数据池保持不变', type: 'info' },
+      ], next: [],
+    },
+  ];
+  const BATCHES = [
+    { id: 'B-202604-01', name: '主批次', order: 'DO-20260318-0007', qty: 200, assigned: 186, wait: 14, start: '2026-04-01', end: '2027-03-31', left: 128, status: '生效中' },
+    { id: 'B-202604-01-A1', name: '周期内加购（待并入主批次）', order: 'DO-20261120-0052', qty: 30, start: '2026-12-01', end: '2027-03-31', left: 0, status: '待支付', note: '同次选购 43 家，13 家用完未分配名额，本批为加购的 30 家；计划生效日 12-01，从当天起计费，共 121 天' },
+    { id: 'B-202504-01', name: '上一周期批次', order: 'DO-20250320-0004', qty: 120, start: '2025-04-01', end: '2026-03-31', left: 0, status: '已到期', note: '已续订' },
+  ];
+
+  STP.mount({
+    data() {
+      return {
+        orders: ORDERS, batches: BATCHES, tab: 'all', seq: 63,
+        tabs: [{ k: 'all', t: '全部' }, { k: 'unpaid', t: '待支付' }, { k: 'wait', t: '待生效' }, { k: 'on', t: '生效中' }, { k: 'expired', t: '已到期' }, { k: 'cancel', t: '已取消' }],
+        OST: { 待支付: 'warning', 待生效: 'primary', 生效中: 'success', 已到期: 'info', 已取消: 'info', 已退款: 'danger' },
+        BST: { 生效中: 'success', 待支付: 'warning', 待生效: 'primary', 已到期: 'info', 已取消: 'info' },
+        drawer: false, curId: '',
+        renew: { show: false, cycle: 'year', qty: 200 },
+        inv: { show: false, orderId: '', type: 'special', title: '东岳钢铁集团有限公司', tax: '9137 **** **** **** 6X', bank: '示例银行东岳支行 3700 **** **** 5521', mail: 'caiwu@dongyue.example' },
+        proof: { show: false, orderId: '', file: '', payer: '东岳钢铁集团有限公司', date: '2026-11-24', note: '' },
+      };
+    },
+    computed: {
+      shown() { return this.orders.filter((o) => this.inTab(o, this.tab)); },
+      cur() { return this.orders.find((o) => o.id === this.curId) || null; },
+      unpaid() { return this.orders.find((o) => o.id === 'DO-20261120-0052' && o.status === '待支付') || null; },
+      invoiceable() { return this.orders.filter(this.canInvoice); },
+      invOrder() { return this.orders.find((o) => o.id === this.inv.orderId) || null; },
+      proofOrder() { return this.orders.find((o) => o.id === this.proof.orderId) || null; },
+      renewCalc() {
+        const c = this.renew.cycle, q = this.renew.qty || 20;
+        const cOff = c === 'year' ? P.yearOff : c === 'quarter' ? P.quarterOff : 1, months = c === 'year' ? 12 : c === 'quarter' ? 3 : 1;
+        const tier = M.tierOf(q);
+        return { cOff, months, tier, total: Math.round(q * P.base * months * cOff * tier.off), end: { year: '2028-03-31', quarter: '2027-06-30', month: '2027-04-30' }[c] };
+      },
+    },
+    methods: {
+      inTab(o, k) { return k === 'all' || { unpaid: ['待支付'], wait: ['待生效'], on: ['生效中'], expired: ['已到期'], cancel: ['已取消', '已退款'] }[k].indexOf(o.status) >= 0; },
+      countOf(k) { return this.orders.filter((o) => this.inTab(o, k)).length; },
+      canInvoice(o) { return (o.status === '待生效' || o.status === '生效中' || o.status === '已到期') && !o.invoice; },
+      stamp() { return '2026-11-24 14:' + STP.pad(20 + (this.seq % 30)); },
+      openDetail(o) { this.curId = o.id; this.drawer = true; },
+      openDetailById(id) { this.curId = id; this.drawer = true; },
+      openRenew() { this.renew = { show: true, cycle: 'year', qty: 200 }; },
+      submitRenew() {
+        const r = this.renew, c = this.renewCalc, id = 'DO-20261124-00' + this.seq++;
+        const cyc = r.cycle === 'year' ? '年付 · 12 个月' : r.cycle === 'quarter' ? '季付 · 3 个月' : '月付 · 1 个月';
+        this.orders.unshift({
+          id, at: this.stamp(), by: '周立明', goods: '名额包（续费）· ' + r.qty + ' 个名额', sub: r.qty < 200 ? '降配 ' + (200 - r.qty) + ' 个，下一周期生效' : '数据池保持不变', qty: r.qty, cycle: cyc, start: '2027-04-01', end: c.end,
+          amount: c.total, formula: r.qty + ' × 400 × ' + c.months + ' × ' + c.cOff + ' × ' + c.tier.off + '（' + c.tier.label + ' 档）', pay: '对公转账', payNote: '待上传凭证', status: '待支付', contract: 'DC' + id.slice(2), contractNote: '已生成，支付核销后生效', invoice: '',
+          flow: [{ at: this.stamp(), t: '提交续费订单', who: '周立明', d: '续费后数据池保持不变，新周期自 2027-04-01 起' }], next: ['上传转账凭证', '平台财务核销', '2027-04-01 生效'],
+        });
+        r.show = false; this.tab = 'all';
+        this.$demo('续费订单 ' + id + ' 已提交，应付 ' + STP.fmt(c.total) + ' 元；支付核销后新周期自 2027-04-01 起生效');
+      },
+      openInvoice(o) {
+        const t = o && this.canInvoice(o) ? o : this.invoiceable[0];
+        this.inv.orderId = t ? t.id : ''; this.inv.show = true;
+      },
+      submitInvoice() {
+        const o = this.invOrder;
+        o.invoice = '开票中'; o.invoiceNote = (this.inv.type === 'special' ? '增值税专用发票' : '增值税普通发票') + '，' + this.stamp() + ' 申请';
+        o.flow.push({ at: this.stamp(), t: '申请发票', who: '周立明', d: o.invoiceNote });
+        this.inv.show = false;
+        this.$demo('发票申请已提交，开具后发送到 ' + this.inv.mail);
+      },
+      openProof(o) { this.proof = { show: true, orderId: o.id, file: '', payer: '东岳钢铁集团有限公司', date: '2026-11-24', note: '' }; },
+      submitProof() {
+        const o = this.proofOrder, at = this.stamp();
+        o.proof = { file: this.proof.file, by: '周立明', at, note: '待平台财务核销' };
+        o.payNote = '凭证待核销';
+        o.flow.push({ at, t: '上传转账凭证', who: '周立明', d: this.proof.file });
+        o.next = o.next.filter((s) => s !== '上传转账凭证');
+        const b = this.batches.find((x) => x.order === o.id); if (b) b.note = '凭证待核销';
+        this.proof.show = false;
+        this.$demo('转账凭证已提交，平台财务核销后订单生效');
+      },
+      verify(o) {
+        const at = this.stamp();
+        o.status = '待生效'; o.payNote = '已核销 ' + at.slice(0, 10); o.proof.note = '已核销';
+        o.flow.push({ at, t: '平台财务核销通过，订单已支付（待生效）', who: '平台财务 何志远', type: 'success' });
+        o.next = o.next.filter((s) => s !== '平台财务核销');
+        const b = this.batches.find((x) => x.order === o.id); if (b) { b.status = '待生效'; b.note = o.start.slice(5) + ' 生效'; }
+        this.$demo('原型演示：已模拟财务核销通过，订单进入“待生效”，现在可以申请发票');
+      },
+      cancel(o) {
+        ElementPlus.ElMessageBox.confirm('取消后订单关闭，名额不会生效。' + (o.proof ? '已上传的转账凭证将作废，如已转账请联系平台财务办理退款。' : '') + '确认取消订单 ' + o.id + ' 吗？', '取消订单', { confirmButtonText: '确认取消', cancelButtonText: '再想想', type: 'warning' })
+          .then(() => {
+            o.status = '已取消'; o.payNote = '未支付'; o.sub = '未支付，已取消'; o.contract = ''; o.next = [];
+            o.flow.push({ at: this.stamp(), t: '订单已取消', who: '周立明', type: 'info' });
+            const i = this.batches.findIndex((x) => x.order === o.id); if (i >= 0) this.batches.splice(i, 1);
+            this.$demo('订单已取消');
+          }).catch(() => {});
+      },
+    },
+  });
+})();
+</script>
+</body>
+</html>

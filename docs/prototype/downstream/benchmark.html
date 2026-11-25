@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>行业对标数据 · 下游钢贸端 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.free-bar { display: flex; gap: 14px; align-items: center; padding: 14px 16px; border: 1px solid #cfe9da; background: #f6fbf8; border-radius: 8px; margin-bottom: 14px; }
+.free-bar .ic { width: 40px; height: 40px; border-radius: 50%; background: #e8f7ef; color: #18a058; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+.free-bar .tt { font-size: 15px; font-weight: 600; margin-bottom: 2px; }
+.free-bar .ds { font-size: 13px; color: #4a5568; line-height: 1.7; }
+.filter-bar { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.filter-bar .lb { font-size: 13px; color: var(--stp-sub); margin-right: 8px; }
+.filter-bar .rt { margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--stp-sub); }
+.bm-card { background: #fff; border: 1px solid var(--stp-border); border-radius: 8px; padding: 16px; }
+.bm-card .hd { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: var(--stp-sub); margin-bottom: 12px; }
+.bm-card .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+.bm-card .pair > div { padding: 0 14px; }
+.bm-card .pair > div:first-child { padding-left: 0; border-right: 1px dashed var(--stp-border); }
+.bm-card .who { font-size: 12px; color: var(--stp-sub); display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.bm-card .who i { width: 10px; height: 4px; border-radius: 2px; display: inline-block; }
+.bm-card .val { font-size: 26px; font-weight: 600; line-height: 1.25; }
+.bm-card .val .u { font-size: 13px; font-weight: 400; color: var(--stp-sub); margin-left: 4px; }
+.bm-card .ft { margin-top: 12px; padding-top: 10px; border-top: 1px solid #f0f2f5; font-size: 12px; color: #4a5568; line-height: 1.6; min-height: 30px; }
+.read-list { margin: 0; padding: 0; list-style: none; font-size: 13px; line-height: 1.7; }
+.read-list li { display: flex; gap: 8px; padding: 5px 0; align-items: flex-start; }
+.read-list li .el-icon { margin-top: 4px; flex-shrink: 0; color: #18a058; }
+.demo-param { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 11px; line-height: 18px; background: #fff8eb; color: #9a6400; border: 1px solid #f3dfb8; font-weight: 400; }
+.diff-up { color: #d4380d; } .diff-down { color: #18a058; }
+.closed-box { display: flex; gap: 14px; align-items: flex-start; padding: 18px; border: 1px dashed #c8d0db; border-radius: 8px; background: #fafbfc; }
+.closed-box .ic { width: 40px; height: 40px; border-radius: 50%; background: #eef1f5; color: #8a94a3; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+.closed-box h4 { margin: 0 0 6px; font-size: 15px; }
+.closed-box p { margin: 0 0 6px; font-size: 13px; color: #4a5568; line-height: 1.7; }
+.cond { display: flex; gap: 18px; margin-top: 8px; font-size: 13px; flex-wrap: wrap; }
+.cond span { display: inline-flex; align-items: center; gap: 6px; }
+.cond .ok { color: #18a058; } .cond .no { color: #8a94a3; }
+tr.cur-row td { background: #f7fbff; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="downstream" active="benchmark" title="行业对标数据"
+  desc="把本企业的销量走势、库存可销天数，与所在地区同品类企业的聚合水平放在一起看。对标群体只以聚合值出现，看不到任何一家同行。">
+  <template #actions>
+    <el-tooltip placement="bottom" content="原型演示用：模拟平台运营后台的“价格功能法务闸口”。价格对标与上游价格指标同受该闸口控制。">
+      <span class="proto-switch">原型状态 · 价格闸口
+        <el-switch :model-value="gateOpen" size="small" @change="v => $setState('gate', v ? 'open' : 'closed')" />
+        <b :style="{color: gateOpen ? '#18a058' : '#8a94a3'}">{{ gateOpen ? '已开放' : '未开放' }}</b>
+      </span>
+    </el-tooltip>
+    <el-tooltip placement="bottom" content="原型演示用：模拟本企业在“上传设置”中是否开启了价格上传。">
+      <span class="proto-switch">原型状态 · 价格上传
+        <el-switch :model-value="priceOn" size="small" @change="v => $setState('dnPrice', v ? 'on' : 'off')" />
+        <b :style="{color: priceOn ? '#18a058' : '#8a94a3'}">{{ priceOn ? '已开启' : '未开启' }}</b>
+      </span>
+    </el-tooltip>
+  </template>
+
+  <div class="free-bar">
+    <span class="ic"><el-icon><Present /></el-icon></span>
+    <div>
+      <div class="tt">行业对标是平台给上传企业的免费回馈</div>
+      <div class="ds">只要保持正常上传，就可以免费查看；不占用任何名额，也不需要订阅。对标群体由<b>同地区、同品类的其他上传企业</b>聚合而成，<b>不包含本企业</b>，并与钢厂看到的数据一样受披露门槛保护。</div>
+    </div>
+    <el-tag type="success" effect="plain" style="margin-left:auto;flex-shrink:0">免费 · 上传即可查看</el-tag>
+  </div>
+
+  <div class="card">
+    <div class="filter-bar">
+      <div><span class="lb">对标范围</span>
+        <el-radio-group v-model="scope">
+          <el-radio-button v-for="s in scopes" :key="s.k" :value="s.k">{{ s.t }}</el-radio-button>
+        </el-radio-group>
+      </div>
+      <div><span class="lb">品类</span>
+        <el-select v-model="cat" style="width:300px">
+          <el-option v-for="c in cats" :key="c.k" :label="c.t" :value="c.k"></el-option>
+        </el-select>
+      </div>
+      <div class="rt">
+        <span>对标群体</span><contrib-tag :band="g ? g.band : null"></contrib-tag>
+        <span>数据日期 2026-11-23（T+1）</span>
+      </div>
+    </div>
+    <div v-if="!g" class="tip-box orange small mt12" style="margin-bottom:0">
+      {{ scopeName }}范围内上传“{{ catName }}”的企业样本不足，群体数据不予披露，本企业的数仍可查看。可以把对标范围放大到
+      <a v-if="scope==='city'" href="javascript:;" @click="scope='prov'">江苏省</a><template v-if="scope==='city'"> 或 </template><a v-if="scope!=='east'" href="javascript:;" @click="scope='east'">华东</a><template v-if="scope==='east'">更大的品类口径</template>。
+    </div>
+  </div>
+
+  <div class="grid c3">
+    <div class="bm-card">
+      <div class="hd"><span>库存可销天数</span><el-tooltip content="日末库存 ÷ 近 7 日日均销量（按自然日计，与平台指标口径一致）。天数越多，库存相对销售越充裕。"><el-icon><QuestionFilled /></el-icon></el-tooltip></div>
+      <div class="pair">
+        <div><div class="who"><i style="background:#2f6fde"></i>本企业</div><div class="val num">{{ $fmt(me.days, 1) }}<span class="u">天</span></div></div>
+        <div><div class="who"><i style="background:#f59f00"></i>{{ scopeName }}群体</div><div class="val num"><template v-if="g">{{ $fmt(g.days, 1) }}<span class="u">天</span></template><mask-cell v-else lg></mask-cell></div></div>
+      </div>
+      <div class="ft"><template v-if="g">本企业比群体<b :class="me.days > g.days ? 'diff-up' : 'diff-down'">{{ me.days > g.days ? '多' : '少' }} {{ $fmt(Math.abs(me.days - g.days), 1) }} 天</b>，库存相对销售{{ me.days > g.days ? '偏多' : '偏少' }}。</template><template v-else>群体样本不足，暂无对比。</template></div>
+    </div>
+    <div class="bm-card">
+      <div class="hd"><span>近 7 日销量环比</span><el-tooltip content="近 7 日（11-17 至 11-23）销量合计，对比前 7 日（11-10 至 11-16）。"><el-icon><QuestionFilled /></el-icon></el-tooltip></div>
+      <div class="pair">
+        <div><div class="who"><i style="background:#2f6fde"></i>本企业</div><div class="val num" :class="me.wow >= 0 ? 'up' : 'down'">{{ $pct(me.wow) }}</div></div>
+        <div><div class="who"><i style="background:#f59f00"></i>{{ scopeName }}群体</div><div class="val num" :class="g ? (g.wow >= 0 ? 'up' : 'down') : ''"><template v-if="g">{{ $pct(g.wow) }}</template><mask-cell v-else lg></mask-cell></div></div>
+      </div>
+      <div class="ft"><template v-if="g">本企业{{ me.wow >= g.wow ? '强于' : '弱于' }}群体 <b>{{ $fmt(Math.abs(me.wow - g.wow), 1) }} 个百分点</b>。</template><template v-else>群体样本不足，暂无对比。</template></div>
+    </div>
+    <div class="bm-card">
+      <div class="hd"><span>销量走势指数</span><el-tooltip content="近 7 日日均销量 ÷ 基期（2026-10-25 至 10-31）日均销量 × 100。只反映走势，不反映规模，因此可以直接与群体比较。"><el-icon><QuestionFilled /></el-icon></el-tooltip></div>
+      <div class="pair">
+        <div><div class="who"><i style="background:#2f6fde"></i>本企业</div><div class="val num">{{ $fmt(me.idx, 1) }}</div></div>
+        <div><div class="who"><i style="background:#f59f00"></i>{{ scopeName }}群体</div><div class="val num"><template v-if="g">{{ $fmt(g.idx, 1) }}</template><mask-cell v-else lg></mask-cell></div></div>
+      </div>
+      <div class="ft"><template v-if="g">基期 = 100。本企业比群体{{ me.idx >= g.idx ? '高' : '低' }} <b>{{ $fmt(Math.abs(me.idx - g.idx), 1) }} 点</b>。</template><template v-else>基期 = 100。群体样本不足，暂无对比。</template></div>
+    </div>
+  </div>
+
+  <div class="grid c-3-2">
+    <div class="card" style="margin-bottom:0">
+      <div class="card-title">
+        <span>趋势对比<small>{{ scopeName }} · {{ catName }} · 2026-11-01 至 11-23</small></span>
+        <el-radio-group v-model="metric" size="small">
+          <el-radio-button value="idx">销量走势指数</el-radio-button>
+          <el-radio-button value="days">库存可销天数</el-radio-button>
+        </el-radio-group>
+      </div>
+      <ve-chart :option="trend" height="300px"></ve-chart>
+      <div v-if="!g" class="small muted">群体样本不足，只展示本企业的走势。</div>
+    </div>
+    <div class="card" style="margin-bottom:0">
+      <div class="card-title"><span>对标群体是怎么来的</span></div>
+      <ul class="read-list">
+        <li><el-icon><CircleCheck /></el-icon><span><b>同样受 k 门槛保护。</b>群体至少由 {{ $PV.k }} 家企业构成，且不能有一家独大；不满足时显示“—”，与钢厂看到的规则一致。</span></li>
+        <li><el-icon><CircleCheck /></el-icon><span><b>只有聚合值。</b>不出现任何一家同行的名称或数值，企业数只给区间；同样，别的企业对标时也看不到你。</span></li>
+        <li><el-icon><CircleCheck /></el-icon><span><b>只给比率和指数。</b>可销天数、环比、走势指数都与规模无关；不提供群体的销量、库存吨位。</span></li>
+        <li><el-icon><CircleCheck /></el-icon><span><b>群体不含本企业。</b>按货物所在仓库的城市归集：{{ scopeDesc }}。</span></li>
+        <li><el-icon><CircleCheck /></el-icon><span><b>品类按你在传的范围。</b>当前上传规则 v7 覆盖建筑钢材、热轧板卷，其他品类不参与对标。</span></li>
+      </ul>
+      <div class="tip-box small mt8" style="margin-bottom:0"><span class="demo-param">待业务方确认 N-22</span> 行业对标的提供时点与范围尚未最终确定，本页按“基础版随一期提供”展示。</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">
+      <span>分品类对比<small>{{ scopeName }} · 近 7 日（2026-11-17 至 11-23）</small></span>
+      <span class="small muted">点击某一行，上方指标与趋势切换到该品类</span>
+    </div>
+    <table class="plain-table">
+      <thead>
+        <tr>
+          <th rowspan="2">品名</th>
+          <th class="r" rowspan="2">本企业日均销量(吨)</th>
+          <th class="c" colspan="2">近 7 日销量环比</th>
+          <th class="c" colspan="2">销量走势指数</th>
+          <th class="c" colspan="3">库存可销天数</th>
+          <th class="c" rowspan="2">群体企业数</th>
+        </tr>
+        <tr>
+          <th class="r">本企业</th><th class="r">群体</th>
+          <th class="r">本企业</th><th class="r">群体</th>
+          <th class="r">本企业</th><th class="r">群体</th><th class="r">差异</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="r in rows" :key="r.k" :class="{'cur-row': r.k === cat, total: r.k === 'all'}" style="cursor:pointer" @click="cat = r.k">
+          <td>{{ r.k === 'all' ? '全部在传品类' : r.t }}<span v-if="r.k !== 'all'" class="small muted" style="margin-left:6px">{{ r.grp }}</span></td>
+          <td class="r num">{{ $fmt(r.me.avg) }}</td>
+          <td class="r num" :class="r.me.wow >= 0 ? 'up' : 'down'">{{ $pct(r.me.wow) }}</td>
+          <td class="r num"><span v-if="r.g" :class="r.g.wow >= 0 ? 'up' : 'down'">{{ $pct(r.g.wow) }}</span><mask-cell v-else></mask-cell></td>
+          <td class="r num">{{ $fmt(r.me.idx, 1) }}</td>
+          <td class="r"><v-num :v="r.g ? r.g.idx : null" :d="1"></v-num></td>
+          <td class="r num">{{ $fmt(r.me.days, 1) }}</td>
+          <td class="r"><v-num :v="r.g ? r.g.days : null" :d="1"></v-num></td>
+          <td class="r num"><b v-if="r.g" :class="r.me.days > r.g.days ? 'diff-up' : 'diff-down'">{{ r.me.days > r.g.days ? '+' : '−' }}{{ $fmt(Math.abs(r.me.days - r.g.days), 1) }} 天</b><mask-cell v-else></mask-cell></td>
+          <td class="c"><contrib-tag :band="r.g ? r.g.band : null"></contrib-tag></td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="tbl-foot">
+      <span><span class="mask-cell" style="min-width:30px;height:18px">—</span> 样本不足，不予披露。日均销量、库存只展示本企业自己的数；群体一侧只有比率和指数。</span>
+      <span>可销天数 = 日末库存 ÷ 近 7 日日均销量（自然日）</span>
+    </div>
+  </div>
+
+  <!-- 价格对标 -->
+  <div class="card">
+    <div class="card-title">
+      <span>价格对标<small v-if="priceOpen">{{ scopeName }} · 近 7 日 · 含税 · 自提 · 非暂估</small></span>
+      <el-tag v-if="priceOpen" type="success" size="small" effect="plain">已开放</el-tag>
+      <el-tag v-else type="info" size="small" effect="plain">未开放</el-tag>
+    </div>
+
+    <template v-if="priceOpen">
+      <div class="grid" style="margin-bottom:0;grid-template-columns:minmax(0,5fr) minmax(0,4fr)">
+        <div>
+          <table class="plain-table">
+            <thead><tr><th>品名 · 代表材质</th><th class="r">本企业均价</th><th class="r">群体加权均价</th><th class="r">价差</th><th class="c">价格覆盖率</th><th class="c">有价企业数</th></tr></thead>
+            <tbody>
+              <tr v-for="r in priceRows" :key="r.k" :class="{'cur-row': r.k === pcat}" style="cursor:pointer" @click="pcat = r.k">
+                <td>{{ r.t }}<span class="small muted" style="margin-left:6px">{{ r.mat }}</span></td>
+                <td class="r num">{{ $fmt(r.own) }}</td>
+                <td class="r"><v-num :v="r.g ? r.g.p : null" tip="上传价格的企业样本不足，不予披露"></v-num></td>
+                <td class="r num"><b v-if="r.g" :class="r.g.d > 0 ? 'up' : r.g.d < 0 ? 'down' : ''">{{ r.g.d > 0 ? '+' : r.g.d < 0 ? '−' : '' }}{{ Math.abs(r.g.d) }}</b><mask-cell v-else></mask-cell></td>
+                <td class="c"><cover-tag :band="r.g ? r.g.cb : null"></cover-tag></td>
+                <td class="c"><contrib-tag :band="r.g ? r.g.nb : null"></contrib-tag></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="small muted mt8" style="line-height:1.7">单位：元/吨。价差 = 本企业均价 − 群体加权均价。本企业均价是你自己上传的成交价按销量加权的结果，范围为“建筑钢材、热轧板卷 · 东岳、金江 · 全部仓库”。群体均价与价差<b>取整到 {{ $PV.roundPrice }} 元/吨</b>。样本成交均价，不是市场报价。</div>
+        </div>
+        <div>
+          <div class="row between mb8"><b>{{ pcatName }} 均价走势</b><span class="small muted">近 30 日 · 元/吨</span></div>
+          <ve-chart v-if="pg" :option="priceTrend" height="230px"></ve-chart>
+          <div v-else class="closed-box" style="height:230px;align-items:center;justify-content:center"><span class="muted small">{{ scopeName }}范围内上传“{{ pcatName }}”价格的企业样本不足，群体均价不予披露。</span></div>
+        </div>
+      </div>
+      <div class="tip-box small mt12" style="margin-bottom:0">
+        价格对标的门槛比销量、库存更严：群体至少要有 <b>{{ $PV.kPrice }} 家</b>上传了价格的企业，且销量被屏蔽的品类价格一并屏蔽。只对<b>自己也上传了价格</b>的企业提供；看不到任何一家同行的价格，也没有最高价、最低价和价格分布。
+      </div>
+    </template>
+
+    <template v-else>
+      <div class="closed-box">
+        <span class="ic"><el-icon><Lock /></el-icon></span>
+        <div style="flex:1">
+          <template v-if="!gateOpen">
+            <h4>价格对标尚未开放</h4>
+            <p>价格对标与上游的价格指标同受<b>平台法务闸口</b>控制，取得法务书面意见后由平台统一开放。开放前，平台不向任何一方提供价格类的聚合指标。</p>
+          </template>
+          <template v-else>
+            <h4>本企业未开启价格上传</h4>
+            <p>平台已开放价格对标，但它只对<b>自己也上传了价格</b>的企业提供。价格上传是自愿的，默认关闭；可以只选部分品类、品牌和仓库，也可以选择“仅用于本企业自查与行业对标，不参与对上游的聚合披露”。</p>
+            <p><el-button type="primary" size="small" @click="$go('upload-settings.html')">去上传设置开启价格上传</el-button></p>
+          </template>
+          <div class="cond">
+            <span :class="gateOpen ? 'ok' : 'no'"><el-icon><component :is="gateOpen ? 'CircleCheckFilled' : 'Remove'"></component></el-icon>平台法务闸口：{{ gateOpen ? '已开放' : '未开放' }}</span>
+            <span :class="priceOn ? 'ok' : 'no'"><el-icon><component :is="priceOn ? 'CircleCheckFilled' : 'Remove'"></component></el-icon>本企业价格上传：{{ priceOn ? '已开启' : '未开启' }}<a v-if="!priceOn" href="upload-settings.html" style="margin-left:6px">上传设置 ›</a></span>
+          </div>
+          <div class="small muted mt8">两项都满足后，这里会展示本企业均价与群体加权均价的差（取整到 {{ $PV.roundPrice }} 元/吨），并附价格覆盖率区间。</div>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <div class="card">
+    <div class="row between">
+      <div class="small muted" style="line-height:1.8">
+        口径说明：销量取销售出库净量，库存取日末快照，均为本企业已入库的数据；对标群体按货物所在仓库的城市归集。数据 T+1 更新。<br>
+        行业对标仅供本企业内部经营参考。披露规则见 <a href="ledger.html">数据使用透明账本</a>。
+      </div>
+      <el-button @click="$go('daily-summary.html')">查看本企业每日上传汇总</el-button>
+    </div>
+  </div>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  /* 本企业近 30 日销量、库存：与工作台、每日上传汇总使用同一序列 */
+  const SALES = M.dailySeries(30, 1790, 321); SALES[29].v = 1846;
+  const STOCK = M.stockSeries(30, 28630, 77, 0.0006);
+  const isWork = (date) => { const w = date.getDay(); return w !== 0 && w !== 6; };
+  const sum7 = (i) => SALES.slice(i - 6, i + 1).reduce((a, b) => a + b.v, 0);
+  /* 日均销量口径：统计期销量 ÷ 统计期自然日数（与平台指标字典一致） */
+  const workAvg = (i) => sum7(i) / 7;
+  const wdAvg = (i) => { const a = SALES.slice(i - 6, i + 1).filter((d) => isWork(d.date)); return a.reduce((x, y) => x + y.v, 0) / a.length; };
+  const BASE = sum7(6);
+  const X = [], OWN_IDX = [], OWN_DAYS = [];
+  for (let i = 7; i < 30; i++) { X.push(SALES[i].label); OWN_IDX.push(+(sum7(i) / BASE * 100).toFixed(1)); OWN_DAYS.push(+(STOCK[i] / workAvg(i)).toFixed(1)); }
+  const OWN_ALL = { avg: Math.round(workAvg(29)), wow: +((sum7(29) / sum7(22) - 1) * 100).toFixed(1), idx: OWN_IDX[OWN_IDX.length - 1], days: +(28630 / workAvg(29)).toFixed(1) };
+
+  const CATS = [
+    { k: 'all', t: '全部在传品类（建筑钢材、热轧板卷）', grp: '' },
+    { k: 'lw', t: '螺纹钢', grp: '建筑钢材', mat: 'HRB400E', me: { avg: 1146, wow: -3.1, idx: 95.8, days: 12.6 }, own: 3436 },
+    { k: 'pl', t: '盘螺', grp: '建筑钢材', mat: 'HRB400E', me: { avg: 258, wow: -1.4, idx: 97.9, days: 14.1 }, own: 3636 },
+    { k: 'gx', t: '高线', grp: '建筑钢材', mat: 'HPB300', me: { avg: 96, wow: 2.2, idx: 101.3, days: 28.5 }, own: 3606 },
+    { k: 'rj', t: '热轧卷板', grp: '热轧板卷', mat: 'Q235B', me: { avg: 248, wow: -2.9, idx: 96.1, days: 22.6 }, own: 3566 },
+    { k: 'dg', t: '热轧带钢', grp: '热轧板卷', mat: 'Q195', me: { avg: 94, wow: -1.8, idx: 97.2, days: 24.4 }, own: 3492 },
+  ];
+  /* 分品名与群体的示例值按工作日口径编写，这里统一折算为自然日口径 */
+  const BASIS = workAvg(29) / wdAvg(29);
+  CATS.slice(1).forEach((c) => { c.me.avg = Math.round(c.me.avg * BASIS); c.me.days = +(c.me.days / BASIS).toFixed(1); });
+  CATS[0].me = OWN_ALL;
+  /* 对标群体（不含本企业）：null 表示样本不足被屏蔽 */
+  const G = {
+    city: { all: { wow: -1.2, idx: 98.2, days: 14.2, band: '20–49' }, lw: { wow: -1.6, idx: 97.6, days: 12.1, band: '20–49' }, pl: { wow: -0.9, idx: 98.8, days: 13.6, band: '10–19' }, gx: null, rj: { wow: -1.1, idx: 98.5, days: 19.8, band: '5–9' }, dg: null },
+    prov: { all: { wow: -0.8, idx: 98.9, days: 14.8, band: '50+' }, lw: { wow: -1.0, idx: 98.4, days: 12.9, band: '50+' }, pl: { wow: -0.6, idx: 99.1, days: 14.3, band: '20–49' }, gx: { wow: 0.8, idx: 100.4, days: 22.4, band: '10–19' }, rj: { wow: -0.9, idx: 98.7, days: 20.6, band: '20–49' }, dg: null },
+    east: { all: { wow: -0.5, idx: 99.3, days: 15.1, band: '50+' }, lw: { wow: -0.7, idx: 98.9, days: 13.4, band: '50+' }, pl: { wow: -0.3, idx: 99.5, days: 14.9, band: '50+' }, gx: { wow: 0.5, idx: 100.2, days: 23.1, band: '20–49' }, rj: { wow: -0.6, idx: 99.0, days: 21.3, band: '50+' }, dg: { wow: -0.4, idx: 99.2, days: 21.7, band: '10–19' } },
+  };
+  Object.keys(G).forEach((k) => Object.keys(G[k]).forEach((c) => { if (G[k][c]) G[k][c].days = +(G[k][c].days / BASIS).toFixed(1); }));
+  /* 价格对标群体：门槛更严（k价 = 8） */
+  const GP = {
+    city: { lw: { p: 3420, d: 20, cb: '30%–60%', nb: '10–19' }, pl: null, gx: null, rj: null, dg: null },
+    prov: { lw: { p: 3410, d: 30, cb: '高于 60%', nb: '20–49' }, pl: { p: 3650, d: -10, cb: '30%–60%', nb: '10–19' }, gx: null, rj: { p: 3550, d: 20, cb: '30%–60%', nb: '10–19' }, dg: null },
+    east: { lw: { p: 3420, d: 20, cb: '30%–60%', nb: '50+' }, pl: { p: 3660, d: -20, cb: '30%–60%', nb: '20–49' }, gx: { p: 3590, d: 20, cb: '低于 30%', nb: '10–19' }, rj: { p: 3540, d: 30, cb: '30%–60%', nb: '20–49' }, dg: null },
+  };
+  /* 生成一条平滑序列，末值固定 */
+  const walk = (n, end, seed, step, drift) => {
+    const r = M.rngOf(seed); const out = []; let v = end;
+    for (let i = 0; i < n; i++) { out.unshift(v); v = v - (drift || 0) + (r() - 0.5) * step; }
+    return out;
+  };
+
+  STP.mount({
+    data() {
+      return {
+        scope: 'city', cat: 'all', metric: 'idx', pcat: 'lw',
+        scopes: [{ k: 'city', t: '苏州市', d: '苏州市内仓库' }, { k: 'prov', t: '江苏省', d: '江苏省内各地级市的仓库' }, { k: 'east', t: '华东', d: '上海、江苏、浙江、安徽、福建、江西、山东的仓库' }],
+        cats: CATS,
+      };
+    },
+    computed: {
+      gateOpen() { return this.$state.gate === 'open'; },
+      priceOn() { return this.$state.dnPrice === 'on'; },
+      priceOpen() { return this.gateOpen && this.priceOn; },
+      scopeName() { return this.scopes.find((s) => s.k === this.scope).t; },
+      scopeDesc() { return this.scopes.find((s) => s.k === this.scope).d; },
+      curCat() { return CATS.find((c) => c.k === this.cat); },
+      catName() { return this.cat === 'all' ? '全部在传品类' : this.curCat.t; },
+      me() { return this.curCat.me; },
+      g() { return G[this.scope][this.cat]; },
+      rows() { return CATS.map((c) => ({ k: c.k, t: c.t, grp: c.grp, me: c.me, g: G[this.scope][c.k] })); },
+      priceRows() { return CATS.slice(1).map((c) => ({ k: c.k, t: c.t, mat: c.mat, own: c.own, g: GP[this.scope][c.k] })); },
+      pcatName() { const c = CATS.find((x) => x.k === this.pcat); return c.t + ' ' + c.mat; },
+      pg() { return GP[this.scope][this.pcat]; },
+      trend() {
+        const m = this.metric, n = X.length;
+        const key = this.scope + this.cat + m;
+        let own;
+        if (this.cat === 'all') own = m === 'idx' ? OWN_IDX : OWN_DAYS;
+        else own = walk(n, this.me[m], M.hash('own' + this.cat + m), m === 'idx' ? 1.6 : 0.5, m === 'idx' ? -0.12 : 0.01).map((v) => +v.toFixed(1));
+        const series = [{ name: '本企业', data: own, lineStyle: { width: 2.5 } }];
+        if (this.g) series.push({ name: this.scopeName + '群体', data: walk(n, this.g[m], M.hash('grp' + key), m === 'idx' ? 0.7 : 0.22, m === 'idx' ? -0.06 : 0.008).map((v) => +v.toFixed(1)), lineStyle: { width: 2, type: 'dashed' } });
+        const o = STP.chart.line({ x: X, series, unit: m === 'idx' ? '' : '天', yName: m === 'idx' ? '基期 = 100' : '天', grid: { top: 36, right: 16 } });
+        o.color = ['#2f6fde', '#f59f00'];
+        return o;
+      },
+      priceTrend() {
+        const c = CATS.find((x) => x.k === this.pcat), n = 30;
+        const x = SALES.map((d) => d.label);
+        const own = walk(n, c.own, M.hash('po' + this.pcat), 22, 1.2).map((v) => Math.round(v));
+        const grp = walk(n, this.pg.p, M.hash('pg' + this.scope + this.pcat), 14, 1.0).map((v) => Math.round(v / 10) * 10);
+        const o = STP.chart.line({ x, series: [{ name: '本企业均价', data: own, lineStyle: { width: 2.5 } }, { name: this.scopeName + '群体加权均价', data: grp, step: 'middle', lineStyle: { width: 2, type: 'dashed' } }], unit: '元/吨', smooth: false, grid: { top: 30, right: 16 } });
+        o.color = ['#2f6fde', '#f59f00'];
+        return o;
+      },
+    },
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>数据来源企业名单 · 上游钢厂端 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.pool-tbl .el-table .cell { padding: 0 8px; }
+.pool-tbl .two { line-height: 18px; font-size: 12.5px; }
+.pool-tbl .two span { display: block; color: var(--stp-sub); font-size: 12px; }
+.th-sub { display: block; font-weight: 400; font-size: 11px; color: #8a94a3; line-height: 14px; }
+.rel-tag { display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 3px; font-size: 11px; line-height: 17px; background: #fff7e8; color: #b26a00; border: 1px solid #f5dfb5; vertical-align: 1px; }
+.mix-line { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; font-size: 12px; color: var(--stp-sub); margin-bottom: 12px; }
+.mix-line .chip { padding: 1px 8px; border-radius: 10px; background: #f4f6f9; color: #4a5568; border: 1px solid #e6e9ef; }
+.el-descriptions__label { white-space: nowrap; }
+.rule-ol { margin: 0; padding-left: 20px; line-height: 1.9; font-size: 13px; }
+.swap { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.swap { line-height: 24px; }
+.swap-k { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 12px; line-height: 18px; }
+.swap-k.out { background: #fff3f3; color: #c0392b; }
+.swap-k.in { background: #f0faf4; color: #1b7a47; }
+.pick-row { cursor: pointer; }
+.sum-bar { display: flex; flex-wrap: wrap; gap: 8px 28px; padding: 10px 14px; border-radius: 6px; background: #f6f8fa; font-size: 13px; margin-bottom: 12px; }
+.sum-bar b { font-size: 15px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="upstream" active="pool" title="数据来源企业名单" watermark
+  desc="当前数据池内全部企业的名单、生效期与名额状态。聚合数据只按当天生效的成员集合计算；名单调整按周期统一生效，历史默认不重算。">
+  <template #actions>
+    <el-button @click="exportDlg = true"><el-icon><Download /></el-icon>导出名单</el-button>
+    <el-button @click="$go('directory.html')"><el-icon><ShoppingCart /></el-icon>去企业名录选购</el-button>
+    <el-button type="primary" @click="openAdjust('replace')"><el-icon><Switch /></el-icon>调整数据池</el-button>
+  </template>
+
+  <el-alert type="info" show-icon :closable="false">
+    <template #title>名单只到数据池级别：在看板与查询的每个单元格里，只给贡献企业数区间（{{ $PV.bands.join('、') }}），不给企业名称与精确家数。名单只展示企业自主申报并确认的画像信息，不含任何由上传数据计算的数值。</template>
+  </el-alert>
+
+  <div class="grid c4">
+    <stat-card label="在池企业" :value="stat.inPool" unit="家" icon="OfficeBuilding" tip="当前数据池成员数。冻结企业仍占用名额，但冻结期间不参与聚合">
+      <span>有效 <b>{{ stat.active }}</b> 家</span><span>冻结 <b style="color:#e5484d">{{ stat.frozen }}</b> 家</span><span>最小规模 {{ $PV.nMin }} 家</span>
+    </stat-card>
+    <stat-card label="名额（已购）" :value="200" unit="个" icon="Tickets" tip="订阅期 2026-04-01 至 2027-03-31。未分配名额不延长有效期；把未分配名额分配给企业不属于加购，不产生新费用。待生效 = 已指定企业、等待 2026-12-01 生效的名额">
+      <span>已分配 <b>186</b></span><span>待生效 <b>{{ pendCount.add }}</b></span><span>未分配 <b>{{ freeQuota }}</b></span><a href="directory.html">{{ freeQuota ? '去分配' : '去加购' }} ›</a>
+    </stat-card>
+    <stat-card label="本周期可替换额度" :value="37" unit="个" icon="Switch" tip="每周期替换不超过在用名额的 20%：186 × 20% 取整为 37 个。冻结名额的免费替换不占额度">
+      <span>已用 <b>{{ stat.used }}</b></span><span>剩余 <b>{{ 37 - stat.used }}</b></span><span>上限 20%</span>
+    </stat-card>
+    <div class="stat">
+      <div class="label">下次变更生效日<el-tooltip content="数据池每自然月调整 1 次，变更在下一周期起统一生效，周期内不可反复调整" placement="top"><el-icon><QuestionFilled /></el-icon></el-tooltip></div>
+      <div class="value num">2026-12-01</div>
+      <div class="foot"><span>距今 7 天</span><span>待生效变更 <b>{{ pending.length }}</b> 项</span></div>
+      <div class="ico"><el-icon><Calendar /></el-icon></div>
+    </div>
+  </div>
+
+  <el-alert v-if="frozenTodo" type="warning" show-icon :closable="false">
+    <template #title>
+      有 {{ frozenTodo }} 家企业的名额处于冻结状态且尚未处理（冻结原因：连续 10 天无有效上传，或企业主动暂停）。冻结期间不参与聚合；可免费替换且不占用替换额度，或选择剩余天数顺延。
+      <a href="javascript:;" @click="showFrozen">查看冻结企业 ›</a>
+    </template>
+  </el-alert>
+
+  <div class="card pool-tbl">
+    <el-tabs v-model="tab">
+      <el-tab-pane name="list"><template #label>在池企业 <span class="muted small">&nbsp;{{ stat.inPool }}</span></template></el-tab-pane>
+      <el-tab-pane name="pending"><template #label>待生效变更 <span class="muted small">&nbsp;{{ pending.length }}</span></template></el-tab-pane>
+      <el-tab-pane name="history"><template #label>变更记录</template></el-tab-pane>
+    </el-tabs>
+
+    <!-- ① 在池企业 -->
+    <template v-if="tab === 'list'">
+      <div class="row mb12">
+        <el-cascader v-model="f.region" :options="regionOpts" :props="{checkStrictly: true}" clearable placeholder="全部省市" style="width:170px" />
+        <el-select v-model="f.cat" clearable placeholder="全部主营大类" style="width:150px"><el-option v-for="c in catOpts" :key="c" :label="c" :value="c" /></el-select>
+        <el-select v-model="f.st" clearable placeholder="全部状态" style="width:150px"><el-option v-for="s in stOpts" :key="s.k" :label="s.t" :value="s.k" /></el-select>
+        <el-select v-model="f.mode" clearable placeholder="全部上架方式" style="width:140px"><el-option label="实名上架" value="实名" /><el-option label="匿名上架" value="匿名" /></el-select>
+        <el-input v-model="f.kw" clearable placeholder="搜索企业名称或匿名编号" style="width:210px"><template #prefix><el-icon><Search /></el-icon></template></el-input>
+        <el-button @click="resetFilter">重置</el-button>
+      </div>
+      <div class="mix-line">
+        <span>名单构成（按主营大类）</span>
+        <span class="chip" v-for="m in mix" :key="m.name">{{ m.name }} {{ m.n }} 家</span>
+      </div>
+
+      <el-table :data="pageRows" size="default" :row-class-name="rowCls">
+        <el-table-column label="企业" min-width="200">
+          <template #default="{row}">
+            <el-tooltip v-if="row.mode === '匿名'" placement="top" content="该企业选择匿名上架，只展示匿名编号"><span class="anon-name">{{ row.anon }}</span></el-tooltip>
+            <span v-else>{{ row.name }}</span>
+            <el-tooltip v-if="row.related" placement="top" content="钢厂关联的贸易公司，关联关系来自企业认证信息"><span class="rel-tag">关联企业</span></el-tooltip>
+          </template>
+        </el-table-column>
+        <el-table-column label="所在省市" width="92"><template #default="{row}"><div class="two">{{ row.prov }}<span>{{ row.city }}</span></div></template></el-table-column>
+        <el-table-column label="主营大类" width="88" prop="cat" />
+        <el-table-column width="98"><template #header>规模档<span class="th-sub">企业自主申报</span></template><template #default="{row}">{{ row.scale }}</template></el-table-column>
+        <el-table-column width="128"><template #header>覆盖声明<span class="th-sub">企业自主申报</span></template>
+          <template #default="{row}"><span v-if="row.cover === '全量上传'">全量上传</span><div v-else class="two">部分上传<span>{{ row.cover.split('：')[1] }}</span></div></template>
+        </el-table-column>
+        <el-table-column v-if="$state.gate === 'open'" label="提供价格数据" width="70" align="center"><template #default="{row}"><span :class="{muted: !row.priceOn}">{{ row.priceOn ? '是' : '否' }}</span></template></el-table-column>
+        <el-table-column label="质量评级" width="62" align="center"><template #default="{row}"><el-tag size="small" :type="row.quality === 'A' ? 'success' : row.quality === 'B' ? 'primary' : 'warning'" effect="plain">{{ row.quality }}</el-tag></template></el-table-column>
+        <el-table-column width="86"><template #header>活跃等级<span class="th-sub">近 3 个月</span></template>
+          <template #default="{row}"><span class="dot" :class="row.activity === '活跃' ? 'ok' : row.activity === '一般' ? 'warn' : 'err'"></span>{{ row.activity }}</template>
+        </el-table-column>
+        <el-table-column label="生效起止" width="100"><template #default="{row}"><div class="two num">{{ row.start }}<span>至 {{ row.end }}</span></div></template></el-table-column>
+        <el-table-column label="状态" width="124">
+          <template #default="{row}">
+            <template v-if="row.st === 'on'"><span class="dot ok"></span>生效中</template>
+            <template v-else-if="row.st === 'off' || row.st === 'pause'">
+              <el-tooltip placement="top" :content="row.st === 'off' ? '连续 10 天无有效上传，自 ' + row.since + ' 起冻结' : '企业主动暂停，自 ' + row.since + ' 起冻结'">
+                <el-tag size="small" type="danger">{{ row.st === 'off' ? '冻结 · 断传' : '冻结 · 暂停' }}</el-tag>
+              </el-tooltip>
+              <div v-if="row.handled" class="muted small" style="line-height:16px;margin-top:2px">{{ row.handled === 'extend' ? '已选顺延' : '12-01 免费替换' }}</div>
+            </template>
+            <el-tag v-else-if="row.st === 'in'" size="small" type="primary" effect="plain">待生效 12-01</el-tag>
+            <el-tag v-else size="small" type="warning" effect="plain">待移出 12-01</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="108">
+          <template #default="{row}">
+            <template v-if="row.st === 'on'">
+              <el-button link type="primary" @click="openAdjust('replace', row)">替换</el-button>
+              <el-button link type="primary" @click="openAdjust('remove', row)">移出</el-button>
+            </template>
+            <template v-else-if="row.st === 'off' || row.st === 'pause'">
+              <el-button v-if="!row.handled" link type="danger" @click="openFree(row)">免费替换</el-button>
+              <el-button v-else link type="primary" @click="undoFree(row)">撤销处理</el-button>
+            </template>
+            <el-button v-else link type="primary" @click="revokeByRow(row)">撤销变更</el-button>
+          </template>
+        </el-table-column>
+        <template #empty><el-empty description="没有符合条件的企业" :image-size="80" /></template>
+      </el-table>
+      <div class="tbl-foot">
+        <span>共 {{ filtered.length }} 家<template v-if="!hasFilter">（在池 {{ stat.inPool }} 家，另有 {{ stat.incoming }} 家待生效）</template>　|　名单不展示任何单家企业的经营数据；活跃度只给月度等级</span>
+        <el-pagination background layout="prev, pager, next, jumper" :page-size="pageSize" v-model:current-page="page" :total="filtered.length" />
+      </div>
+    </template>
+
+    <!-- ② 待生效变更 -->
+    <template v-else-if="tab === 'pending'">
+      <el-alert type="warning" show-icon :closable="false" style="margin-bottom:12px">
+        <template #title>
+2026-11-20 的企业名录选购共选 <b>43</b> 家：<b>13</b> 家使用名额包内的未分配名额，不产生费用，已作为“新增”列入下表；其余 <b>30</b> 家为加购（订单 <b class="num">DO-20261120-0052</b>），订单待核销，暂未列入下表。核销后这 30 家列为“待生效”，计划生效日 <b class="num">2026-12-01</b>（即计费起始日）；须在 2026-11-28 18:00 截单前完成核销，逾期顺延到 2027-01-01 并重新计价。
+          <a href="orders.html">查看订单 ›</a>
+        </template>
+      </el-alert>
+      <div class="sum-bar">
+        <span>统一生效日 <b class="num">2026-12-01</b></span>
+        <span>替换 <b class="num">{{ pendCount.replace }}</b> 组<span class="muted">（占用额度 {{ stat.used }} / 37）</span></span>
+        <span>免费替换 <b class="num">{{ pendCount.free }}</b> 组<span class="muted">（不占额度）</span></span>
+        <span>新增 <b class="num">{{ pendCount.add }}</b> 家</span>
+        <span>移出 <b class="num">{{ pendCount.remove }}</b> 家</span>
+        <span>生效后在池 <b class="num">{{ stat.inPool + pendCount.add - pendCount.remove }}</b> 家</span>
+      </div>
+      <el-table :data="pending" size="default">
+        <el-table-column label="变更类型" width="110">
+          <template #default="{row}"><el-tag size="small" :type="row.type === '替换' ? 'primary' : row.type === '新增' ? 'success' : 'warning'">{{ row.free ? '免费替换' : row.type }}</el-tag></template>
+        </el-table-column>
+        <el-table-column label="变更内容" min-width="420">
+          <template #default="{row}">
+            <div v-if="row.out" class="swap"><span class="swap-k out">移出</span><ent-name :e="row.out"></ent-name><span class="muted small">{{ row.out.prov }} · {{ row.out.cat }}</span></div>
+            <div v-if="row.in" class="swap"><span class="swap-k in">移入</span><ent-name :e="row.in"></ent-name><span class="muted small">{{ row.in.prov }} · {{ row.in.cat }}</span></div>
+          </template>
+        </el-table-column>
+        <el-table-column label="替换额度" width="96"><template #default="{row}"><span v-if="row.type === '替换' && !row.free">占用 1 个</span><span v-else class="muted">不占用</span></template></el-table-column>
+        <el-table-column label="历史数据" width="96"><template #default="{row}">{{ row.recalc ? '按新成员重算' : '不重算' }}</template></el-table-column>
+        <el-table-column label="提交人" width="80" prop="by" />
+        <el-table-column label="提交时间" width="140"><template #default="{row}"><span class="num">{{ row.at }}</span></template></el-table-column>
+        <el-table-column label="生效日期" width="104"><template #default><span class="num">2026-12-01</span></template></el-table-column>
+        <el-table-column label="操作" width="80"><template #default="{row}"><el-button link type="primary" @click="revoke(row)">撤销</el-button></template></el-table-column>
+        <template #empty><el-empty description="暂无待生效的变更" :image-size="80"><el-button type="primary" @click="openAdjust('replace')">调整数据池</el-button></el-empty></template>
+      </el-table>
+      <div class="tip-box blue small mt12">
+        待生效变更在 2026-12-01 统一生效，生效前可撤销；生效后本周期内不可再次调整。变更生效日之前的数据仍按旧成员集合展示（历史不重算），趋势图在 2026-12-01 标注“口径变更”。新增企业在生效日占用未分配名额，移出后名额回到未分配。<br>待生效期间企业数据不进入聚合。用已购名额包内的未分配名额新增企业不属于加购，不产生新费用；加购新增的企业同样在下一个调整周期生效，从生效日起计费，下单日至生效日之间不收费，也不占用替换额度。
+      </div>
+    </template>
+
+    <!-- ③ 变更记录 -->
+    <template v-else>
+      <el-table :data="history" size="default">
+        <el-table-column label="时间" width="140"><template #default="{row}"><span class="num">{{ row.at }}</span></template></el-table-column>
+        <el-table-column label="操作人" width="86" prop="by" />
+        <el-table-column label="变更内容" min-width="330"><template #default="{row}">{{ row.t }}<div v-if="row.d" class="muted small" style="line-height:18px">{{ row.d }}</div></template></el-table-column>
+        <el-table-column label="变更企业数" width="96" align="right"><template #default="{row}"><span class="num">{{ row.n }}</span> 家</template></el-table-column>
+        <el-table-column label="生效日期" width="118"><template #default="{row}"><span class="num">{{ row.eff }}</span><el-tag v-if="row.wait" size="small" type="primary" effect="plain" style="margin-left:4px">待生效</el-tag></template></el-table-column>
+        <el-table-column label="触发方式" width="190">
+          <template #default="{row}"><el-tag size="small" :type="row.passive ? 'warning' : 'info'" effect="plain">{{ row.passive ? '下游暂停或退出造成的被动减员' : '主动调整' }}</el-tag></template>
+        </el-table-column>
+        <el-table-column label="历史数据" width="150"><template #default="{row}">{{ row.h || '不重算，标注口径变更' }}</template></el-table-column>
+      </el-table>
+      <div class="tip-box small mt12">数据池成员按日期版本化：某个业务日期的聚合值，只按该日期当天生效的成员集合计算。被动减员（下游断传、暂停、退出）同样按日期版本化处理，不重算历史。</div>
+    </template>
+  </div>
+
+  <!-- 调整数据池 -->
+  <el-dialog v-model="adj.show" title="调整数据池" width="720px" top="6vh">
+    <div class="tip-box orange">
+      <ol class="rule-ol">
+        <li><b>下一周期统一生效：</b>本次调整在 <b>2026-12-01</b> 统一生效，周期内不可反复调整。</li>
+        <li><b>历史默认不重算：</b>2026-12-01 之前的数据仍按旧成员集合展示，趋势图在变更日标注“口径变更”。</li>
+        <li><b>替换有上限：</b>每周期替换不超过在用名额的 20%（本周期 37 个，已用 {{ stat.used }} 个，剩余 {{ 37 - stat.used }} 个）。</li>
+        <li><b>按新成员重算历史：</b>仅当新旧成员差集不少于 {{ minBatch }} 家时可选。</li>
+      </ol>
+    </div>
+    <el-form label-width="104px" class="mt16">
+      <el-form-item label="调整方式">
+        <el-radio-group v-model="adj.mode">
+          <el-radio-button value="replace">替换</el-radio-button>
+          <el-radio-button value="add">增加</el-radio-button>
+          <el-radio-button value="remove">减少</el-radio-button>
+        </el-radio-group>
+        <span class="muted small" style="margin-left:12px">{{ adj.mode === 'replace' ? '把名额从企业 A 改给企业 B，占用替换额度' : adj.mode === 'add' ? '使用未分配名额（当前可用 ' + freeQuota + ' 个）' : '移出后名额回到未分配，不退款' }}</span>
+      </el-form-item>
+      <template v-if="adj.mode === 'replace'">
+        <el-form-item label="移出企业">
+          <el-select v-model="adj.outId" filterable placeholder="从生效中的在池企业里选择" style="width:100%">
+            <el-option v-for="e in activeRows" :key="e.id" :label="e.display + '（' + e.prov + ' · ' + e.cat + '）'" :value="e.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="移入企业">
+          <el-select v-model="adj.inId" filterable placeholder="从名录中未在池的企业里选择" style="width:100%">
+            <el-option v-for="e in candOpts" :key="e.id" :label="e.display + '（' + e.prov + ' · ' + e.cat + '）'" :value="e.id" />
+          </el-select>
+          <div class="muted small">候选来自企业名录；也可以先到 <a href="directory.html">企业名录选购</a> 按条件筛选。</div>
+        </el-form-item>
+      </template>
+      <el-form-item v-else-if="adj.mode === 'add'" label="增加企业">
+        <el-select v-model="adj.addIds" multiple filterable collapse-tags :max-collapse-tags="3" placeholder="从名录中未在池的企业里选择，可多选" style="width:100%">
+          <el-option v-for="e in candOpts" :key="e.id" :label="e.display + '（' + e.prov + ' · ' + e.cat + '）'" :value="e.id" />
+        </el-select>
+        <div class="muted small">已选 {{ adj.addIds.length }} 家，使用未分配名额 {{ adj.addIds.length }} / {{ freeQuota }} 个。名额不足时可到 <a href="directory.html">企业名录</a> 勾选企业加购：加购从新增企业生效日起计费，下单日至生效日之间不收费。</div>
+      </el-form-item>
+      <el-form-item v-else label="移出企业">
+        <el-select v-model="adj.removeIds" multiple filterable collapse-tags :max-collapse-tags="3" placeholder="从生效中的在池企业里选择，可多选" style="width:100%">
+          <el-option v-for="e in activeRows" :key="e.id" :label="e.display + '（' + e.prov + ' · ' + e.cat + '）'" :value="e.id" />
+        </el-select>
+        <div class="muted small">减少已购名额数（降配）只能在续费时进行，下一订阅周期生效。数据池有效企业少于 {{ $PV.nMin }} 家时，聚合数据暂停提供。</div>
+      </el-form-item>
+      <el-form-item label="生效日期"><b class="num">2026-12-01</b><span class="muted small" style="margin-left:10px">每自然月调整 1 次，下一周期统一生效</span></el-form-item>
+      <el-form-item label="历史数据">
+        <el-radio-group v-model="adj.history" style="display:block">
+          <el-radio value="keep" style="display:flex;height:auto;margin:4px 0">历史不重算（默认）<span class="muted small" style="margin-left:8px">变更日前的数据按旧成员集合展示</span></el-radio>
+          <el-radio value="recalc" :disabled="!recalcOk" style="display:flex;height:auto;margin:4px 0">按新成员重算历史</el-radio>
+        </el-radio-group>
+        <div v-if="!recalcOk" class="tip-box small" style="width:100%;margin-top:4px">
+          <el-icon style="vertical-align:-2px"><Lock /></el-icon> 当前不可选：算上本次调整，新旧成员差集为移出 <b>{{ diff.out }}</b> 家、移入 <b>{{ diff.in }}</b> 家，任一侧少于最小变更批量 {{ minBatch }} 家即不可重算。差集过小时重算历史，新旧两份历史相减可推算出被替换企业的数据，因此不提供。
+        </div>
+        <div v-else class="tip-box green small" style="width:100%;margin-top:4px">新旧成员差集为移出 <b>{{ diff.out }}</b> 家、移入 <b>{{ diff.in }}</b> 家，已达到最小变更批量 {{ minBatch }} 家，可选择重算。提交后系统还会校验差集整体是否满足披露条件，不满足时仍按“历史不重算”处理。</div>
+      </el-form-item>
+    </el-form>
+    <el-checkbox v-model="adj.agree">我已知晓：调整在 2026-12-01 统一生效，生效前可撤销，生效后本周期内不可再次调整{{ adj.history === 'keep' ? '；历史数据不重算' : '' }}</el-checkbox>
+    <template #footer>
+      <el-button @click="adj.show = false">取消</el-button>
+      <el-button type="primary" :disabled="!adjReady" @click="submitAdjust">提交调整</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 冻结企业：免费替换 -->
+  <el-dialog v-model="fr.show" title="冻结名额处理" width="720px" top="6vh">
+    <template v-if="fr.row">
+      <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="冻结企业"><ent-name :e="fr.row"></ent-name></el-descriptions-item>
+        <el-descriptions-item label="所在省市 / 主营大类">{{ fr.row.prov }} {{ fr.row.city }} · {{ fr.row.cat }}</el-descriptions-item>
+        <el-descriptions-item label="冻结原因">{{ fr.row.st === 'off' ? '连续 10 天无有效上传' : '企业主动暂停' }}</el-descriptions-item>
+        <el-descriptions-item label="冻结起始"><span class="num">{{ fr.row.since }}</span>（已冻结 {{ fr.row.days }} 天）</el-descriptions-item>
+      </el-descriptions>
+      <div class="tip-box green small mt12">冻结名额的替换是免费的，<b>不占用本周期替换额度</b>。冻结期间该企业不参与聚合，也不计入名额使用天数。</div>
+      <div class="grid c2 mt12" style="margin-bottom:12px">
+        <div class="option-card" :class="{on: fr.choice === 'replace'}" @click="fr.choice = 'replace'">
+          <h4>免费替换为其他企业</h4>
+          <p>从候选企业中选择 1 家接替该名额，2026-12-01 起生效。历史数据不重算。</p>
+          <el-icon v-if="fr.choice === 'replace'" class="check"><CircleCheckFilled /></el-icon>
+        </div>
+        <div class="option-card" :class="{on: fr.choice === 'extend'}" @click="fr.choice = 'extend'">
+          <h4>保留该企业，剩余天数顺延</h4>
+          <p>名额继续保留给该企业。冻结的天数不计入使用，企业恢复上传后，该名额的到期日相应顺延。</p>
+          <el-icon v-if="fr.choice === 'extend'" class="check"><CircleCheckFilled /></el-icon>
+        </div>
+      </div>
+      <template v-if="fr.choice === 'replace'">
+        <div class="row between mb8"><b>候选企业</b><span class="muted small">优先列出同省、同主营大类的未在池企业；更多候选见 <a href="directory.html">企业名录选购</a></span></div>
+        <el-table :data="frCands" size="small" highlight-current-row row-class-name="pick-row" @row-click="r => fr.candId = r.id">
+          <el-table-column width="44" align="center"><template #default="{row}"><el-radio :model-value="fr.candId" :value="row.id" @change="fr.candId = row.id"><span></span></el-radio></template></el-table-column>
+          <el-table-column label="企业" min-width="190"><template #default="{row}"><ent-name :e="row"></ent-name></template></el-table-column>
+          <el-table-column label="所在省市" width="110"><template #default="{row}">{{ row.prov }} {{ row.city }}</template></el-table-column>
+          <el-table-column label="主营大类" width="90" prop="cat" />
+          <el-table-column label="规模档" width="100" prop="scale" />
+          <el-table-column label="质量评级" width="76" align="center" prop="quality" />
+          <el-table-column label="活跃等级" width="76" prop="activity" />
+        </el-table>
+      </template>
+      <div v-else class="tip-box small">选择顺延后，该名额保持冻结直到企业恢复有效上传；你也可以随时回到这里改为免费替换。</div>
+    </template>
+    <template #footer>
+      <el-button @click="fr.show = false">取消</el-button>
+      <el-button type="primary" :disabled="fr.choice === 'replace' && !fr.candId" @click="submitFree">{{ fr.choice === 'replace' ? '确认免费替换' : '确认顺延' }}</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 导出名单 -->
+  <el-dialog v-model="exportDlg" title="导出数据来源企业名单" width="560px">
+    <el-descriptions :column="1" border size="small">
+      <el-descriptions-item label="导出范围">当前数据池全部在池企业，共 {{ stat.inPool }} 家（含冻结 {{ stat.frozen }} 家）</el-descriptions-item>
+      <el-descriptions-item label="导出字段">企业名称或匿名编号、所在省市、主营大类、规模档、覆盖声明、{{ $state.gate === 'open' ? '是否提供价格数据、' : '' }}质量评级、近 3 个月活跃等级、生效起止、名额状态</el-descriptions-item>
+      <el-descriptions-item label="文件格式"><el-radio-group v-model="expFmt"><el-radio value="xlsx">Excel</el-radio><el-radio value="csv">CSV</el-radio></el-radio-group></el-descriptions-item>
+    </el-descriptions>
+    <div class="tip-box orange small mt12">导出文件<b>只含名单与画像字段，不含任何数值</b>；匿名上架的企业只导出匿名编号。文件带水印（企业、账号、时间、导出编号）与使用条款页，导出行为记入审计日志。</div>
+    <el-checkbox v-model="expAgree" class="mt12">我已阅读并同意使用条款：禁止再识别单家企业数据，禁止转售</el-checkbox>
+    <template #footer>
+      <el-button @click="exportDlg = false">取消</el-button>
+      <el-button type="primary" :disabled="!expAgree" @click="doExport">生成导出任务</el-button>
+    </template>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script src="../assets/js/upstream-directory.js"></script>
+<script>
+(function () {
+  /* 数据池 186 家（与看板、查询的数据池规模一致）；在池企业与候选企业都取自企业名录的同一批模拟数据 */
+  /* 生效起始日的分布与变更记录一致：2026-04-01 起 159 家、06-01 起 8 家、10-01 起 12 家、11-01 起 7 家 */
+  const START = (i) => { const k = (i * 37) % 186; return k < 159 ? '2026-04-01' : k < 167 ? '2026-06-01' : k < 179 ? '2026-10-01' : '2026-11-01'; };
+  const BASE = UpDir.LIST.filter((e) => e.inPool).map((e, i) => Object.assign({}, e, { st: 'on', start: START(i), end: '2027-03-31' }));
+  const FROZEN = [[23, 'off', '2026-11-18', 6], [97, 'off', '2026-11-18', 6], [151, 'pause', '2026-11-22', 2]];
+  FROZEN.forEach(([i, st, since, days]) => Object.assign(BASE[i], { st, since, days }));
+  const CAND = UpDir.PENDING_IN.concat(UpDir.LIST.filter((e) => !e.inPool && !e.pendIn && !e.pendOrder && e.activity !== '停更')).map((e) => Object.assign({}, e));
+  const incoming = (i) => Object.assign({}, CAND[i], { st: 'in', start: '2026-12-01', end: '2027-03-31' });
+
+  /* 已提交的待生效变更：替换 5 组（占用额度 5）、新增 14 家、移出 1 家。
+   * 新增 14 家 = 2026-11-19 数据池调整新增 1 家 + 2026-11-20 企业名录选购时用未分配名额分配的 13 家（同次选购另有 30 家为加购，订单待核销，不在此列） */
+  const PEND_DEF = [
+    { type: '替换', out: 3, in: 0, at: '2026-11-12 15:26' }, { type: '替换', out: 41, in: 1, at: '2026-11-12 15:26' }, { type: '替换', out: 88, in: 2, at: '2026-11-12 15:26' },
+    { type: '替换', out: 120, in: 3, at: '2026-11-19 10:08' }, { type: '替换', out: 166, in: 4, at: '2026-11-19 10:08' },
+    { type: '新增', in: 5, at: '2026-11-19 10:08' }, { type: '移出', out: 135, at: '2026-11-19 10:08' },
+  ].concat(UpDir.PENDING_FREE.map((e, i) => ({ type: '新增', in: 6 + i, at: '2026-11-20 16:42' })));
+  const INC = [];
+  const PENDING = PEND_DEF.map((p, i) => {
+    const o = { key: 'P' + i, type: p.type, by: '周立明', at: p.at };
+    if (p.out != null) { BASE[p.out].st = 'out'; o.out = BASE[p.out]; }
+    if (p.in != null) { o.in = incoming(p.in); INC.push(o.in); }
+    return o;
+  });
+  /* 展示顺序：冻结企业置顶，待生效企业穿插在名单中 */
+  const frozenRows = FROZEN.map((f) => BASE[f[0]]);
+  const ROWS = frozenRows.concat(BASE.filter((e) => e.st !== 'off' && e.st !== 'pause'));
+  INC.forEach((e, i) => ROWS.splice(8 + i * 9, 0, e));
+
+  const HISTORY = [
+    { at: '2026-11-22 09:40', by: '系统', t: '1 家企业主动暂停上传，名额冻结', d: '可免费替换（不占替换额度），或剩余天数顺延', n: 1, eff: '2026-11-22', passive: true, h: '不重算' },
+    { at: '2026-11-20 16:42', by: '周立明', t: '新增 13 家（企业名录选购）', d: '使用未分配名额 13 个，不产生费用，未分配名额用完；同次选购另有 30 家为加购（订单 DO-20261120-0052），核销后另行列入', n: 13, eff: '2026-12-01', wait: true },
+    { at: '2026-11-19 10:08', by: '周立明', t: '替换 2 组，新增 1 家，移出 1 家', d: '占用替换额度 2 个；新增使用未分配名额', n: 6, eff: '2026-12-01', wait: true },
+    { at: '2026-11-18 08:00', by: '系统', t: '2 家企业连续 10 天无有效上传，名额冻结', d: '可免费替换（不占替换额度），或剩余天数顺延', n: 2, eff: '2026-11-18', passive: true, h: '不重算' },
+    { at: '2026-11-12 15:26', by: '周立明', t: '替换 3 组', d: '占用替换额度 3 个', n: 6, eff: '2026-12-01', wait: true },
+    { at: '2026-10-28 16:12', by: '周立明', t: '新增 6 家（华南板材企业）', d: '使用未分配名额 6 个', n: 6, eff: '2026-11-01' },
+    { at: '2026-10-09 11:30', by: '系统', t: '1 家企业退出平台，名额释放', d: '已于 2026-10-10 免费替换为 1 家同省企业，2026-11-01 生效', n: 1, eff: '2026-10-09', passive: true, h: '不重算' },
+    { at: '2026-09-24 14:05', by: '周立明', t: '替换 8 组，新增 4 家', d: '占用替换额度 8 个（当期上限 35 个）', n: 20, eff: '2026-10-01' },
+    { at: '2026-05-26 09:48', by: '郑晓岚', t: '新增 8 家（华东建材企业）', d: '使用未分配名额 8 个', n: 8, eff: '2026-06-01' },
+    { at: '2026-03-28 10:20', by: '周立明', t: '续订扩容：保留原 120 家，新增 48 家，共 168 家', d: '随订单 DO-20260318-0007 续订并扩容（120 → 200 个名额）；原成员保持不变，新增成员的历史数据按入池后的成员集合计算', n: 48, eff: '2026-04-01', h: '不重算' },
+  ];
+
+  const EntName = {
+    props: { e: Object },
+    template: `<span v-if="e.mode === '匿名'" class="anon-name">{{ e.anon }}</span><span v-else>{{ e.name }}</span>`,
+  };
+
+  STP.mount({
+    components: { 'ent-name': EntName },
+    data() {
+      return {
+        tab: 'list', rows: ROWS, pending: PENDING, history: HISTORY, cands: CAND, minBatch: 10,
+        f: { region: [], cat: '', st: '', mode: '', kw: '' }, page: 1, pageSize: 10, seq: 20,
+        stOpts: [{ k: 'on', t: '生效中' }, { k: 'off', t: '冻结 · 断传' }, { k: 'pause', t: '冻结 · 暂停' }, { k: 'in', t: '待生效 12-01' }, { k: 'out', t: '待移出 12-01' }],
+        adj: { show: false, mode: 'replace', outId: '', inId: '', addIds: [], removeIds: [], history: 'keep', agree: false },
+        fr: { show: false, row: null, choice: 'replace', candId: '' },
+        exportDlg: false, expFmt: 'xlsx', expAgree: false,
+      };
+    },
+    computed: {
+      stat() {
+        const r = this.rows, c = (f) => r.filter(f).length;
+        return {
+          inPool: c((e) => e.st !== 'in'), active: c((e) => e.st === 'on' || e.st === 'out'), frozen: c((e) => e.st === 'off' || e.st === 'pause'),
+          incoming: c((e) => e.st === 'in'), used: this.pending.filter((p) => p.type === '替换' && !p.free).length,
+        };
+      },
+      frozenTodo() { return this.rows.filter((e) => (e.st === 'off' || e.st === 'pause') && !e.handled).length; },
+      pendCount() {
+        const p = this.pending;
+        return { replace: p.filter((x) => x.type === '替换' && !x.free).length, free: p.filter((x) => x.free).length, add: p.filter((x) => x.type === '新增').length, remove: p.filter((x) => x.type === '移出').length };
+      },
+      freeQuota() { return 14 - this.pendCount.add; },
+      regionOpts() {
+        const map = {};
+        this.rows.forEach((e) => { (map[e.prov] = map[e.prov] || {})[e.city] = 1; });
+        return M.provinces.filter((p) => map[p.name]).map((p) => ({ value: p.name, label: p.name, children: Object.keys(map[p.name]).map((c) => ({ value: c, label: c })) }));
+      },
+      catOpts() { return M.categories.map((c) => c.name).concat(['综合']); },
+      mix() {
+        const m = {};
+        this.rows.forEach((e) => { if (e.st !== 'in') m[e.cat] = (m[e.cat] || 0) + 1; });
+        return this.catOpts.filter((c) => m[c]).map((c) => ({ name: c, n: m[c] }));
+      },
+      hasFilter() { const f = this.f; return !!((f.region && f.region.length) || f.cat || f.st || f.mode || f.kw.trim()); },
+      filtered() {
+        const f = this.f, kw = f.kw.trim(), rg = f.region || [];
+        return this.rows.filter((e) => (!rg[0] || e.prov === rg[0]) && (!rg[1] || e.city === rg[1]) && (!f.cat || e.cat === f.cat) && (!f.st || e.st === f.st) && (!f.mode || e.mode === f.mode) && (!kw || e.display.indexOf(kw) >= 0));
+      },
+      pageRows() { return this.filtered.slice((this.page - 1) * this.pageSize, this.page * this.pageSize); },
+      activeRows() { return this.rows.filter((e) => e.st === 'on'); },
+      candOpts() { const used = {}; this.rows.forEach((e) => { used[e.id] = 1; }); return this.cands.filter((e) => !used[e.id]).slice(0, 80); },
+      diff() {
+        const p = this.pending, a = this.adj;
+        const o = p.filter((x) => x.out).length + (a.mode === 'replace' ? (a.outId ? 1 : 0) : a.mode === 'remove' ? a.removeIds.length : 0);
+        const i = p.filter((x) => x.in).length + (a.mode === 'replace' ? (a.inId ? 1 : 0) : a.mode === 'add' ? a.addIds.length : 0);
+        return { out: o, in: i };
+      },
+      recalcOk() { return this.diff.out >= this.minBatch && this.diff.in >= this.minBatch; },
+      adjReady() {
+        const a = this.adj;
+        if (!a.agree) return false;
+        return a.mode === 'replace' ? !!(a.outId && a.inId) : a.mode === 'add' ? a.addIds.length > 0 : a.removeIds.length > 0;
+      },
+      frCands() {
+        const r = this.fr.row;
+        if (!r) return [];
+        const score = (e) => (e.prov === r.prov ? 2 : e.region === r.region ? 1 : 0) + (e.cat === r.cat ? 2 : 0) + (e.activity === '活跃' ? 0.5 : 0);
+        return this.candOpts.slice().sort((a, b) => score(b) - score(a)).slice(0, 6);
+      },
+    },
+    watch: {
+      f: { deep: true, handler() { this.page = 1; } },
+      recalcOk(v) { if (!v) this.adj.history = 'keep'; },
+    },
+    methods: {
+      rowCls({ row }) { return row.st === 'off' || row.st === 'pause' ? 'merged-row' : ''; },
+      resetFilter() { this.f = { region: [], cat: '', st: '', mode: '', kw: '' }; },
+      showFrozen() { this.tab = 'list'; this.resetFilter(); this.page = 1; },
+      stamp() { return '2026-11-24 14:' + STP.pad(12 + (this.seq++ % 40)); },
+      openAdjust(mode, row) {
+        this.adj = { show: true, mode, outId: mode === 'replace' && row ? row.id : '', inId: '', addIds: [], removeIds: mode === 'remove' && row ? [row.id] : [], history: 'keep', agree: false };
+      },
+      addIncoming(e) { const n = Object.assign({}, e, { st: 'in', start: '2026-12-01', end: '2027-03-31' }); this.rows.splice(3, 0, n); return n; },
+      submitAdjust() {
+        const a = this.adj, at = this.stamp(), find = (id) => this.rows.find((e) => e.id === id), cand = (id) => this.cands.find((e) => e.id === id);
+        if (a.mode === 'replace') {
+          if (this.stat.used >= 37) { this.$info('本周期替换额度已用完（不超过在用名额的 20%）'); return; }
+          const o = find(a.outId); o.st = 'out';
+          this.pending.unshift({ key: 'N' + this.seq, type: '替换', out: o, in: this.addIncoming(cand(a.inId)), by: '周立明', at, recalc: a.history === 'recalc' });
+        } else if (a.mode === 'add') {
+          if (a.addIds.length > this.freeQuota) { this.$info('未分配名额不足，当前可用 ' + this.freeQuota + ' 个，可先加购名额'); return; }
+          a.addIds.forEach((id, i) => this.pending.unshift({ key: 'N' + this.seq + '-' + i, type: '新增', in: this.addIncoming(cand(id)), by: '周立明', at, recalc: a.history === 'recalc' }));
+        } else {
+          if (this.stat.active - this.pendCount.remove - a.removeIds.length < this.$PV.nMin) { this.$info('移出后数据池有效企业将少于 ' + this.$PV.nMin + ' 家，聚合数据会暂停提供，请调整'); return; }
+          a.removeIds.forEach((id, i) => { const o = find(id); o.st = 'out'; this.pending.unshift({ key: 'N' + this.seq + '-' + i, type: '移出', out: o, by: '周立明', at, recalc: a.history === 'recalc' }); });
+        }
+        a.show = false; this.tab = 'pending';
+        this.$demo('调整已提交，将于 2026-12-01 统一生效；生效前可在“待生效变更”中撤销');
+      },
+      revoke(p) {
+        ElementPlus.ElMessageBox.confirm('撤销后该项变更不会在 2026-12-01 生效' + (p.type === '替换' && !p.free ? '，占用的 1 个替换额度同时退回。' : '。'), '撤销待生效变更', { confirmButtonText: '确认撤销', cancelButtonText: '取消', type: 'warning' })
+          .then(() => {
+            if (p.out) { if (p.free) p.out.handled = ''; else p.out.st = 'on'; }
+            if (p.in) this.rows.splice(this.rows.indexOf(this.rows.find((e) => e.id === p.in.id)), 1);
+            this.pending.splice(this.pending.indexOf(p), 1);
+            this.$demo('已撤销该项变更');
+          }).catch(() => {});
+      },
+      revokeByRow(row) { const p = this.pending.find((x) => (x.out && x.out.id === row.id) || (x.in && x.in.id === row.id)); if (p) this.revoke(p); },
+      openFree(row) { this.fr = { show: true, row, choice: 'replace', candId: '' }; },
+      submitFree() {
+        const fr = this.fr, row = this.rows.find((e) => e.id === fr.row.id);
+        if (fr.choice === 'replace') {
+          const c = this.cands.find((e) => e.id === fr.candId);
+          this.pending.unshift({ key: 'F' + this.seq, type: '替换', free: true, out: row, in: this.addIncoming(c), by: '周立明', at: this.stamp() });
+          row.handled = 'replace';
+          this.$demo('已安排免费替换，2026-12-01 生效，不占用替换额度');
+        } else {
+          row.handled = 'extend';
+          this.$demo('已选择顺延：冻结天数不计入使用，企业恢复后到期日相应顺延');
+        }
+        fr.show = false;
+      },
+      undoFree(row) {
+        const p = this.pending.find((x) => x.free && x.out.id === row.id);
+        if (p) this.revoke(p); else { row.handled = ''; this.$info('已撤销顺延选择，可重新处理'); }
+      },
+      doExport() {
+        this.exportDlg = false; this.expAgree = false;
+        ElementPlus.ElMessageBox.confirm('名单导出任务已提交，生成后可在导出中心下载，文件保留 7 天。文件只含名单与画像字段，不含任何数值。', '已提交', { confirmButtonText: '去导出中心', cancelButtonText: '留在本页', type: 'success' })
+          .then(() => { this.$go('export.html'); }).catch(() => {});
+      },
+    },
+  });
+})();
+</script>
+</body>
+</html>

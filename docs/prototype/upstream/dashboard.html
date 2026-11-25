@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>聚合看板 · 上游钢厂端 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="upstream" active="dashboard" title="聚合看板" watermark
+  desc="昨天卖了多少、现在渠道里有多少、够卖几天。全部指标为所购样本企业上传数据的聚合结果，任何位置都不展示单家企业的数据。">
+  <template #actions>
+    <el-dropdown @command="v => state = v">
+      <el-button><el-icon><Operation /></el-icon>原型状态：{{ state==='normal' ? '正常' : '数据池低于最小规模' }}<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+      <template #dropdown><el-dropdown-menu>
+        <el-dropdown-item command="normal">正常（数据池 186 家）</el-dropdown-item>
+        <el-dropdown-item command="small">数据池低于最小规模（17 家）</el-dropdown-item>
+      </el-dropdown-menu></template>
+    </el-dropdown>
+    <el-button @click="$go('query.html')"><el-icon><Grid /></el-icon>多维查询</el-button>
+    <el-button type="primary" @click="exportDlg = true"><el-icon><Download /></el-icon>导出看板数据</el-button>
+  </template>
+
+  <template v-if="state==='normal'">
+    <el-alert type="warning" show-icon :closable="true">
+      <template #title>数据池内 3 家企业的名额已冻结（2 家连续 10 天无有效上传、1 家主动暂停），冻结期间不参与聚合。可免费替换且不占用本周期替换额度，或剩余天数自动顺延。<a href="pool.html">前往处理 ›</a></template>
+    </el-alert>
+    <up-board></up-board>
+  </template>
+
+  <template v-else>
+    <div class="card">
+      <el-result icon="warning" title="数据池有效企业数低于最小规模，聚合数据暂停提供">
+        <template #sub-title>
+          <div style="line-height:1.9;max-width:640px;margin:0 auto">
+            当前数据池有效企业 <b>17</b> 家，最小数据池规模为 <b>{{ $PV.nMin }}</b> 家，还差 <b>3</b> 家。<br>
+            为防止通过小样本反推单家企业的经营数据，池内企业不足 {{ $PV.nMin }} 家时，看板、多维查询与导出均不提供任何聚合数值。暂停天数将在订阅期内自动顺延。
+          </div>
+        </template>
+        <template #extra>
+          <el-button type="primary" @click="$go('directory.html')">去企业名录补足名额</el-button>
+          <el-button @click="$go('pool.html')">查看数据池</el-button>
+          <el-button @click="$go('demo.html')">先看模拟数据演示</el-button>
+        </template>
+      </el-result>
+    </div>
+    <div class="grid c5">
+      <div class="stat" v-for="t in ['昨日销量','昨日日末库存','近 7 日日均销量','库存可销天数']" :key="t">
+        <div class="label">{{ t }}</div><div class="value"><mask-cell lg tip="数据池低于最小规模，不提供聚合数据"></mask-cell></div><div class="foot"><span>暂停提供</span></div>
+      </div>
+      <stat-card label="数据池企业数" :value="17" unit="家" icon="OfficeBuilding"><span>最小规模 20 家</span><b style="color:#e5484d">差 3 家</b></stat-card>
+    </div>
+  </template>
+
+  <el-dialog v-model="exportDlg" title="导出看板数据" width="560px">
+    <el-form label-width="96px">
+      <el-form-item label="导出内容">
+        <el-checkbox-group v-model="exp.parts">
+          <el-checkbox value="kpi" label="概览指标" /><el-checkbox value="region" label="地区分布" /><el-checkbox value="cat" label="品类结构" /><el-checkbox value="trend" label="趋势" /><el-checkbox value="brand" label="本厂品牌" />
+        </el-checkbox-group>
+      </el-form-item>
+      <el-form-item label="文件格式"><el-radio-group v-model="exp.fmt"><el-radio value="xlsx">Excel</el-radio><el-radio value="csv">CSV</el-radio></el-radio-group></el-form-item>
+    </el-form>
+    <div class="tip-box orange small">
+      导出内容与页面展示<b>完全一致</b>：同样的屏蔽、合并披露、吨位取整与口径说明，不存在“导出能看到更细数据”的路径。文件带水印（企业、账号、时间、导出编号）与使用条款页，导出行为记入审计日志。
+    </div>
+    <el-checkbox v-model="exp.agree" class="mt12">我已阅读并同意《数据服务协议》使用条款：不得通过任何方式推算单家企业数据（禁止再识别），不得转售</el-checkbox>
+    <template #footer>
+      <el-button @click="exportDlg = false">取消</el-button>
+      <el-button type="primary" :disabled="!exp.agree" @click="doExport">生成导出任务</el-button>
+    </template>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/lib/geo/china.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script src="../assets/js/upstream-board.js"></script>
+<script>
+STP.mount({
+  components: { 'up-board': UpBoard },
+  data() { return { state: 'normal', exportDlg: false, exp: { parts: ['kpi', 'region', 'cat', 'trend', 'brand'], fmt: 'xlsx', agree: false } }; },
+  methods: {
+    doExport() {
+      this.exportDlg = false;
+      ElementPlus.ElMessageBox.confirm('导出任务已提交（编号 EXP-20261124-0042），生成后可在导出中心下载，文件保留 7 天。', '已提交', { confirmButtonText: '去导出中心', cancelButtonText: '留在本页', type: 'success' })
+        .then(() => { location.href = 'export.html'; }).catch(() => {});
+    },
+  },
+});
+</script>
+</body>
+</html>

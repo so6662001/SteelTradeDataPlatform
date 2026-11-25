@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>上传粒度监控 · 平台运营后台 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.filter-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 12px; }
+.src b { font-family: Consolas, Menlo, monospace; font-weight: 600; }
+.src span { display: block; font-size: 12px; color: var(--stp-sub); }
+.rule-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.rule-item { border: 1px solid var(--stp-border); border-radius: 8px; padding: 14px 16px; background: #fafbfd; }
+.rule-item .no { font-size: 12px; color: var(--stp-sub); }
+.rule-item h4 { margin: 4px 0 6px; font-size: 14px; line-height: 1.5; }
+.rule-item p { margin: 0; font-size: 12.5px; color: var(--stp-sub); line-height: 1.7; }
+.sub-title { display: flex; align-items: center; gap: 10px; font-weight: 600; margin: 4px 0 10px; }
+.sub-title small { font-weight: 400; color: var(--stp-sub); }
+.sub-title .flex1 { flex: 1; }
+.side-kv { display: grid; gap: 12px; }
+.side-kv .it { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; font-size: 13px; }
+.side-kv .it i { grid-column: 1 / 3; display: block; height: 6px; border-radius: 3px; background: #eef1f5; overflow: hidden; }
+.side-kv .it i em { display: block; height: 100%; border-radius: 3px; background: #409eff; }
+.side-kv h5 { margin: 0; font-size: 12px; color: var(--stp-sub); font-weight: 400; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="admin" active="grain-monitor" title="上传粒度监控"
+  desc="下游企业可按“企业 + 来源系统”选择单据行级或按日汇总上传。本页监控粒度分布、切换、粒度冲突拒收，以及日汇总企业的对账差异与批次完整性；只展示状态、计数与比率。">
+  <template #actions>
+    <span class="muted small">数据日期 {{ dataDate }}</span>
+    <el-button @click="$demo('粒度监控日报已导出（仅含状态、计数与比率）')"><el-icon><Download /></el-icon>导出监控日报</el-button>
+    <el-button @click="$go('quality.html')">数据质量监控</el-button>
+  </template>
+
+  <div class="grid c4">
+    <stat-card label="行级模式企业" :value="14120" unit="家" icon="Tickets" tip="按主来源系统归类；逐条上传单据行，平台可做单据级去重与校验"><span>占 <b>66.0%</b></span><span>较上月 <b class="up">+212</b></span></stat-card>
+    <stat-card label="日汇总模式企业" :value="7266" unit="家" icon="Calendar" tip="按主来源系统归类；按业务日期整批上传当日汇总记录，整批替换生效"><span>占 <b>34.0%</b></span><span>较上月 <b class="up">+148</b></span></stat-card>
+    <stat-card label="多来源系统混用企业" :value="412" unit="家" icon="Connection" tip="同一企业的不同来源系统分别使用行级与日汇总两种粒度；已按主来源系统计入前两项"><span>平均 <b>2.3</b> 个来源系统</span></stat-card>
+    <stat-card label="本月粒度切换" :value="186" unit="次" icon="Switch" tip="2026 年 11 月已提交的粒度切换次数，含待生效"><span>行级转日汇总 <b>121</b></span><span>日汇总转行级 <b>65</b></span></stat-card>
+    <stat-card label="近 7 日粒度冲突拒收" :value="41" unit="批次" icon="CircleClose" tip="同一来源系统、同一业务日期出现两种粒度时，与当前设置不符的一方被拒收（错误码 3004）"><span>涉及 <b>9</b> 家企业</span><span>拒收数据未入库</span></stat-card>
+    <stat-card label="日汇总批次不完整告警" :value="23" unit="项" icon="Warning" tip="分片缺末片标记，整批不生效，沿用上一个完整批次"><span>待补传 <b>17</b></span><span>已补齐 <b>6</b></span></stat-card>
+    <stat-card label="对账差异企业" :value="58" unit="家" icon="DataAnalysis" tip="日汇总企业申报的控制总数与实际入库数的条数或吨位差异超过 0.5%"><span>占日汇总企业 <b>0.8%</b></span></stat-card>
+    <stat-card label="同一来源系统切换上限" :value="1" unit="次 / 月" icon="Timer" tip="同一来源系统每月最多切换一次，按业务日期生效，生效日不早于次日"><span>示例参数，待业务方确定</span></stat-card>
+  </div>
+
+  <div class="grid c-2-1">
+    <div class="card">
+      <div class="card-title"><span>粒度趋势<small>近 12 个月，企业数与月切换次数</small></span></div>
+      <ve-chart :option="trendOption" height="280px"></ve-chart>
+    </div>
+    <div class="card">
+      <div class="card-title"><span>粒度分布<small>共 21,386 家</small></span></div>
+      <ve-chart :option="pieOption" height="150px"></ve-chart>
+      <table class="plain-table mt8">
+        <thead><tr><th>规模档</th><th style="text-align:right">行级模式</th><th style="text-align:right">日汇总模式</th><th style="text-align:right">日汇总占比</th></tr></thead>
+        <tbody>
+          <tr v-for="s in scales" :key="s.t"><td>{{ s.t }}</td><td class="num" style="text-align:right">{{ $fmt(s.a) }}</td><td class="num" style="text-align:right">{{ $fmt(s.b) }}</td><td class="num" style="text-align:right">{{ (s.b / (s.a + s.b) * 100).toFixed(1) }}%</td></tr>
+        </tbody>
+      </table>
+      <div class="small muted mt8">规模档为企业自行申报的年销量区间，此处只做家数统计。</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <el-tabs v-model="tab">
+      <!-- 各企业粒度与切换记录 -->
+      <el-tab-pane name="ent" label="各企业当前粒度与切换记录">
+        <div class="tip-box blue small mb12">粒度按“企业 + 来源系统”设置，切换须指定生效业务日期（不早于次日），生效日之前的数据保持原粒度。<b>同一来源系统每月最多切换一次</b>（示例参数，待业务方确定）。切换由企业自行发起，平台只监控、不代为切换。</div>
+        <div class="filter-bar">
+          <el-input v-model="f.kw" placeholder="企业名称 / 来源系统" clearable style="width:220px"><template #prefix><el-icon><Search /></el-icon></template></el-input>
+          <el-select v-model="f.grain" placeholder="当前粒度" clearable style="width:140px"><el-option label="行级模式" value="行级模式" /><el-option label="日汇总模式" value="日汇总模式" /></el-select>
+          <el-checkbox v-model="f.mixed">只看多来源混用</el-checkbox>
+          <el-checkbox v-model="f.switched">只看本月有切换</el-checkbox>
+          <span class="flex1"></span>
+          <span class="muted small">原型展示 {{ entRows.length }} 条示例（按来源系统一行）</span>
+        </div>
+        <el-table :data="entRows" size="small" border>
+          <el-table-column label="企业" min-width="210"><template #default="{row}"><b>{{ row.name }}</b> <el-tag v-if="row.mixed" size="small" type="warning">多来源混用</el-tag></template></el-table-column>
+          <el-table-column label="来源系统" width="150"><template #default="{row}"><div class="src"><b>{{ row.src }}</b><span>{{ row.srcName }}</span></div></template></el-table-column>
+          <el-table-column label="当前粒度" width="104"><template #default="{row}"><el-tag size="small" :type="row.grain === '行级模式' ? 'primary' : 'success'">{{ row.grain }}</el-tag></template></el-table-column>
+          <el-table-column label="粒度生效业务日期" width="140"><template #default="{row}">自 {{ row.since }} 起</template></el-table-column>
+          <el-table-column label="待生效的切换" min-width="170"><template #default="{row}"><span v-if="row.pending" style="color:#b26a00">{{ row.pending }}</span><span v-else class="muted">—</span></template></el-table-column>
+          <el-table-column label="本月切换次数" width="110" align="center"><template #default="{row}"><b class="num" :style="{color: row.n >= 1 ? '#b26a00' : ''}">{{ row.n }}</b> <span class="muted">/ 1</span><div v-if="row.n >= 1" class="small muted">下月可再切换</div></template></el-table-column>
+          <el-table-column label="最近切换时间" width="140"><template #default="{row}">{{ row.last || '未切换过' }}</template></el-table-column>
+          <el-table-column label="操作" width="90" align="center"><template #default="{row}"><el-button link type="primary" @click="openHist(row)">切换记录</el-button></template></el-table-column>
+        </el-table>
+        <div class="tbl-foot"><span>企业侧的粒度设置与切换入口在下游“上传设置”页；切换记录写入审计日志。</span></div>
+      </el-tab-pane>
+
+      <!-- 粒度冲突拒收统计 -->
+      <el-tab-pane name="reject">
+        <template #label>粒度冲突拒收统计 <el-badge :value="41" type="danger" style="vertical-align:1px" /></template>
+        <div class="grid c-2-1" style="margin-bottom:14px">
+          <div>
+            <div class="sub-title">每日拒收批次数<small>近 14 日，按接收日；近 7 日合计 41 批次</small></div>
+            <ve-chart v-if="tab === 'reject'" :option="rejectOption" height="230px"></ve-chart>
+          </div>
+          <div>
+            <div class="sub-title">近 7 日拒收构成<small>共 41 批次</small></div>
+            <div class="side-kv">
+              <h5>按被拒收的粒度</h5>
+              <div class="it" v-for="k in rejGrain" :key="k.t"><span>{{ k.t }}</span><b class="num">{{ k.n }} 批次</b><i><em :style="{width: k.n / 41 * 100 + '%'}"></em></i></div>
+              <h5>按可能原因（运营标注）</h5>
+              <div class="it" v-for="k in rejCause" :key="k.t"><span>{{ k.t }}</span><b class="num">{{ k.n }} 批次</b><i><em :style="{width: k.n / 41 * 100 + '%', background: '#f0a020'}"></em></i></div>
+            </div>
+          </div>
+        </div>
+        <el-table :data="rejects" size="small" border>
+          <el-table-column label="企业" min-width="200"><template #default="{row}"><b>{{ row.name }}</b></template></el-table-column>
+          <el-table-column label="来源系统" width="92"><template #default="{row}"><span class="code">{{ row.src }}</span></template></el-table-column>
+          <el-table-column prop="date" label="业务日期" width="146" />
+          <el-table-column label="被拒收的粒度" width="110"><template #default="{row}"><el-tag size="small" type="danger">{{ row.rej }}</el-tag></template></el-table-column>
+          <el-table-column label="当前设置" width="104"><template #default="{row}">{{ row.cur }}</template></el-table-column>
+          <el-table-column label="错误码" width="76" align="center"><template #default><el-tooltip content="3004：上传粒度与当前设置不符（HTTP 409）" placement="top"><span class="code">3004</span></el-tooltip></template></el-table-column>
+          <el-table-column label="次数" width="76" align="right"><template #default="{row}"><b class="num">{{ row.n }}</b> 批次</template></el-table-column>
+          <el-table-column prop="cause" label="可能原因" min-width="200" />
+          <el-table-column label="操作" width="96" align="center"><template #default="{row}"><el-button link type="primary" @click="row.noticed = true; $demo('已通知「' + row.name + '」的企业管理员与接口对接员')">{{ row.noticed ? '再次通知' : '通知企业' }}</el-button></template></el-table-column>
+        </el-table>
+        <div class="tbl-foot"><span>被拒收的数据<b>未入库、不参与聚合</b>，企业按当前设置的粒度重传即可。拒收次数只统计批次数，不涉及批内数据内容。</span></div>
+      </el-tab-pane>
+
+      <!-- 对账差异与批次不完整 -->
+      <el-tab-pane name="recon" label="对账差异与批次不完整告警">
+        <div class="sub-title">日汇总企业的对账差异<small>58 家企业，原型展示 {{ recons.length }} 条示例</small><span class="flex1"></span>
+          <el-radio-group v-model="reconType" size="small"><el-radio-button value="" label="全部" /><el-radio-button value="条数" label="条数差异" /><el-radio-button value="吨位" label="吨位差异" /></el-radio-group>
+        </div>
+        <el-table :data="reconRows" size="small" border>
+          <el-table-column label="企业" min-width="200"><template #default="{row}"><b>{{ row.name }}</b></template></el-table-column>
+          <el-table-column label="来源系统" width="92"><template #default="{row}"><span class="code">{{ row.src }}</span></template></el-table-column>
+          <el-table-column prop="date" label="业务日期" width="110" />
+          <el-table-column label="差异类型" width="96"><template #default="{row}"><el-tag size="small" :type="row.type === '条数' ? 'info' : 'warning'">{{ row.type }}</el-tag></template></el-table-column>
+          <el-table-column label="差异比例" width="150"><template #default="{row}"><b class="num" :style="{color: Math.abs(row.diff) >= 5 ? '#e5484d' : '#b26a00'}">{{ row.diff > 0 ? '+' : '' }}{{ row.diff.toFixed(1) }}%</b> <span class="muted small">{{ row.diff > 0 ? '入库多于申报' : '入库少于申报' }}</span></template></el-table-column>
+          <el-table-column label="连续差异" width="88" align="right"><template #default="{row}"><span class="num">{{ row.days }}</span> 天</template></el-table-column>
+          <el-table-column label="状态" min-width="170"><template #default="{row}"><span class="dot" :class="row.st === '已更正' ? 'ok' : row.st === '待企业核对' ? 'err' : 'warn'"></span>{{ row.st }}<div v-if="row.note" class="small muted">{{ row.note }}</div></template></el-table-column>
+          <el-table-column label="操作" width="110" align="center"><template #default="{row}"><el-button v-if="row.st === '待企业核对'" link type="primary" @click="row.st = '已催办，待企业核对'; $demo('已催办企业核对对账差异')">催办核对</el-button><span v-else class="muted">—</span></template></el-table-column>
+        </el-table>
+        <div class="tbl-foot"><span>差异比例 =（实际入库数 − 企业申报的控制总数）÷ 申报数，超过 0.5% 记为差异。<b>此处只给差异比例，不给条数与吨位</b>；日汇总模式没有单据级校验，对账是主要的完整性保障。</span></div>
+
+        <div class="sub-title" style="margin-top:22px">日汇总批次不完整告警<small>共 23 项，原型展示 {{ batches.length }} 项示例</small></div>
+        <el-table :data="batches" size="small" border>
+          <el-table-column label="企业" min-width="200"><template #default="{row}"><b>{{ row.name }}</b></template></el-table-column>
+          <el-table-column label="来源系统" width="92"><template #default="{row}"><span class="code">{{ row.src }}</span></template></el-table-column>
+          <el-table-column prop="date" label="业务日期" width="110" />
+          <el-table-column label="问题" width="190"><template #default="{row}"><el-tag size="small" type="danger">缺末片标记</el-tag> <span class="muted small">已收 {{ row.got }} 片</span></template></el-table-column>
+          <el-table-column label="当前生效的数据" min-width="230"><template #default="{row}"><span v-if="row.prev">沿用上一个完整批次<div class="small muted">{{ row.prev }} 接收的批次</div></span><span v-else style="color:#b26a00">该业务日期暂无完整批次<div class="small muted">当日数据不参与聚合</div></span></template></el-table-column>
+          <el-table-column label="已持续" width="90" align="right"><template #default="{row}">{{ row.hours }} 小时</template></el-table-column>
+          <el-table-column label="状态" width="110"><template #default="{row}"><span class="dot" :class="row.st === '已补齐' ? 'ok' : 'warn'"></span>{{ row.st }}</template></el-table-column>
+          <el-table-column label="操作" width="96" align="center"><template #default="{row}"><el-button v-if="row.st !== '已补齐'" link type="primary" @click="row.st = '已催办'; $demo('已催办企业补传完整批次')">催办补传</el-button><span v-else class="muted">—</span></template></el-table-column>
+        </el-table>
+        <div class="tbl-foot"><span>日汇总按业务日期<b>整批替换</b>：新批次只有收到末片标记（isLast）才生效；不完整的批次整批不生效，沿用上一个完整批次。相关隔离记录见 <a href="quality.html">数据质量监控</a>。</span></div>
+      </el-tab-pane>
+    </el-tabs>
+  </div>
+
+  <!-- 说明区 -->
+  <div class="card">
+    <div class="card-title"><span>粒度规则说明<small>防止重复计量，防止按粒度差分</small></span></div>
+    <div class="rule-grid">
+      <div class="rule-item"><div class="no">粒度防重</div><h4>同一来源系统、同一业务日期只接受一种粒度</h4><p>与当前设置不符的一方被拒收，返回错误码 3004；避免同一天的销量被行级与日汇总各传一次而翻倍。切换生效日前后各自按当时的粒度处理。</p></div>
+      <div class="rule-item"><div class="no">统一披露判定</div><h4>两种粒度在企业日粒度事实层合并后再做披露判定</h4><p>行级数据先汇总到企业日粒度，与日汇总数据合并；最小样本、主导度、差分等判定不区分数据来自哪种粒度。</p></div>
+      <div class="rule-item"><div class="no">不对上游暴露</div><h4>上传粒度不作为上游可见的维度、筛选条件或单元格属性</h4><p>按粒度筛选等于把数据池切成两个企业子集，可被用于差分。粒度只对企业自己和平台运营可见，本页数据不对上游开放。</p></div>
+    </div>
+  </div>
+
+  <!-- 切换记录 -->
+  <el-dialog v-model="histDlg" :title="'切换记录 · ' + (cur ? cur.name : '')" width="640px">
+    <template v-if="cur">
+      <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="来源系统">{{ cur.src }}（{{ cur.srcName }}）</el-descriptions-item>
+        <el-descriptions-item label="当前粒度">{{ cur.grain }}</el-descriptions-item>
+        <el-descriptions-item label="生效业务日期">自 {{ cur.since }} 起</el-descriptions-item>
+        <el-descriptions-item label="本月切换次数">{{ cur.n }} / 1</el-descriptions-item>
+      </el-descriptions>
+      <el-table :data="cur.hist" size="small" border class="mt12">
+        <el-table-column prop="at" label="提交时间" width="140" />
+        <el-table-column prop="text" label="变更" min-width="180" />
+        <el-table-column prop="date" label="生效业务日期" width="116" />
+        <el-table-column prop="by" label="操作人" width="96" />
+        <el-table-column label="状态" width="84" align="center"><template #default="{row}"><el-tag size="small" :type="row.st === '已生效' ? 'success' : 'warning'">{{ row.st }}</el-tag></template></el-table-column>
+      </el-table>
+      <div class="tip-box small mt12">生效日之前的业务日期保持原粒度，更正这些日期的数据仍须使用原接口。切换不影响对上游的聚合结果，上游无法得知企业的上传粒度。</div>
+    </template>
+    <template #footer><el-button @click="histDlg = false">关闭</el-button><el-button type="primary" plain @click="$go('audit.html')">在审计日志中查看</el-button></template>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const LINE = '行级模式', DAY = '日汇总模式';
+  const init = (at, g, date) => ({ at, text: '入驻时选择：' + g, date, by: '企业管理员', st: '已生效' });
+  const sw = (at, from, to, date, st) => ({ at, text: from + ' → ' + to, date, by: '企业管理员', st: st || '已生效' });
+  const G = (name, src, srcName, grain, since, n, last, hist, o) => Object.assign({ name, src, srcName, grain, since, n, last, hist, mixed: false, pending: '' }, o || {});
+  const ents = [
+    G('苏州恒运钢铁贸易有限公司', 'SRC-HQ', '总部 ERP', LINE, '2025-09-26', 0, '', [init('2025-09-19 15:10', LINE, '2025-09-26')], { mixed: true }),
+    G('苏州恒运钢铁贸易有限公司', 'SRC-WX', '无锡分公司进销存', DAY, '2026-10-01', 0, '2026-09-24 10:32', [sw('2026-09-24 10:32', LINE, DAY, '2026-10-01'), { at: '2026-09-21 09:05', text: '登记来源系统，初始粒度：行级模式', date: '2026-09-22', by: '企业管理员', st: '已生效' }], { mixed: true }),
+    G('南京汇通钢铁贸易有限公司', 'SRC-ERP', '主 ERP', DAY, '2026-11-17', 1, '2026-11-13 14:20', [sw('2026-11-13 14:20', LINE, DAY, '2026-11-17'), init('2025-11-02 10:05', LINE, '2025-11-08')]),
+    G('杭州鼎力物资有限公司', 'SRC-ERP', '主 ERP', LINE, '2026-11-18', 1, '2026-11-15 09:12', [sw('2026-11-15 09:12', DAY, LINE, '2026-11-18'), sw('2026-06-20 16:44', LINE, DAY, '2026-07-01'), init('2025-10-11 11:30', LINE, '2025-10-18')]),
+    G('济南安信金属材料有限公司', 'SRC-ERP', '主 ERP', LINE, '2025-12-04', 1, '2026-11-21 16:40', [sw('2026-11-21 16:40', LINE, DAY, '2026-12-01', '待生效'), init('2025-11-27 09:18', LINE, '2025-12-04')], { pending: '自 2026-12-01 起改为日汇总模式' }),
+    G('广州盛达钢铁有限公司', 'SRC-A', '总部 ERP', LINE, '2025-10-20', 0, '', [init('2025-10-13 13:50', LINE, '2025-10-20')], { mixed: true }),
+    G('广州盛达钢铁有限公司', 'SRC-B', '佛山仓进销存', DAY, '2026-05-01', 0, '2026-04-22 10:08', [sw('2026-04-22 10:08', LINE, DAY, '2026-05-01'), { at: '2026-03-02 15:26', text: '登记来源系统，初始粒度：行级模式', date: '2026-03-03', by: '企业管理员', st: '已生效' }], { mixed: true }),
+    G('天津东方物贸有限公司', 'SRC-ERP', '主 ERP', LINE, '2025-12-15', 0, '', [init('2025-12-08 10:40', LINE, '2025-12-15')], { mixed: true }),
+    G('天津东方物贸有限公司', 'SRC-CK', '仓储系统', DAY, '2026-11-05', 1, '2026-11-02 11:16', [sw('2026-11-02 11:16', LINE, DAY, '2026-11-05'), { at: '2026-08-11 09:30', text: '登记来源系统，初始粒度：行级模式', date: '2026-08-12', by: '企业管理员', st: '已生效' }], { mixed: true }),
+    G('佛山启航物资有限公司', 'SRC-ERP', '主 ERP', DAY, '2026-11-18', 1, '2026-11-14 17:02', [sw('2026-11-14 17:02', LINE, DAY, '2026-11-18'), init('2026-01-06 14:12', LINE, '2026-01-12')]),
+    G('苏州同创实业有限公司', 'SRC-JXC', '进销存系统', DAY, '2026-08-01', 0, '2026-07-23 15:48', [sw('2026-07-23 15:48', LINE, DAY, '2026-08-01'), init('2026-02-20 10:22', LINE, '2026-02-26')]),
+    G('唐山国联金属材料有限公司', 'SRC-FGS', '财务供应链系统', DAY, '2026-03-09', 0, '', [init('2026-03-02 09:44', DAY, '2026-03-09')]),
+    G('上海长风钢铁有限公司', 'SRC-ERP', '主 ERP', LINE, '2025-09-29', 0, '', [init('2025-09-22 16:35', LINE, '2025-09-29')]),
+    G('武汉中泰钢铁有限公司', 'SRC-ERP', '主 ERP', LINE, '2025-11-17', 0, '', [init('2025-11-10 11:02', LINE, '2025-11-17')]),
+  ];
+  const RJ = (name, src, date, rej, n, cause) => ({ name, src, date, rej, cur: rej === LINE ? DAY : LINE, n, cause, noticed: false });
+  const rejects = [
+    RJ('南京汇通钢铁贸易有限公司', 'SRC-ERP', '2026-11-17 至 11-19', LINE, 8, '切换生效后，ERP 的行级推送任务未停用'),
+    RJ('杭州鼎力物资有限公司', 'SRC-ERP', '2026-11-18 至 11-19', DAY, 6, '切回行级后，原日汇总定时任务仍在运行'),
+    RJ('天津东方物贸有限公司', 'SRC-CK', '2026-11-20', LINE, 6, '疑似两套系统共用同一来源系统编号'),
+    RJ('广州盛达钢铁有限公司', 'SRC-B', '2026-11-21', LINE, 5, '疑似两套系统共用同一来源系统编号'),
+    RJ('佛山启航物资有限公司', 'SRC-ERP', '2026-11-17', DAY, 4, '更正生效日之前的数据，应仍使用原粒度的接口'),
+    RJ('常州百川钢铁贸易有限公司', 'SRC-ERP', '2026-11-22', DAY, 4, 'ERP 误调用日汇总接口，企业未设置该粒度'),
+    RJ('宁波锦程钢铁贸易有限公司', 'SRC-ERP', '2026-11-19', LINE, 3, '切换生效后，ERP 重试了旧的行级批次'),
+    RJ('青岛海纳金属材料有限公司', 'SRC-ERP', '2026-11-23', DAY, 3, 'ERP 误调用日汇总接口，企业未设置该粒度'),
+    RJ('成都双赢供应链管理有限公司', 'SRC-ERP', '2026-11-22', LINE, 2, '切换生效后，ERP 重试了旧的行级批次'),
+  ];
+  const RC = (name, src, date, type, diff, days, st, note) => ({ name, src, date, type, diff, days, st, note: note || '' });
+  const recons = [
+    RC('郑州兴盛供应链管理有限公司', 'SRC-ERP', '2026-11-23', '吨位', 12.6, 9, '待企业核对', '已同时命中反刷量规则'),
+    RC('苏州同创实业有限公司', 'SRC-JXC', '2026-11-23', '条数', -8.4, 1, '待企业核对', '更正批次不完整，沿用上一个完整批次'),
+    RC('唐山国联金属材料有限公司', 'SRC-FGS', '2026-11-22', '吨位', -3.2, 3, '企业已说明', '退货冲减未计入申报数，下一批次更正'),
+    RC('南京汇通钢铁贸易有限公司', 'SRC-ERP', '2026-11-22', '条数', 2.1, 2, '待企业核对'),
+    RC('佛山启航物资有限公司', 'SRC-ERP', '2026-11-21', '吨位', 1.4, 1, '已更正'),
+    RC('天津东方物贸有限公司', 'SRC-CK', '2026-11-22', '条数', -1.2, 4, '待企业核对'),
+    RC('广州盛达钢铁有限公司', 'SRC-B', '2026-11-23', '吨位', 0.9, 1, '企业已说明', '申报数取自结账前快照'),
+    RC('中山金辉钢铁贸易有限公司', 'SRC-ERP', '2026-11-20', '条数', 0.7, 1, '已更正'),
+  ];
+  const BT = (name, src, date, got, prev, hours, st) => ({ name, src, date, got, prev, hours, st });
+  const batches = [
+    BT('苏州同创实业有限公司', 'SRC-JXC', '2026-11-23', 3, '2026-11-24 00:52', 12, '待企业补传'),
+    BT('唐山国联金属材料有限公司', 'SRC-FGS', '2026-11-21', 2, '2026-11-22 01:36', 30, '待企业补传'),
+    BT('天津东方物贸有限公司', 'SRC-CK', '2026-11-23', 5, '', 11, '待企业补传'),
+    BT('佛山启航物资有限公司', 'SRC-ERP', '2026-11-22', 1, '2026-11-23 00:48', 21, '待企业补传'),
+    BT('广州盛达钢铁有限公司', 'SRC-B', '2026-11-22', 4, '', 34, '已补齐'),
+    BT('南京汇通钢铁贸易有限公司', 'SRC-ERP', '2026-11-20', 2, '2026-11-21 01:12', 9, '已补齐'),
+  ];
+
+  STP.mount({
+    data() {
+      return {
+        dataDate: M.DATA_DATE, tab: 'ent',
+        scales: [{ t: '大型', a: 1460, b: 212 }, { t: '中型', a: 6240, b: 2318 }, { t: '小型', a: 6420, b: 4736 }],
+        ents, f: { kw: '', grain: '', mixed: false, switched: false },
+        histDlg: false, cur: null,
+        rejects,
+        rejGrain: [{ t: '行级数据被拒收（当前设置为日汇总）', n: 24 }, { t: '日汇总数据被拒收（当前设置为行级）', n: 17 }],
+        rejCause: [{ t: '切换前后旧任务未停或重试', n: 19 }, { t: '多套系统共用来源系统编号', n: 11 }, { t: '接口调用与设置不一致', n: 11 }],
+        recons, reconType: '', batches,
+      };
+    },
+    computed: {
+      entRows() {
+        const f = this.f, kw = f.kw.trim();
+        return this.ents.filter((e) => (!kw || e.name.indexOf(kw) >= 0 || e.src.indexOf(kw.toUpperCase()) >= 0 || e.srcName.indexOf(kw) >= 0) && (!f.grain || e.grain === f.grain) && (!f.mixed || e.mixed) && (!f.switched || e.n > 0));
+      },
+      reconRows() { return this.recons.filter((r) => !this.reconType || r.type === this.reconType); },
+      pieOption() {
+        const o = STP.chart.pie({ data: [{ name: '行级模式', value: 14120 }, { name: '日汇总模式', value: 7266, itemStyle: { color: '#18a058' } }], unit: '家', name: '上传粒度', center: ['30%', '50%'], radius: ['50%', '82%'] });
+        o.legend.formatter = (n) => n + '  ' + (n === '行级模式' ? '14,120 家（66.0%）' : '7,266 家（34.0%）');
+        return o;
+      },
+      trendOption() {
+        const x = ['2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11'];
+        const o = STP.chart.line({
+          x, yName: '企业数（家）', y2: '切换次数（次）', smooth: false,
+          series: [
+            { name: '行级模式', data: [11820, 12040, 12210, 12480, 12730, 12960, 13180, 13390, 13560, 13740, 13908, 14120], unit: '家' },
+            { name: '日汇总模式', data: [4960, 5210, 5380, 5640, 5890, 6120, 6350, 6560, 6770, 6960, 7118, 7266], unit: '家', color: '#18a058' },
+            { name: '当月粒度切换', type: 'bar', data: [142, 168, 121, 205, 188, 176, 214, 193, 201, 224, 197, 186], unit: '次', yAxisIndex: 1, barMaxWidth: 18, color: '#c9d6ea', itemStyle: { borderRadius: [3, 3, 0, 0] } },
+          ],
+        });
+        o.grid.top = 58; o.yAxis[0].scale = false; o.yAxis[0].min = 0; o.yAxis[1].scale = false; o.yAxis[1].min = 0; o.yAxis[1].max = 600;
+        return o;
+      },
+      rejectOption() {
+        const x = STP.dayList(M.DATA_DATE, 14).map((d) => d.slice(5));
+        const v = [9, 7, 8, 6, 10, 5, 7, 6, 5, 8, 7, 4, 6, 5];
+        const o = STP.chart.bar({ x, unit: '批次', series: [{ name: '拒收批次数', data: v.map((n, i) => ({ value: n, itemStyle: { color: i >= 7 ? '#e5484d' : '#f3b6b8', borderRadius: [3, 3, 0, 0] } })), label: { show: true, position: 'top', color: '#6b7787', fontSize: 11 } }] });
+        o.grid = Object.assign({}, o.grid, { top: 24 });
+        return o;
+      },
+    },
+    methods: {
+      openHist(row) { this.cur = row; this.histDlg = true; },
+    },
+  });
+})();
+</script>
+</body>
+</html>

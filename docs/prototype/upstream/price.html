@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>量价视图 · 上游钢厂端 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.price-banner { display: flex; align-items: center; gap: 8px 18px; flex-wrap: wrap; padding: 9px 14px; margin-bottom: 14px; border-radius: 6px; background: #fff8eb; border: 1px solid #f3dfb8; color: #7a5200; font-size: 13px; }
+.price-banner b { color: #5c3d00; }
+.pv-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; font-size: 12px; color: var(--stp-sub); }
+.spread { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0; text-align: center; margin-top: 6px; }
+.spread > div { padding: 6px 4px; border-right: 1px dashed var(--stp-border); }
+.spread > div:last-child { border-right: none; }
+.spread .t { font-size: 12px; color: var(--stp-sub); }
+.spread .v { font-size: 20px; font-weight: 600; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="upstream" active="price" title="量价视图" watermark
+  desc="销量与加权均价同图联动。价格只基于下游自愿上传的有价样本，只展示加权均价、涨跌和覆盖率区间，披露门槛比量指标更严。">
+  <template #actions v-if="open">
+    <el-button @click="ruleDlg = true"><el-icon><Lock /></el-icon>价格披露规则</el-button>
+    <el-button @click="termsDlg = true"><el-icon><Document /></el-icon>使用条款</el-button>
+    <el-button type="primary" @click="$demo('导出任务已提交：导出列与页面一致，只含加权均价、涨跌、覆盖率区间与有价企业数区间')"><el-icon><Download /></el-icon>导出</el-button>
+  </template>
+
+  <!-- 闸口未开放 -->
+  <div class="card" v-if="!open">
+    <el-result icon="info" title="量价视图暂未开放">
+      <template #sub-title>
+        <div style="line-height:1.9;max-width:680px;margin:0 auto;text-align:left">
+          上游侧的价格功能由平台统一的<b>法务闸口</b>控制，<b>默认关闭</b>。闸口关闭期间：<br>
+          · 左侧菜单不出现“量价视图”入口；聚合看板、多维查询不出现任何价格指标；<br>
+          · 导出文件、定时发送邮件、数据拉取接口不含任何价格列。<br>
+          平台取得法务书面意见并经运营后台双人复核后开启。开启后，你将在菜单中看到本入口，首次进入需确认使用条款。
+        </div>
+      </template>
+      <template #extra>
+        <el-button type="primary" @click="$go('dashboard.html')">返回聚合看板</el-button>
+        <el-button @click="$setState('gate', 'open')">原型演示：切换为“已开放”</el-button>
+      </template>
+    </el-result>
+    <div class="tip-box small" style="max-width:760px;margin:0 auto">原型说明：正式环境中闸口关闭时本页不可访问。此处保留“未开放”状态页，仅用于在原型里对照两种状态；也可用顶栏的“原型状态 · 价格闸口”开关，或到 <a href="../admin/price-control.html">运营后台 · 价格数据管控</a> 走一遍开启流程。</div>
+  </div>
+
+  <!-- 闸口已开放 -->
+  <template v-else>
+    <div class="price-banner">
+      <span><el-icon style="vertical-align:-2px"><WarningFilled /></el-icon> <b>样本成交均价，不是市场报价</b></span>
+      <span>口径：<b>含税、自提、非暂估</b>；送到价、暂估价不参与</span>
+      <span>加权均价 = 有价样本含税金额合计 ÷ 有价样本结算重量合计，取整到 <b>10 元/吨</b></span>
+      <span>T+1 发布；每个价格旁给出价格覆盖率区间</span>
+    </div>
+    <sample-note></sample-note>
+
+    <div class="card tight">
+      <el-form inline size="default" style="margin-bottom:-18px">
+        <el-form-item label="品名">
+          <el-select v-model="f.product" filterable placeholder="搜索品名" style="width:170px">
+            <el-option-group v-for="c in cats" :key="c.name" :label="c.name + '（' + depthText(c.depth) + '）'"><el-option v-for="p in c.products" :key="p.name" :label="p.name" :value="p.name" /></el-option-group>
+          </el-select>
+        </el-form-item>
+        <el-form-item label="材质">
+          <el-tooltip :disabled="canMaterial" content="该品类暂不提供此粒度（标准化深度为品名级）" placement="top">
+            <el-select v-model="f.material" :disabled="!canMaterial" style="width:120px"><el-option label="全部材质" value="" /><el-option v-for="m in product.materials" :key="m" :label="m" :value="m" /></el-select>
+          </el-tooltip>
+        </el-form-item>
+        <el-form-item label="规格段">
+          <el-tooltip :disabled="canBand" content="该品类暂不提供此粒度（尚未完成规格段标准化）" placement="top">
+            <el-select v-model="f.band" :disabled="!canBand" style="width:140px"><el-option label="全部规格段" value="" /><el-option v-for="b in product.bands" :key="b" :label="b" :value="b" /></el-select>
+          </el-tooltip>
+        </el-form-item>
+        <el-form-item label="地区"><el-cascader v-model="f.region" :options="regionOpts" :props="{checkStrictly:true}" clearable placeholder="全国" style="width:150px" /></el-form-item>
+        <el-form-item label="计重"><el-radio-group v-model="f.weight"><el-radio-button label="全部" value="全部" /><el-radio-button label="理计" value="理计" /><el-radio-button label="磅计" value="磅计" /></el-radio-group></el-form-item>
+        <el-form-item label="粒度">
+          <el-radio-group v-model="f.grain">
+            <el-radio-button v-for="g in ['日','周','旬','月']" :key="g" :label="g" :value="g" :disabled="coarse && (g==='日' || g==='周')" />
+          </el-radio-group>
+        </el-form-item>
+      </el-form>
+      <div v-if="coarse" class="small muted" style="margin-top:22px"><el-icon style="vertical-align:-2px"><InfoFilled /></el-icon> {{ product.cat.name }}样本较稀疏，当前最细披露粒度为“地区到省、时间到旬”，日、周粒度与地级市下钻暂不提供。</div>
+    </div>
+
+    <div class="grid c4">
+      <div class="stat">
+        <div class="label">加权均价<el-tooltip content="有价样本含税金额合计 ÷ 有价样本结算重量合计；默认口径含税、自提、非暂估" placement="top"><el-icon><QuestionFilled /></el-icon></el-tooltip></div>
+        <div class="value num"><mask-cell v-if="kpi.price===null" lg tip="有价企业样本不足，不予披露"></mask-cell><template v-else>{{ $fmt(kpi.price) }}<span class="unit">元/吨</span></template></div>
+        <div class="pv-line"><cover-tag :r="kpi.cover"></cover-tag><contrib-tag :n="kpi.pn" label="有价 "></contrib-tag></div>
+        <div class="ico"><el-icon><PriceTag /></el-icon></div>
+      </div>
+      <div class="stat">
+        <div class="label">{{ periodName }}涨跌</div>
+        <div class="value num"><mask-cell v-if="kpi.chg===null" lg tip="任一期被屏蔽，涨跌不予展示"></mask-cell><span v-else :class="kpi.chg>0?'up':kpi.chg<0?'down':''">{{ kpi.chg>0?'+':'' }}{{ kpi.chg }}<span class="unit">元/吨</span></span></div>
+        <div class="pv-line"><span>涨跌幅 <v-num :v="kpi.chgPct" :d="1" suffix="%" signed tip="任一期被屏蔽，涨跌不予展示" /></span><span>上期 <v-num :v="kpi.prev" /></span></div>
+        <div class="ico"><el-icon><TrendCharts /></el-icon></div>
+      </div>
+      <div class="stat">
+        <div class="label">本厂品牌与其他品牌价差<el-tooltip content="“其他品牌”为合并口径，须由不少于 3 个品牌构成且无单一品牌占优，否则屏蔽" placement="top"><el-icon><QuestionFilled /></el-icon></el-tooltip></div>
+        <div class="spread">
+          <div><div class="t">东岳（本厂）</div><div class="v num"><v-num :v="brand.own" /></div></div>
+          <div><div class="t">其他品牌</div><div class="v num"><v-num :v="brand.other" tip="其他品牌构成不足或样本不足，不予披露" /></div></div>
+          <div><div class="t">价差</div><div class="v num"><v-num :v="brand.spread" signed tip="任一操作数被屏蔽，价差不予展示" /></div></div>
+        </div>
+      </div>
+      <stat-card :label="periodName + '销量（全部样本）'" :value="kpi.sales" unit="吨" icon="Sell" :tip="'该条件下全部在池企业的销量，不区分是否上传价格。统计周期：' + periodLabel + '；周为截至数据日期的每 7 天一段，旬取最近完整一旬'">
+        <span>库存可销 <v-num :v="kpi.days" :d="1" suffix=" 天" /></span><contrib-tag :n="kpi.n"></contrib-tag>
+      </stat-card>
+    </div>
+
+    <div class="grid c-3-2">
+      <div class="card">
+        <div class="card-title"><span>量价联动<small>{{ title }} · {{ f.grain }}粒度</small></span>
+          <span class="right"><el-checkbox v-model="showDays" size="small">叠加库存可销天数</el-checkbox><span class="legend-inline">均价线断开处为不予披露的周期</span></span></div>
+        <ve-chart :option="trendOption" height="330px"></ve-chart>
+      </div>
+      <div class="card">
+        <div class="card-title"><span>本厂品牌与其他品牌均价<small>其他品牌合并展示</small></span></div>
+        <ve-chart :option="brandOption" height="330px"></ve-chart>
+      </div>
+    </div>
+
+    <div class="grid c2">
+      <div class="card">
+        <div class="card-title"><span>分地区量价<small>{{ regionLevel }} · {{ periodLabel }}</small></span><span class="right small muted">量指标被屏蔽的地区，价格一并屏蔽</span></div>
+        <el-table :data="regionRows" size="small" height="372">
+          <el-table-column prop="name" label="地区" width="76" />
+          <el-table-column label="销量(吨)" align="right" min-width="78"><template #default="{row}"><v-num :v="row.sales" /></template></el-table-column>
+          <el-table-column label="加权均价" align="right" width="78"><template #default="{row}"><v-num :v="row.price" tip="有价企业样本不足，不予披露" /></template></el-table-column>
+          <el-table-column label="涨跌" align="right" width="60"><template #default="{row}"><v-num :v="row.chg" signed tip="任一期被屏蔽，涨跌不予展示" /></template></el-table-column>
+          <el-table-column label="价格覆盖率" align="center" width="110"><template #default="{row}"><cover-tag :r="row.price===null ? null : row.cover" /></template></el-table-column>
+          <el-table-column label="有价企业数" align="center" width="98"><template #default="{row}"><contrib-tag :n="row.price===null ? 0 : row.pn" /></template></el-table-column>
+        </el-table>
+      </div>
+      <div class="card">
+        <div class="card-title"><span>地区 × {{ crossDim }} 均价<small>{{ crossTitle }} · 元/吨</small></span>
+          <span class="right small muted">屏蔽 {{ crossMasked }} / {{ cross.rows.length * cross.cols.length }} 个单元格</span></div>
+        <table class="plain-table" v-if="cross.cols.length">
+          <thead><tr><th>地区</th><th class="r" v-for="c in cross.cols" :key="c">{{ c }}</th></tr></thead>
+          <tbody>
+            <tr v-for="r in cross.rows" :key="r.name">
+              <td>{{ r.name }}</td>
+              <td class="r" v-for="(c,i) in r.cells" :key="i"><v-num :v="c" tip="有价企业样本不足，不予披露（含追加屏蔽）" /></td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-else class="empty-block"><div class="big"><el-icon><Lock /></el-icon></div>该品类暂不提供材质与规格段粒度的价格</div>
+        <div class="tip-box blue small mt12"><b>为什么价格的屏蔽比销量多？</b> 只有自愿上传价格的企业计入价格样本。每个价格单元格须满足：有价企业数 ≥ {{ $PV.kPrice }} 家；按有价销量计，最大一家占比 ≤ {{ $PV.dom1 }}%、前两家合计 ≤ {{ $PV.dom2 }}%；只剩 1 个被屏蔽单元格时追加屏蔽。</div>
+      </div>
+    </div>
+  </template>
+
+  <!-- 首次进入：使用条款确认 -->
+  <el-dialog v-model="termsDlg" title="量价视图使用条款" width="600px" :close-on-click-modal="false" :close-on-press-escape="agreed" :show-close="agreed">
+    <div style="line-height:1.9;font-size:13px">
+      进入量价视图前，请确认以下使用限制（同《数据服务协议》价格数据条款）：
+      <ol style="padding-left:20px;margin:8px 0">
+        <li><b>不得用于与其他经营者协同定价</b>，包括以任何形式交流、约定或跟随价格。</li>
+        <li><b>不得用于对经销商实施转售价格限制</b>，包括固定转售价格、限定最低转售价格。</li>
+        <li><b>不得对外传播</b>，包括转发、转售、向行业会议或媒体提供。</li>
+        <li>不得通过任何方式推算单家企业的成交价格（禁止再识别）。</li>
+        <li>本视图为自愿上传企业的样本成交均价，不是市场报价，平台不对据此作出的经营决策承担责任。</li>
+      </ol>
+    </div>
+    <el-checkbox v-model="check">我已阅读并同意以上使用条款，本次确认将记入审计日志</el-checkbox>
+    <template #footer>
+      <el-button v-if="!agreed" @click="$go('dashboard.html')">不同意，返回看板</el-button>
+      <el-button type="primary" :disabled="!check" @click="agree">{{ agreed ? '关闭' : '同意并进入' }}</el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog v-model="ruleDlg" title="价格披露规则" width="660px">
+    <table class="plain-table">
+      <tr><th style="width:150px">可看的指标</th><td>加权均价、环比涨跌额与涨跌幅、价格覆盖率区间、有价企业数区间。</td></tr>
+      <tr><th>不提供</th><td>销售金额合计、有价样本的精确销量、最高价、最低价、价格分布；任何单家企业的价格；按企业或按上传方式筛选。</td></tr>
+      <tr><th>统计范围</th><td>只统计上传了价格且同意参与披露的在池企业。</td></tr>
+      <tr><th>最小有价企业数</th><td>≥ {{ $PV.kPrice }} 家（不低于量指标的 {{ $PV.k }} 家），否则屏蔽。</td></tr>
+      <tr><th>价格优势度</th><td>按有价销量计算：最大一家 ≤ {{ $PV.dom1 }}%，前两家合计 ≤ {{ $PV.dom2 }}%。</td></tr>
+      <tr><th>其他品牌</th><td>合并价格须由不少于 {{ $PV.otherBrands }} 个品牌构成，且单一品牌占比不超过 50%。</td></tr>
+      <tr><th>联动屏蔽</th><td>量指标被屏蔽的单元格，价格一并屏蔽；涨跌额、价差的任一操作数被屏蔽，则该派生指标屏蔽。</td></tr>
+      <tr><th>覆盖率</th><td>有价销量 ÷ 全部销量，只以区间展示：低于 30%、30%–60%、高于 60%。</td></tr>
+      <tr><th>修约与时效</th><td>均价取整到 10 元/吨，涨跌幅保留一位小数；T+1 发布，不早于、不细于量指标。</td></tr>
+    </table>
+    <div class="small muted mt12">参数由平台统一配置，调整前会公告；价格功能整体受法务闸口控制，监管要求变化时平台可立即关闭。</div>
+    <template #footer><el-button type="primary" @click="ruleDlg=false">知道了</el-button></template>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const { hash, PV, chart } = STP;
+  const r10 = (v) => Math.round(v / 10) * 10;
+  const TERMS_KEY = 'stp-price-terms';
+  const termsDone = () => { try { return localStorage.getItem(TERMS_KEY) === '1'; } catch (e) { return false; } };
+  STP.mount({
+    data() {
+      const agreed = termsDone();
+      return {
+        cats: M.categories, f: { product: '螺纹钢', material: 'HRB400E', band: 'Φ16–25', region: [], weight: '全部', grain: '日' },
+        ruleDlg: false, termsDlg: STP.state.gate === 'open' && !agreed, agreed, check: agreed, showDays: false,
+        regionOpts: M.provinces.map((p) => ({ value: p.name, label: p.name, children: p.muni ? undefined : p.cities.map((c) => ({ value: c[0], label: c[0] })) })),
+      };
+    },
+    watch: {
+      'f.product'() {
+        this.f.material = this.canMaterial ? this.product.materials[0] : '';
+        this.f.band = '';
+        if (this.coarse) { if (this.f.grain === '日' || this.f.grain === '周') this.f.grain = '旬'; if (this.f.region.length > 1) this.f.region = [this.f.region[0]]; }
+      },
+      'f.region'(v) { if (this.coarse && v && v.length > 1) { this.f.region = [v[0]]; this.$info('该品类暂不提供此粒度：地区最细到省'); } },
+      open(v) { if (v && !this.agreed) this.termsDlg = true; },
+    },
+    computed: {
+      open() { return this.$state.gate === 'open'; },
+      product() { let p; M.categories.forEach((c) => c.products.forEach((x) => { if (x.name === this.f.product) p = Object.assign({ cat: c }, x); })); return p; },
+      canMaterial() { return this.product.cat.depth >= 'L3'; },
+      canBand() { return this.product.cat.depth >= 'L4'; },
+      coarse() { return this.product.cat.geo === '省'; },
+      periodName() { return { 日: '昨日', 周: '近 7 日', 旬: '上一旬', 月: '本月' }[this.f.grain]; },
+      title() { return [this.f.product, this.f.material, this.f.band, (this.f.region || []).slice(-1)[0], this.f.weight === '全部' ? '' : this.f.weight].filter(Boolean).join(' · '); },
+      seed() { return JSON.stringify(this.f); },
+      regionSel() {
+        const r = this.f.region || [];
+        if (!r.length) return { name: '全国' };
+        const p = M.provinces.find((x) => x.name === r[0]);
+        if (r.length === 1) return { name: p.name, prov: p };
+        return { name: r[1], prov: p, city: p.cities.find((x) => x[0] === r[1]) };
+      },
+      /* 当前筛选条件。均价、涨跌、覆盖率、有价企业数统一由 M.priceCell 给出：
+         指标卡、分地区表、交叉表、聚合看板“量价速览”、多维查询价格列取的是同一个值 */
+      opt() { const rs = this.regionSel; return { material: this.f.material, band: this.f.band, weight: this.f.weight, grain: this.f.grain, prov: rs.prov ? rs.prov.name : '', city: rs.city ? rs.city[0] : '' }; },
+      scale() { return M.priceOf(this.f.product, this.opt); },
+      base() { return this.scale.raw; },
+      /* 交叉表的列维度当前选中的值（规格段或材质），没选为空 */
+      crossSel() { return this.canBand ? this.f.band : this.canMaterial ? this.f.material : ''; },
+      /* 该规格的价格是否披露：有价样本够，且没有在按规格段（或材质）展开的那一行里被追加屏蔽 */
+      priceOk() { return this.scale.show; },
+      /* 有价样本偏少时，周末成交稀疏的日期达不到门槛 */
+      thin() { return this.scale.pn < 16; },
+      /* 各周期全口径销量与期末库存，与聚合看板趋势、多维查询同源 */
+      periods() { return M.trendSeries(M.KPI, 'real', this.f.grain); },
+      periodLabel() { const rg = this.periods.ranges.slice(-1)[0]; return { 日: '数据日期 ' + rg[1], 周: '近 7 日（' + rg[0].slice(5) + ' 至 ' + rg[1].slice(5) + '）', 旬: '最近完整一旬（' + this.periods.x.slice(-1)[0] + '）', 月: '本月（截至 ' + rg[1].slice(5) + '）' }[this.f.grain]; },
+      /* 库存可销天数 = 该规格库存 ÷ 近 7 日日均销量，库存拆分与聚合看板相同；选了地区时按该地区库存与销量的占比折算 */
+      daysNow() {
+        const c = this.product.cat, pp = c.products.find((x) => x.name === this.f.product), rs = this.regionSel, tree = M.stockTree(M.KPI.stock, 'real');
+        const mi = pp.materials.indexOf(this.f.material), bi = pp.bands.indexOf(this.f.band);
+        let stock, sh = c.share * pp.share;
+        if (bi >= 0) { stock = tree.leaf(c, pp, pp.bands, pp.bandShare)[bi]; sh *= pp.bandShare[bi]; }
+        else if (mi >= 0 && pp.materials.length > 1) { const w = M.matShare(pp); stock = tree.leaf(c, pp, pp.materials, w)[mi]; sh *= w[mi]; }
+        else stock = tree.prods(c)[c.products.indexOf(pp)];
+        let rf = 1;
+        if (rs.city) rf = tree.cities(rs.prov)[rs.prov.cities.indexOf(rs.city)] / M.KPI.stock / (rs.prov.share * rs.city[1]);
+        else if (rs.prov) rf = tree.prov(rs.prov.name) / M.KPI.stock / rs.prov.share;
+        return +(stock / (M.KPI.avg7 * sh) * rf).toFixed(1);
+      },
+      kpi() {
+        const s = this.scale, ok = this.priceOk;
+        const chgOk = s.chgShow;
+        const prev = s.price - s.chg, tr = this.periods;
+        return { price: ok ? s.price : null, chg: chgOk ? s.chg : null, prev: chgOk ? prev : null, chgPct: chgOk ? +(s.chg / prev * 100).toFixed(1) : null, cover: ok ? s.cover : null, pn: ok ? s.pn : 0, n: s.n, sales: s.okVol ? this.volSel(tr.sales[tr.sales.length - 1]) : null, days: s.okVol ? this.daysNow : null };
+      },
+      brand() {
+        const s = this.scale, pnOwn = Math.round(s.pn * 0.42), pnOther = Math.round(s.pn * 0.66);
+        const own = this.kpi.price !== null && pnOwn >= PV.kPrice ? s.price + M.brandOff(this.f.product, '本厂', 0) : null;
+        const other = this.kpi.price !== null && pnOther >= PV.kPrice && !this.regionSel.city ? s.price + M.brandOff(this.f.product, '其他', 0) : null;
+        return { own, other, spread: own !== null && other !== null ? own - other : null };
+      },
+      series() {
+        const g = this.f.grain, tr = this.periods, x = tr.x, n = x.length, s = this.scale;
+        const r = M.rngOf(hash(this.seed + g));
+        const thin = this.thin, name = this.f.product;
+        /* 历史均价与多维查询按时间查询的价格列同源 */
+        const trail = M.priceTrail(name, this.opt, n);
+        const price = [], own = [], other = [], vol = [], days = [];
+        const ownOk = this.brand.own !== null, otherOk = this.brand.other !== null;
+        const volOk = s.okVol, d0 = this.daysNow;
+        for (let i = 0; i < n; i++) {
+          const wd = g === '日' ? new Date(tr.ranges[i][0] + 'T00:00:00').getDay() : 1;
+          const masked = !this.priceOk || (g === '日' && thin && (wd === 0 || wd === 6));
+          const pv = trail[i];
+          price.push(masked ? null : pv);
+          own.push(masked || !ownOk ? null : pv + M.brandOff(name, '本厂', n - 1 - i));
+          other.push(masked || !otherOk ? null : pv + M.brandOff(name, '其他', n - 1 - i));
+          /* 销量：各周期全口径销量按该规格、该地区占比拆分，最后一期等于上方指标卡 */
+          vol.push(volOk ? this.volSel(tr.sales[i]) : null);
+          days.push(volOk ? (i === n - 1 ? d0 : +(d0 + Math.sin((n - 1 - i) / 3) * 1.2 + (r() - 0.5) * 0.6).toFixed(1)) : null);
+        }
+        return { x, price, own, other, vol, days };
+      },
+      trendOption() {
+        const t = this.series;
+        const series = [
+          { name: '销量（全部样本）', type: 'bar', data: t.vol, yAxisIndex: 1, unit: '吨', color: '#c9d6e6', barMaxWidth: 14 },
+          { name: '加权均价', data: t.price, unit: '元/吨', color: '#409eff', showSymbol: true, symbolSize: 5 }];
+        const o = chart.line({ x: t.x, yName: '均价（元/吨）', y2: '销量（吨）', smooth: false, series, grid: { top: 44 } });
+        o.yAxis[1].scale = false;
+        o.legend.left = 'center'; delete o.legend.right;
+        if (this.showDays) {
+          o.yAxis.push({ type: 'value', show: false, scale: true });
+          o.series.push({ name: '库存可销天数', type: 'line', data: t.days, yAxisIndex: 2, unit: '天', color: '#ff7a45', showSymbol: false, smooth: true, lineStyle: { width: 1.5, type: 'dashed' } });
+        }
+        return o;
+      },
+      brandOption() {
+        const t = this.series;
+        const spread = t.own.map((v, i) => (v === null || t.other[i] === null ? null : v - t.other[i]));
+        const o = chart.line({
+          x: t.x, yName: '均价（元/吨）', y2: ' ', smooth: false, grid: { top: 44 },
+          series: [{ name: '东岳（本厂）', data: t.own, unit: '元/吨', color: '#409eff' }, { name: '其他品牌（合并）', data: t.other, unit: '元/吨', color: '#8c9bb0' }, { name: '价差', type: 'bar', data: spread, yAxisIndex: 1, unit: '元/吨', color: '#ffd591', barMaxWidth: 10 }],
+        });
+        o.yAxis[1].scale = false;
+        o.yAxis[1].max = Math.max(40, ...spread.filter((v) => v !== null)) * 4;
+        o.yAxis[1].axisLabel = { show: false }; o.yAxis[1].name = '';
+        o.legend.left = 'center'; delete o.legend.right;
+        return o;
+      },
+      regionLevel() { const rs = this.regionSel; return rs.prov && !rs.prov.muni && !this.coarse ? rs.prov.name + ' · 地级市' : '省级'; },
+      regionRows() {
+        const rs = this.regionSel, o = this.opt, name = this.f.product;
+        const byCity = rs.prov && !rs.prov.muni && !this.coarse;
+        const tr = this.periods, vt = this.volTree(tr.sales[tr.sales.length - 1]);
+        const src = byCity
+          ? rs.prov.cities.map((c, i) => ({ name: c[0], prov: rs.prov.name, city: c[0], vol: vt.cities(rs.prov)[i] }))
+          : M.provinces.map((x, i) => ({ name: x.name, prov: x.name, city: '', vol: vt.provs[i] }));
+        return src.map((x) => {
+          const c = M.priceOf(name, Object.assign({}, o, { prov: x.prov, city: x.city })), ok = c.show;
+          return { name: x.name, n: c.n, pn: c.pn, cover: c.cover, sales: c.okVol ? x.vol : null, price: ok ? c.price : null, chg: c.chgShow ? c.chg : null };
+        });
+      },
+      crossDim() { return this.canBand ? '规格段' : this.canMaterial ? '材质' : '细分'; },
+      crossTitle() { return [this.f.product, this.canBand ? this.f.material : '', this.f.weight === '全部' ? '' : this.f.weight, this.f.grain + '粒度'].filter(Boolean).join(' · '); },
+      cross() {
+        const cols = this.canBand ? this.product.bands : this.canMaterial ? this.product.materials : [];
+        const rows = M.provinces.slice(0, 9).map((pv) => ({ name: pv.name, cells: M.priceRow(this.f.product, Object.assign({}, this.opt, { prov: pv.name, city: '' })).map((c) => (c.show ? c.cell.price : null)) }));
+        return { cols, rows };
+      },
+      crossMasked() { return this.cross.rows.reduce((a, r) => a + r.cells.filter((c) => c === null).length, 0); },
+    },
+    methods: {
+      depthText(d) { return d >= 'L4' ? '可到规格段' : d === 'L3' ? '可到材质' : '仅到品名'; },
+      /* 某周期该条件下的销量：全国 → 省 → 市逐级拆分，下级合计等于上级 */
+      volTree(total) {
+        const nat = M.specSales(total, this.f.product, this.opt);
+        const provs = M.split(nat, M.provinces.map((p) => p.share));
+        return { nat, provs, cities: (p) => M.split(provs[M.provinces.indexOf(p)], p.cities.map((c) => c[1])) };
+      },
+      volSel(total) { const t = this.volTree(total), rs = this.regionSel; return !rs.prov ? t.nat : !rs.city ? t.provs[M.provinces.indexOf(rs.prov)] : t.cities(rs.prov)[rs.prov.cities.indexOf(rs.city)]; },
+      agree() { this.agreed = true; this.termsDlg = false; try { localStorage.setItem(TERMS_KEY, '1'); } catch (e) { /* ignore */ } },
+    },
+  });
+})();
+</script>
+</body>
+</html>

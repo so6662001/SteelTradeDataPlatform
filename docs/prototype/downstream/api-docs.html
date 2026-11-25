@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>接口文档中心 · 下游钢贸端 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.doc-wrap { display: grid; grid-template-columns: 256px minmax(0, 1fr); gap: 14px; align-items: start; }
+.doc-nav { position: sticky; top: 72px; padding: 10px 0; margin-bottom: 0; max-height: calc(100vh - 90px); overflow-y: auto; }
+.doc-nav .g { padding: 10px 16px 4px; font-size: 12px; color: var(--stp-sub); font-weight: 600; letter-spacing: .5px; }
+.doc-nav a { display: flex; align-items: center; gap: 6px; padding: 7px 16px; font-size: 13px; color: #3d4b5c; text-decoration: none !important; border-left: 3px solid transparent; cursor: pointer; }
+.doc-nav a:hover { background: #f6f8fa; }
+.doc-nav a.on { background: var(--el-color-primary-light-9); color: var(--el-color-primary); border-left-color: var(--el-color-primary); font-weight: 500; }
+.doc-nav .m { font-size: 10px; font-weight: 700; width: 34px; flex-shrink: 0; font-family: Consolas, Menlo, monospace; }
+.doc-nav .m.GET { color: #18a058; } .doc-nav .m.POST { color: #2b6fd6; }
+.doc-nav .p { font-family: Consolas, Menlo, monospace; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.doc-nav .new { margin-left: auto; font-size: 10px; color: #d46b08; background: #fff3e6; border-radius: 3px; padding: 0 4px; line-height: 16px; flex-shrink: 0; }
+.doc-body { margin-bottom: 0; padding: 20px 24px 26px; min-height: 640px; }
+.doc-body h2 { margin: 0 0 8px; font-size: 19px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.doc-body h3 { margin: 22px 0 10px; font-size: 15px; padding-left: 9px; border-left: 3px solid var(--el-color-primary); line-height: 1.2; }
+.doc-body p { margin: 0 0 10px; line-height: 1.8; font-size: 13.5px; color: #3d4b5c; }
+.doc-body ul { margin: 0 0 10px; padding-left: 20px; line-height: 1.9; font-size: 13.5px; color: #3d4b5c; }
+.doc-body .plain-table td { line-height: 1.6; vertical-align: top; }
+.doc-body .plain-table td.f { font-family: Consolas, Menlo, monospace; font-size: 12.5px; white-space: nowrap; color: #2b5d9b; }
+.doc-body .path { font-family: Consolas, Menlo, monospace; font-size: 16px; }
+.method { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 13px; font-weight: 700; color: #fff; font-family: Consolas, Menlo, monospace; }
+.method.GET { background: #18a058; } .method.POST { background: #2b6fd6; }
+.req-y { color: #e5484d; font-weight: 600; } .req-n { color: var(--stp-sub); } .req-c { color: #d48806; font-weight: 600; }
+.doc-foot { display: flex; justify-content: space-between; margin-top: 26px; padding-top: 14px; border-top: 1px solid var(--stp-border); font-size: 13px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="downstream" active="api-docs" title="接口文档中心"
+  desc="面向 ERP 开发人员的开放接口文档：通用约定、鉴权签名、各接口字段、错误码与示例代码。接口只设业务必需的字段，客户名称、成本、毛利等一律不采集。">
+  <template #actions>
+    <el-tag effect="plain">当前版本 v1.1</el-tag>
+    <el-button @click="$demo('离线文档（PDF）已开始下载')"><el-icon><Download /></el-icon>下载离线文档</el-button>
+    <el-button type="primary" @click="$go('api-access.html')"><el-icon><Promotion /></el-icon>去沙箱在线调试</el-button>
+  </template>
+
+  <div class="doc-wrap">
+    <div class="card doc-nav">
+      <template v-for="g in nav" :key="g.g">
+        <div class="g">{{ g.g }}</div>
+        <a v-for="n in g.items" :key="n.k" :class="{on: cur===n.k}" @click="go(n.k)">
+          <template v-if="n.m"><span class="m" :class="n.m">{{ n.m }}</span><span class="p">{{ n.short }}</span></template>
+          <template v-else>{{ n.t }}</template>
+          <span v-if="n.isNew" class="new">v1.1</span>
+        </a>
+      </template>
+    </div>
+
+    <div class="card doc-body">
+      <!-- 概述 -->
+      <template v-if="cur==='overview'">
+        <h2>概述与通用约定</h2>
+        <p>下游钢贸企业的 ERP 通过本组接口上传销售与库存数据。平台对上游钢厂只提供聚合结果，不提供任何单家企业的数据。接入流程：创建应用 → 沙箱联调 → 拉取生效规则并在 ERP 端源头过滤 → 每日上传 → 对账申报。</p>
+        <h3>环境与地址</h3>
+        <table class="plain-table">
+          <thead><tr><th style="width:120px">环境</th><th>地址</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td>正式环境</td><td class="f">https://openapi.huodaizi-data.example/openapi/v1</td><td>数据经规则过滤与质量校验后入库</td></tr>
+            <tr><td>沙箱环境</td><td class="f">https://sandbox-openapi.huodaizi-data.example/openapi/v1</td><td>地址与密钥独立，数据不进入正式库</td></tr>
+          </tbody>
+        </table>
+        <h3>通用约定</h3>
+        <table class="plain-table">
+          <thead><tr><th style="width:120px">项</th><th>约定</th></tr></thead>
+          <tbody><tr v-for="r in conventions" :key="r[0]"><td>{{ r[0] }}</td><td>{{ r[1] }}</td></tr></tbody>
+        </table>
+        <h3>两种上传粒度</h3>
+        <p>销售数据支持<b>行级模式</b>（<span class="code">POST /sales/batch</span>）与<b>日汇总模式</b>（<span class="code">POST /sales/daily-summary</span>），由企业按“企业 + 来源系统”选择。ERP 可通过 <span class="code">GET /settings</span> 查询当前来源系统的粒度。</p>
+        <div class="tip-box orange mb12"><b>同一来源系统、同一业务日期只接受一种粒度的销售数据。</b>与当前设置不符的另一种粒度会被拒收，返回 3004“上传粒度与当前设置不符”。粒度切换按业务日期生效，生效日之前的数据保持原粒度。</div>
+        <table class="plain-table">
+          <thead><tr><th style="width:150px">方面</th><th>行级模式</th><th>日汇总模式</th></tr></thead>
+          <tbody><tr v-for="r in grainDiff" :key="r[0]"><td>{{ r[0] }}</td><td>{{ r[1] }}</td><td>{{ r[2] }}</td></tr></tbody>
+        </table>
+        <h3>字段最小化</h3>
+        <div class="tip-box red"><b>禁止字段：</b>客户名称、客户联系方式、业务员姓名、成本价、毛利、报价（未成交价格）。接口收到禁止字段和未定义字段<b>一律丢弃且不落盘</b>，并在批次结果中提示。企业未开启价格上传时，价格与金额字段按同样方式处理。</div>
+      </template>
+
+      <!-- 鉴权与签名 -->
+      <template v-else-if="cur==='auth'">
+        <h2>鉴权与签名</h2>
+        <p>每个请求都需要携带应用标识与签名。密钥只保存在 ERP 端，不随请求发送；平台用同一算法重算签名并比对。</p>
+        <h3>请求头</h3>
+        <table class="plain-table">
+          <thead><tr><th style="width:170px">请求头</th><th style="width:70px">必填</th><th>说明</th></tr></thead>
+          <tbody><tr v-for="h in headers" :key="h.n"><td class="f">{{ h.n }}</td><td :class="h.req==='是' ? 'req-y' : 'req-c'">{{ h.req }}</td><td>{{ h.d }}</td></tr></tbody>
+        </table>
+        <h3>签名算法</h3>
+        <ul>
+          <li>请求体摘要 = SHA-256(请求体原始字节)，十六进制小写；GET 请求按空串计算。</li>
+          <li>签名串 = 请求方法 + 换行 + 路径（含 <span class="code">/openapi/v1</span> 前缀与查询串） + 换行 + 时间戳 + 换行 + 随机串 + 换行 + 请求体摘要。</li>
+          <li>X-Signature = HMAC-SHA256(密钥, 签名串)，十六进制小写。</li>
+        </ul>
+        <pre class="codeblock">{{ signSample }}</pre>
+        <h3>防重放与幂等</h3>
+        <ul>
+          <li>时间戳与平台时间偏差超过 5 分钟拒绝（1003）；随机串在有效期内不可重复（1004）。</li>
+          <li>批量接口带 <span class="code">X-Idempotency-Key</span>（批次号），同一批次号重复提交返回首次结果，不会重复入库。</li>
+          <li>已开启 IP 白名单时，非白名单来源返回 1005。</li>
+        </ul>
+        <div class="tip-box blue">签名对不上时，可用“ERP 接口接入”页面的 <a href="api-access.html">签名校验工具</a> 逐行比对签名串。Java 与 .NET 的完整示例见 <a href="javascript:;" @click="go('code')">示例代码</a>。</div>
+      </template>
+
+      <!-- 接口 -->
+      <template v-else-if="api">
+        <h2><span class="method" :class="api.m">{{ api.m }}</span><span class="path">{{ api.path }}</span><el-tag v-if="api.isNew" type="warning" size="small" effect="plain">v1.1 新增</el-tag><el-tag v-if="api.changed" type="warning" size="small" effect="plain">v1.1 有变更</el-tag></h2>
+        <p><b>{{ api.t }}</b>　{{ api.desc }}</p>
+        <div v-for="(n, i) in api.notes" :key="i" class="tip-box mb12" :class="n[0]">{{ n[1] }}</div>
+
+        <h3>请求头</h3>
+        <table class="plain-table">
+          <thead><tr><th style="width:170px">请求头</th><th style="width:70px">必填</th><th>说明</th></tr></thead>
+          <tbody><tr v-for="h in apiHeaders" :key="h.n"><td class="f">{{ h.n }}</td><td class="req-y">是</td><td>{{ h.d }}</td></tr></tbody>
+        </table>
+
+        <template v-for="g in api.groups" :key="g.title">
+          <h3>{{ g.title }}</h3>
+          <p v-if="g.note">{{ g.note }}</p>
+          <table class="plain-table">
+            <thead><tr><th style="width:250px">名称</th><th style="width:70px">必填</th><th>说明</th></tr></thead>
+            <tbody><tr v-for="f in g.fields" :key="f[0]"><td class="f">{{ f[0] }}</td><td :class="f[1]==='是' ? 'req-y' : f[1]==='否' ? 'req-n' : 'req-c'">{{ f[1] }}</td><td>{{ f[2] }}</td></tr></tbody>
+          </table>
+        </template>
+
+        <template v-if="api.k==='sales' || api.k==='daily'">
+          <div class="tip-box red mt12"><b>禁止字段：</b>客户名称、客户联系方式、业务员姓名、成本价、毛利、报价（未成交价格）。收到即丢弃，<b>不落盘</b>，并在批次结果中提示。</div>
+          <div class="tip-box orange mt8"><b>价格与金额字段全部选填。</b>仅在企业已开启价格上传、且该行在企业设定的上传范围内时接收；否则丢弃不落盘，并在批次结果中给出 PRICE_DROPPED 提示，销量照常入库。当前企业的价格上传状态：<b>{{ $state.dnPrice==='on' ? '已开启' : '未开启（默认）' }}</b>，可在 <a href="upload-settings.html">上传设置</a> 查看。</div>
+        </template>
+        <template v-if="api.k==='daily'">
+          <h3>与行级接口的差异</h3>
+          <table class="plain-table">
+            <thead><tr><th style="width:150px">方面</th><th>行级模式</th><th>日汇总模式</th></tr></thead>
+            <tbody><tr v-for="r in grainDiff" :key="r[0]"><td>{{ r[0] }}</td><td>{{ r[1] }}</td><td>{{ r[2] }}</td></tr></tbody>
+          </table>
+        </template>
+
+        <h3>示例请求</h3>
+        <pre class="codeblock">{{ api.req }}</pre>
+        <h3>示例返回</h3>
+        <pre class="codeblock">{{ api.res }}</pre>
+        <p v-if="api.resNote" class="small muted mt8">{{ api.resNote }}</p>
+
+        <h3>常见错误码</h3>
+        <table class="plain-table">
+          <thead><tr><th style="width:90px">错误码</th><th style="width:100px">HTTP 状态</th><th>含义</th><th>处理建议</th></tr></thead>
+          <tbody><tr v-for="c in api.errs" :key="c"><td class="f">{{ c }}</td><td>{{ errMap[c].http }}</td><td>{{ errMap[c].t }}</td><td>{{ errMap[c].fix }}</td></tr></tbody>
+        </table>
+      </template>
+
+      <!-- 字段字典 -->
+      <template v-else-if="cur==='fields'">
+        <h2>字段字典</h2>
+        <p>各接口共用的字段含义与枚举取值。品类、材质、钢厂、地区等标准字典通过 <span class="code">GET /dicts/{{ '{' }}type{{ '}' }}</span> 同步；ERP 上传原文即可，由平台映射为标准值，映射结果可在“已上传数据自查”中与原始值并列查看。</p>
+        <h3>禁止字段</h3>
+        <div class="tip-box red">客户名称、客户联系方式、业务员姓名、成本价、毛利、报价（未成交价格）。接口不设这些字段；ERP 如果传了，以及任何未定义字段，平台<b>收到即丢弃、不落盘</b>，并在批次结果中提示。</div>
+        <h3>价格与金额字段</h3>
+        <p>全部选填。<b>仅在企业开启价格上传且该行在其设定范围内时接收</b>；只采集销售成交的单价与金额，不采集成本、毛利、库存金额、报价。库存快照不设任何价格、金额字段。</p>
+        <table class="plain-table">
+          <thead><tr><th style="width:150px">字段</th><th style="width:150px">适用接口</th><th>说明</th></tr></thead>
+          <tbody><tr v-for="f in priceFields" :key="f[0]"><td class="f">{{ f[0] }}</td><td>{{ f[1] }}</td><td>{{ f[2] }}</td></tr></tbody>
+        </table>
+        <h3>枚举取值</h3>
+        <table class="plain-table">
+          <thead><tr><th style="width:150px">字段</th><th>取值</th></tr></thead>
+          <tbody><tr v-for="f in enums" :key="f[0]"><td class="f">{{ f[0] }}</td><td>{{ f[1] }}</td></tr></tbody>
+        </table>
+        <h3>格式约定</h3>
+        <table class="plain-table">
+          <thead><tr><th style="width:150px">类型</th><th>约定</th></tr></thead>
+          <tbody>
+            <tr><td>日期与时间</td><td>日期用 yyyy-MM-dd；时间用 ISO 8601 带时区，如 2026-11-23T16:42:10+08:00</td></tr>
+            <tr><td>重量</td><td>单位吨，最多 3 位小数</td></tr>
+            <tr><td>价格与金额</td><td>单价单位元/吨，金额单位元，最多 2 位小数</td></tr>
+            <tr><td>行政区划代码</td><td>6 位国家标准代码，到地级市，如 320500（苏州市）</td></tr>
+            <tr><td>单据号</td><td>仅用于幂等与自查，可传脱敏后的值，只要稳定唯一</td></tr>
+          </tbody>
+        </table>
+      </template>
+
+      <!-- 错误码 -->
+      <template v-else-if="cur==='errors'">
+        <h2>错误码</h2>
+        <p>统一返回结构：<span class="code">code</span>、<span class="code">message</span>、<span class="code">requestId</span>、<span class="code">data</span>。接入校验（签名、时间戳、格式、批量大小、必填项）不通过时整批拒绝并返回错误码；通过后返回 202 与批次号，逐行结果通过批次查询接口获取。</p>
+        <h3>接口级错误码</h3>
+        <table class="plain-table">
+          <thead><tr><th style="width:80px">错误码</th><th style="width:120px">类别</th><th style="width:90px">HTTP 状态</th><th>含义</th><th>处理建议</th></tr></thead>
+          <tbody><tr v-for="c in errList" :key="c.code"><td class="f">{{ c.code }}</td><td>{{ c.cat }}</td><td>{{ c.http }}</td><td>{{ c.t }}<el-tag v-if="c.isNew" size="small" type="warning" effect="plain" style="margin-left:6px">v1.1</el-tag></td><td>{{ c.fix }}</td></tr></tbody>
+        </table>
+        <h3>逐行结果状态</h3>
+        <table class="plain-table">
+          <thead><tr><th style="width:170px">状态</th><th style="width:130px">含义</th><th>说明</th></tr></thead>
+          <tbody><tr v-for="s in rowStatus" :key="s[0]"><td class="f">{{ s[0] }}</td><td>{{ s[1] }}</td><td>{{ s[2] }}</td></tr></tbody>
+        </table>
+        <h3>逐行提示（不改变行状态）</h3>
+        <table class="plain-table">
+          <thead><tr><th style="width:170px">提示</th><th>说明</th></tr></thead>
+          <tbody><tr v-for="s in rowHints" :key="s[0]"><td class="f">{{ s[0] }}</td><td>{{ s[1] }}</td></tr></tbody>
+        </table>
+        <h3>逐行原因码</h3>
+        <table class="plain-table">
+          <thead><tr><th style="width:170px">原因码</th><th style="width:170px">对应状态</th><th>说明</th></tr></thead>
+          <tbody><tr v-for="s in reasons" :key="s[0]"><td class="f">{{ s[0] }}</td><td class="f">{{ s[1] }}</td><td>{{ s[2] }}</td></tr></tbody>
+        </table>
+      </template>
+
+      <!-- 示例代码 -->
+      <template v-else-if="cur==='code'">
+        <h2>示例代码</h2>
+        <p>以下示例演示 HMAC-SHA256 签名与一次销售出库批量上传。密钥请放在 ERP 的安全配置中，不要写入代码仓库。</p>
+        <el-tabs v-model="lang" type="card">
+          <el-tab-pane label="Java" name="java"><pre class="codeblock">{{ javaCode }}</pre></el-tab-pane>
+          <el-tab-pane label=".NET（C#）" name="net"><pre class="codeblock">{{ netCode }}</pre></el-tab-pane>
+        </el-tabs>
+        <div class="tip-box blue mt12">签名用的请求体必须与实际发送的字节完全一致。建议先序列化为字符串，再用同一个字符串计算摘要并发送，避免序列化两次导致字段顺序或空白不同。</div>
+      </template>
+
+      <!-- 变更日志 -->
+      <template v-else-if="cur==='changelog'">
+        <h2>变更日志</h2>
+        <p>不兼容变更会升大版本，旧版本保留期提前公告。v1.1 为向后兼容的增量版本，已接入 v1.0 的 ERP 无需改动即可继续使用。</p>
+        <el-timeline style="padding-left:2px;margin-top:16px">
+          <el-timeline-item v-for="c in changelog" :key="c.v" :timestamp="c.date" placement="top" :type="c.cur ? 'primary' : 'info'" :hollow="!c.cur">
+            <div class="row" style="margin-bottom:6px"><b style="font-size:15px">{{ c.v }}</b><el-tag v-if="c.cur" size="small">当前版本</el-tag><span class="muted small">{{ c.sum }}</span></div>
+            <ul><li v-for="i in c.items" :key="i">{{ i }}</li></ul>
+          </el-timeline-item>
+        </el-timeline>
+      </template>
+
+      <div class="doc-foot">
+        <a v-if="prev" href="javascript:;" @click="go(prev.k)">‹ 上一篇：{{ prev.t }}</a><span v-else></span>
+        <a v-if="next" href="javascript:;" @click="go(next.k)">下一篇：{{ next.t }} ›</a><span v-else></span>
+      </div>
+    </div>
+  </div>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const J = (o) => JSON.stringify(o, null, 2);
+  const HOST = 'openapi.huodaizi-data.example';
+  const http = (m, path, body, idem) => [m + ' /openapi/v1' + path + ' HTTP/1.1', 'Host: ' + HOST, 'Content-Type: application/json; charset=utf-8', 'X-App-Key: hy3a8f26c1d07e45', 'X-Timestamp: 1795406727000', 'X-Nonce: 9f2c41d7a6b84e03', 'X-Signature: 0fdbebc105bcc183f3f5f0cdbd3da22cd91e4dbe3761f63c8e3b39220342c24a']
+    .concat(idem ? ['X-Idempotency-Key: ' + idem] : []).join('\n') + (body ? '\n\n' + J(body) : '');
+  const res = (status, data, message) => 'HTTP/1.1 ' + status + '\n\n' + J({ code: 0, message: message || '成功', requestId: 'req-7c1e04a9b2f35d68', data });
+
+  const HEADERS = [
+    { n: 'X-App-Key', req: '是', d: '应用标识，创建应用时获得' },
+    { n: 'X-Timestamp', req: '是', d: '请求时间戳，毫秒。与平台时间偏差超过 5 分钟拒绝' },
+    { n: 'X-Nonce', req: '是', d: '随机串，16 至 32 位，有效期内不可重复' },
+    { n: 'X-Signature', req: '是', d: 'HMAC-SHA256 签名，十六进制小写' },
+    { n: 'X-Idempotency-Key', req: '批量接口必填', d: '批次号。同一批次号重复提交返回首次结果' },
+  ];
+  const ERR = [
+    { code: 0, cat: '成功', http: '200 / 202', t: '成功 / 已受理', fix: '—' },
+    { code: 1001, cat: '1xxx 鉴权与签名', http: 401, t: '密钥无效或应用已停用', fix: '核对 X-App-Key 与环境是否对应；检查应用状态' },
+    { code: 1002, cat: '1xxx 鉴权与签名', http: 401, t: '签名错误', fix: '用签名校验工具逐行比对签名串' },
+    { code: 1003, cat: '1xxx 鉴权与签名', http: 401, t: '时间戳过期（偏差超过 5 分钟）', fix: '校准服务器时间，时间戳使用毫秒' },
+    { code: 1004, cat: '1xxx 鉴权与签名', http: 401, t: '随机串重复', fix: '每次请求生成新的随机串' },
+    { code: 1005, cat: '1xxx 鉴权与签名', http: 403, t: 'IP 不在白名单', fix: '在应用管理中维护出口 IP' },
+    { code: 2001, cat: '2xxx 请求格式', http: 413, t: '报文超限（超过 1,000 行或 5 MB）', fix: '拆分为多个批次' },
+    { code: 2002, cat: '2xxx 请求格式', http: 400, t: '必填字段缺失', fix: 'message 中给出缺失字段名' },
+    { code: 2003, cat: '2xxx 请求格式', http: 400, t: '字段类型或格式错误', fix: '核对日期、数值格式与小数位' },
+    { code: 2004, cat: '2xxx 请求格式', http: 400, t: '请求体不是合法的 JSON', fix: '检查编码（UTF-8）与序列化' },
+    { code: 2005, cat: '2xxx 请求格式', http: 400, t: '分片序号不连续或缺少末片标记', fix: '按 seq 顺序上传，末片 isLast 为 true' },
+    { code: 3001, cat: '3xxx 业务状态', http: 403, t: '企业未签署《数据授权协议》', fix: '由企业管理员在线签署' },
+    { code: 3002, cat: '3xxx 业务状态', http: 403, t: '企业已暂停上传', fix: '暂停期间接口拒收数据，恢复后补传' },
+    { code: 3003, cat: '3xxx 业务状态', http: 422, t: '超出补传窗口（近 90 天）', fix: '更早的数据需联系平台运营审批' },
+    { code: 3004, cat: '3xxx 业务状态', http: 409, t: '上传粒度与当前设置不符', fix: '用 GET /settings 查询当前粒度，改用对应接口', isNew: true },
+    { code: 3005, cat: '3xxx 业务状态', http: 422, t: '商品不在受理范围内', fix: '平台只受理钢材成品，范围见品类字典', isNew: true },
+    { code: 3006, cat: '3xxx 业务状态', http: 404, t: '批次不存在', fix: '核对批次号与环境' },
+    { code: 4001, cat: '4xxx 限流与配额', http: 429, t: '调用过于频繁（默认每秒 20 次）', fix: '按响应头 Retry-After 等待后重试' },
+    { code: 5001, cat: '5xxx 平台内部', http: 500, t: '平台内部错误', fix: '可重试，建议指数退避；带上 requestId 反馈' },
+    { code: 5002, cat: '5xxx 平台内部', http: 503, t: '服务暂不可用', fix: '可重试，建议指数退避' },
+  ];
+  const errMap = {}; ERR.forEach((e) => { errMap[e.code] = e; });
+
+  const COMMON_ITEM = [
+    ['itemCode', '否', 'ERP 物料编码，用于命中已建立的映射'],
+    ['categoryName / productName', '是', 'ERP 品类、品名原文'],
+    ['material', '是', '材质（牌号）原文'],
+    ['spec', '是', '规格原文'],
+    ['specAttrs', '否', '结构化规格：直径、厚度、宽度、长度、型号等'],
+    ['millName', '是', '产地（钢厂或品牌）原文'],
+  ];
+  const SALE1 = { sourceSystem: 'SRC-HQ', docNo: 'XS2611230158', lineNo: 1, opType: 'UPSERT', docType: 'SALE_OUT', bizDate: '2026-11-23', warehouseCode: 'WH01', warehouseName: '苏州望亭库', destRegionCode: '320500', deliveryMode: '自提', itemCode: 'LW-400E-20-9', categoryName: '建筑钢材', productName: '螺纹钢', material: 'HRB400E', spec: 'Φ20×9m', specAttrs: { diameter: 20, length: 9 }, millName: '东岳', weight: 34.56, weightMode: '理计', quantity: 16, quantityUnit: '件', customerType: '终端', customerIndustry: '房屋建筑', updatedAt: '2026-11-23T16:42:10+08:00' };
+  const SALE2 = { sourceSystem: 'SRC-HQ', docNo: 'XS2611230161', lineNo: 1, opType: 'UPSERT', docType: 'SALE_OUT', bizDate: '2026-11-23', warehouseCode: 'WH01', warehouseName: '苏州望亭库', categoryName: '热轧板卷', productName: '热轧卷板', material: 'Q235B', spec: '5.75×1500×C', millName: '金江', weight: 61.92, weightMode: '磅计', updatedAt: '2026-11-23T17:05:44+08:00', unitPrice: 3560, amount: 220435.2, taxIncluded: true, priceTerm: 'EX_WAREHOUSE', provisional: false };
+
+  const APIS = [
+    { k: 'ping', m: 'GET', short: '/ping', path: '/openapi/v1/ping', t: '连通性与鉴权检查', desc: '校验密钥与签名是否正确。不产生任何业务数据，联调第一步使用。', groups: [],
+      req: http('GET', '/ping'), res: res('200 OK', { appKey: 'hy3a8f26c1d07e45', sourceSystem: 'SRC-HQ', env: 'prod', serverTime: '2026-11-23T12:05:27+08:00' }), errs: [1001, 1002, 1003, 1005] },
+    { k: 'sales', m: 'POST', short: '/sales/batch', path: '/openapi/v1/sales/batch', t: '销售出库批量上传', changed: true, desc: '行级模式：新增、更新、作废销售出库与退货明细。以“企业 + 来源系统 + 单据号 + 行号”为业务主键，重复上传按 updatedAt 取最新版本。',
+      notes: [['blue', '本接口适用于行级模式。来源系统当前为日汇总模式时调用本接口，返回 3004。单次不超过 1,000 行且报文不超过 5 MB。']],
+      groups: [
+        { title: '请求体', fields: [['items', '是', '明细行数组，每个元素的字段见下表']] },
+        { title: '明细行字段', fields: [
+          ['sourceSystem', '是', '来源系统标识，企业自定义'], ['docNo', '是', '单据号。仅用于幂等与自查，企业可传脱敏后的值，只要稳定唯一'], ['lineNo', '是', '行号'],
+          ['opType', '是', 'UPSERT 新增或更新；VOID 作废'], ['docType', '是', 'SALE_OUT 销售出库；SALE_RETURN 销售退货'], ['bizDate', '是', '出库日期'],
+          ['warehouseCode / warehouseName', '是', 'ERP 仓库编码与名称，用于映射标准仓库'], ['warehouseRegionCode', '否', '仓库所在地行政区划代码；未传则由仓库映射得出'],
+          ['destRegionCode', '否', '流向地（收货地）行政区划代码，到市'], ['deliveryMode', '否', '自提、配送、厂家直发']].concat(COMMON_ITEM, [
+          ['weight', '是', '结算重量，吨'], ['weightMode', '否', '理计、磅计'], ['quantity / quantityUnit', '否', '件数、支数及单位'],
+          ['customerType', '否', '终端、贸易商'], ['customerIndustry', '否', '下游行业枚举'], ['updatedAt', '是', 'ERP 中该行最后修改时间，用于多版本取最新']]) },
+        { title: '价格与金额字段（v1.1 新增，全部选填）', note: '仅在企业开启价格上传且该行在其设定范围内时接收。', fields: [
+          ['unitPrice', '否', '成交单价，元/吨'], ['amount', '否', '成交金额，元。与 unitPrice 至少传一项；都传时校验一致性'],
+          ['taxIncluded', '否', '是否含税。未传时取企业默认值'], ['taxRate', '否', '税率。不含税价格换算为含税时使用，未传时取平台配置的默认税率'],
+          ['priceTerm', '否', '价格条件：EX_WAREHOUSE 仓库自提价；DELIVERED 送到价（含运费）'], ['provisional', '否', '是否暂估价（后结算、未最终定价）。暂估价不进入默认口径'],
+          ['paymentTerm', '否', '结算方式：现款、账期。二期用于区分口径']] },
+      ],
+      req: http('POST', '/sales/batch', { items: [SALE1, SALE2] }, 'B-HQ-20261123-001'), res: res('202 Accepted', { batchId: 'B-HQ-20261123-001' }, '已受理'),
+      resNote: '示例中第 2 行带有价格与金额字段：企业未开启价格上传或该行超出范围时，这些字段被丢弃不落盘，批次结果中该行带 PRICE_DROPPED 提示。',
+      errs: [2001, 2002, 2003, 3002, 3003, 3004, 3005, 4001] },
+    { k: 'daily', m: 'POST', short: '/sales/daily-summary', path: '/openapi/v1/sales/daily-summary', t: '销售日汇总上传', isNew: true, desc: '日汇总模式：按业务日期分片上传当日汇总记录，末片带结束标记，整批替换。',
+      notes: [
+        ['blue', '语义：一条记录代表“某业务日期、某一组维度取值”下的销售净量。同一企业、同一来源系统、同一业务日期内，维度组合不得重复。每次上传都是该日的完整集合，以最新的完整批次为准；更正即重传当日，没有单条更新和单条作废。'],
+        ['orange', '维度不得粗于：业务日期、仓库所在市、品名、材质、规格、钢厂。选填维度未传的，在聚合中归入“未填报”。上传条件规则中依赖单据信息的条件（单笔吨位上下限、按内部编码排除）必须在 ERP 端汇总之前执行。']],
+      groups: [
+        { title: '请求体', fields: [
+          ['sourceSystem', '是', '来源系统标识'], ['bizDate', '是', '业务日期（出库日期）'], ['summaryBatchNo / seq / isLast', '是', '汇总批次号、分片序号、是否末片'], ['items', '是', '汇总记录数组，每个元素的字段见下表']] },
+        { title: '汇总记录字段', fields: [
+          ['warehouseRegionCode', '是', '仓库所在地行政区划代码，到市'], ['warehouseCode / warehouseName', '否', '可不传，以减少暴露；传了则可用于仓库级自查'],
+          ['destRegionCode', '否', '流向地，到市'], ['deliveryMode', '否', '自提、配送、厂家直发']].concat(COMMON_ITEM, [
+          ['weightMode', '否', '理计、磅计'], ['customerType', '否', '终端、贸易商'], ['customerIndustry', '否', '下游行业枚举'],
+          ['netWeight', '是', '净销量 = 出库重量 − 退货重量，吨。可为负'], ['outWeight / returnWeight', '否', '出库重量、退货重量分列'],
+          ['quantity / quantityUnit', '否', '件数及单位'], ['lineCount', '否', '本条汇总所包含的单据行数，仅用于合理性校验和每日汇总展示']]) },
+        { title: '价格与金额字段（全部选填）', note: '仅在企业开启价格上传且该记录在其设定范围内时接收。', fields: [
+          ['amount', '否', '净销售金额，元。均价由金额 ÷ 净重得出'],
+          ['taxIncluded / priceTerm / provisional', '否', '价格口径。上传金额时，这三项与其他维度一起构成维度组合；未传取企业默认值']] },
+      ],
+      req: http('POST', '/sales/daily-summary', { sourceSystem: 'SRC-WX', bizDate: '2026-11-23', summaryBatchNo: 'SB-WX-20261123-01', seq: 1, isLast: true, items: [
+        { warehouseRegionCode: '320200', destRegionCode: '320200', categoryName: '建筑钢材', productName: '螺纹钢', material: 'HRB400E', spec: 'Φ20×9m', millName: '东岳', customerType: '终端', netWeight: 86.4, outWeight: 89.28, returnWeight: 2.88, lineCount: 7 },
+        { warehouseRegionCode: '320200', categoryName: '热轧板卷', productName: '热轧卷板', material: 'Q235B', spec: '5.75×1500×C', millName: '金江', netWeight: 61.92, lineCount: 3, amount: 220435.2, taxIncluded: true, priceTerm: 'EX_WAREHOUSE', provisional: false }] }, 'SB-WX-20261123-01'),
+      res: res('202 Accepted', { batchId: 'SB-WX-20261123-01' }, '已受理'), resNote: '整批不完整（缺少末片）时不生效，沿用上一个完整批次。',
+      errs: [2001, 2002, 2005, 3002, 3003, 3004, 3005, 4001] },
+    { k: 'inv', m: 'POST', short: '/inventory/snapshot', path: '/openapi/v1/inventory/snapshot', t: '库存快照上传', desc: '按快照日期分片上传日末库存，末片带结束标记。同一日期重复上传以最新完整批次为准。两种上传粒度共用本接口。',
+      notes: [['green', '库存快照不设价格、金额、成本字段。日汇总模式的来源系统可不传 warehouseCode 与 warehouseName，改为必传 warehouseRegionCode（到市）。（是否允许，待业务方确认）']],
+      groups: [
+        { title: '请求体', fields: [['sourceSystem', '是', '来源系统标识'], ['snapshotDate', '是', '快照日期（日末）'], ['snapshotBatchNo / seq / isLast', '是', '快照批次号、分片序号、是否末片'], ['items', '是', '库存记录数组，每个元素的字段见下表']] },
+        { title: '库存记录字段', fields: [['warehouseCode / warehouseName', '是', 'ERP 仓库编码与名称，用于映射标准仓库'], ['warehouseRegionCode', '条件必填', '未传仓库编码与名称时必填，到市']].concat(COMMON_ITEM, [
+          ['weight', '是', '库存重量，吨'], ['quantity / quantityUnit', '否', '件数'], ['stockType', '否', '自有现货（默认）、已售未提、在途'], ['ageBand', '否', '库龄段，如 0–30、31–60、61–90、90 天以上']]) },
+      ],
+      req: http('POST', '/inventory/snapshot', { sourceSystem: 'SRC-HQ', snapshotDate: '2026-11-23', snapshotBatchNo: 'S-HQ-20261123-01', seq: 1, isLast: true, items: [
+        { warehouseCode: 'WH01', warehouseName: '苏州望亭库', itemCode: 'LW-400E-20-9', categoryName: '建筑钢材', productName: '螺纹钢', material: 'HRB400E', spec: 'Φ20×9m', millName: '东岳', weight: 1286.4, quantity: 596, quantityUnit: '件', stockType: '自有现货', ageBand: '0–30' }] }, 'S-HQ-20261123-01'),
+      res: res('202 Accepted', { batchId: 'S-HQ-20261123-01' }, '已受理'), errs: [2001, 2002, 2005, 3002, 3005, 4001] },
+    { k: 'batch', m: 'GET', short: '/batches/{batchId}', path: '/openapi/v1/batches/{batchId}', t: '批次结果查询', desc: '查询批次的处理状态与逐行结果。批量接口返回 202 后，逐行处理异步进行，通常在 1 分钟内完成。',
+      groups: [
+        { title: '路径与查询参数', fields: [['batchId', '是', '批次号，即上传时的 X-Idempotency-Key'], ['status', '否', '只返回指定状态的行，如 REJECTED'], ['page / pageSize', '否', '逐行结果分页，默认每页 200 行']] },
+        { title: '返回字段', fields: [
+          ['status', '—', 'PROCESSING 处理中；DONE 处理完成；INCOMPLETE 分片不完整，未生效'], ['received', '—', '接收条数'],
+          ['accepted / filtered / rejected', '—', '已入库、被规则过滤、校验失败的条数'], ['pendingMapping / quarantined', '—', '待映射、隔离待确认的条数'],
+          ['hints', '—', '批次级提示汇总，如 PRICE_DROPPED 及其条数'], ['lines', '—', '逐行结果：行标识、status、reasonCode、hints。被过滤的行只计数，不返回内容']] },
+      ],
+      req: http('GET', '/batches/B-HQ-20261123-002?status=REJECTED'),
+      res: res('200 OK', { batchId: 'B-HQ-20261123-002', status: 'DONE', received: 118, accepted: 100, filtered: 12, rejected: 2, pendingMapping: 3, quarantined: 1, hints: [{ code: 'PRICE_DROPPED', count: 118, message: '价格字段未接收（开关关闭）' }], lines: [{ docNo: 'XS2611230100', lineNo: 1, status: 'REJECTED', reasonCode: 'R2101', message: '吨位超出该品名单行上限' }, { docNo: 'XS2611230137', lineNo: 2, status: 'REJECTED', reasonCode: 'R2101', message: '吨位超出该品名单行上限' }] }),
+      resNote: '逐行状态、提示与原因码的完整列表见“错误码”。', errs: [1001, 1002, 3006, 4001] },
+    { k: 'rules', m: 'GET', short: '/rules/effective', path: '/openapi/v1/rules/effective', t: '生效规则拉取', desc: '获取当前生效的上传条件规则，供 ERP 端在本地过滤后只发送符合条件的数据（源头过滤）。平台入口会按同一规则再过滤一次作为兜底，不符合规则的数据不落盘。',
+      notes: [['orange', '日汇总模式下，erpOnly 为 true 的条件（单笔吨位上下限、按内部编码排除）平台无法兜底，必须在 ERP 端汇总之前执行。']],
+      groups: [
+        { title: '查询参数', fields: [['dataType', '否', 'SALES 销售（默认）；INVENTORY 库存'], ['at', '否', '查询指定时间点生效的规则版本，默认当前']] },
+        { title: '返回字段', fields: [['version / effectiveFrom', '—', '规则版本号与生效时间'], ['include', '—', '白名单条件：只上传符合全部条件的数据'], ['exclude', '—', '黑名单条件：命中任一条件即不上传。排除优先'], ['erpOnly', '—', '该条件是否只能在 ERP 端执行']] },
+      ],
+      req: http('GET', '/rules/effective?dataType=SALES'),
+      res: res('200 OK', { version: 'v7', effectiveFrom: '2026-11-10T00:00:00+08:00', dataType: 'SALES', include: [{ dim: 'category', op: 'IN', values: ['建筑钢材', '热轧板卷'] }, { dim: 'warehouse', op: 'IN', values: ['WH01', 'WH02', 'WH03'] }, { dim: 'bizDate', op: 'GTE', values: ['2025-10-01'] }], exclude: [{ dim: 'mill', op: 'IN', values: ['北辰'] }, { dim: 'lineWeight', op: 'GT', values: [500], erpOnly: false }, { dim: 'customerCodeDigest', op: 'IN', values: ['9f2a…', '41c7…', 'e05b…'], erpOnly: false }] }),
+      resNote: '按内部编码排除的清单只以不可逆摘要返回，ERP 端对本地编码做同样的摘要后比对。', errs: [1001, 1002, 4001] },
+    { k: 'settings', m: 'GET', short: '/settings', path: '/openapi/v1/settings', t: '上传设置查询', isNew: true, desc: '返回当前来源系统的上传粒度、粒度生效日期、价格上传开关与范围，供 ERP 端据此组织报文。建议每日上传前调用一次。',
+      groups: [{ title: '返回字段', fields: [
+        ['sourceSystem', '—', '应用对应的来源系统'], ['grain', '—', 'LINE 行级模式；DAILY_SUMMARY 日汇总模式'], ['grainEffectiveFrom', '—', '当前粒度的生效业务日期'],
+        ['pendingSwitch', '—', '已提交、尚未生效的粒度切换：目标粒度与生效业务日期；没有则为 null'],
+        ['priceUpload.enabled', '—', '企业是否已开启价格上传'], ['priceUpload.scope', '—', '价格上传范围：大类、品名、品牌、仓库。范围外的价格字段平台丢弃不落盘'],
+        ['priceUpload.defaults', '—', '企业的价格口径默认值：是否含税、价格条件、计重方式']] }],
+      req: http('GET', '/settings'),
+      res: res('200 OK', { sourceSystem: 'SRC-WX', grain: 'DAILY_SUMMARY', grainEffectiveFrom: '2026-10-01', pendingSwitch: null, priceUpload: { enabled: false, scope: null, defaults: null } }),
+      resNote: '价格上传已开启时，priceUpload 形如：enabled 为 true，scope 含 categories、products、mills、warehouses，defaults 含 taxIncluded、priceTerm、weightMode。', errs: [1001, 1002, 4001] },
+    { k: 'dicts', m: 'GET', short: '/dicts/{type}', path: '/openapi/v1/dicts/{type}', t: '字典查询', desc: '同步平台标准字典：品类、材质、钢厂、地区、枚举。支持版本比对，只在字典更新时拉取增量。',
+      groups: [{ title: '路径与查询参数', fields: [['type', '是', 'category 品类；material 材质；mill 钢厂；region 地区；enum 枚举'], ['sinceVersion', '否', 'ERP 本地已有的字典版本；与平台一致时返回空列表']] }],
+      req: http('GET', '/dicts/category?sinceVersion=2026.10.12'),
+      res: res('200 OK', { type: 'category', version: '2026.11.02', changed: true, items: [{ code: 'C01', name: '建筑钢材', products: [{ code: 'C0101', name: '螺纹钢' }, { code: 'C0102', name: '盘螺' }, { code: 'C0103', name: '高线' }] }, { code: 'C02', name: '热轧板卷', products: [{ code: 'C0201', name: '热轧卷板' }, { code: 'C0202', name: '热轧带钢' }] }] }),
+      resNote: '示例只截取前两个大类。', errs: [1001, 1002, 2003, 4001] },
+    { k: 'recon', m: 'POST', short: '/reconcile/daily', path: '/openapi/v1/reconcile/daily', t: '每日对账申报', changed: true, desc: '申报当日条数、吨位、金额（如上传价格）控制总数，平台与实际接收数比对，结果在“每日上传汇总”中显示“一致 / 差异”。两种粒度通用。',
+      notes: [['blue', '日汇总模式没有单据级校验，对账是主要的完整性保障，建议每日上传完成后申报。控制总数按 ERP 端过滤之后、实际发送的数据计算。']],
+      groups: [{ title: '请求体', fields: [
+        ['sourceSystem', '是', '来源系统标识'], ['bizDate', '是', '业务日期'], ['dataType', '是', 'SALES 销售；INVENTORY 库存'],
+        ['lineCount', '是', '当日发送的条数。行级模式为单据行数，日汇总模式为汇总记录数'], ['totalWeight', '是', '当日发送的吨位合计（销售为净销量）'],
+        ['totalAmount', '否', '当日发送的金额合计，元。v1.1 新增，仅在开启价格上传时申报，未开启时忽略']] }],
+      req: http('POST', '/reconcile/daily', { sourceSystem: 'SRC-WX', bizDate: '2026-11-23', dataType: 'SALES', lineCount: 46, totalWeight: 316.96 }, 'RC-WX-20261123-01'),
+      res: res('202 Accepted', { batchId: 'RC-WX-20261123-01', matched: false, diff: { lineCount: -1, totalWeight: -3.22 } }, '已受理'),
+      resNote: 'matched 为 false 表示与平台实际接收数不一致，diff 为“平台接收 − 申报”。', errs: [2002, 2003, 3002, 3003, 4001] },
+  ];
+
+  const NAV = [
+    { g: '入门', items: [{ k: 'overview', t: '概述与通用约定' }, { k: 'auth', t: '鉴权与签名' }] },
+    { g: '接口', items: APIS.map((a) => ({ k: a.k, t: a.t, m: a.m, short: a.short, isNew: a.isNew })) },
+    { g: '参考', items: [{ k: 'fields', t: '字段字典' }, { k: 'errors', t: '错误码' }, { k: 'code', t: '示例代码' }, { k: 'changelog', t: '变更日志' }] },
+  ];
+  const FLAT = [].concat(...NAV.map((g) => g.items));
+
+  const JAVA = String.raw`import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.UUID;
+
+public class StpOpenApiDemo {
+    static final String BASE = "https://sandbox-openapi.huodaizi-data.example";
+    static final String APP_KEY = System.getenv("STP_APP_KEY");
+    static final String APP_SECRET = System.getenv("STP_APP_SECRET");
+
+    static String hex(byte[] bytes) {
+        StringBuilder sb = new StringBuilder();
+        for (byte b : bytes) sb.append(String.format("%02x", b));
+        return sb.toString();
+    }
+
+    static String sha256Hex(String s) throws Exception {
+        MessageDigest md = MessageDigest.getInstance("SHA-256");
+        return hex(md.digest(s.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    static String hmacSha256Hex(String secret, String data) throws Exception {
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+        return hex(mac.doFinal(data.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    public static void main(String[] args) throws Exception {
+        String method = "POST";
+        String path = "/openapi/v1/sales/batch";
+        String body = "{\"items\":[]}";   // 示意：items 中为明细行。先序列化，再用同一个字符串签名并发送
+        String timestamp = String.valueOf(System.currentTimeMillis());
+        String nonce = UUID.randomUUID().toString().replace("-", "");
+        String batchNo = "B-HQ-20261123-001";
+
+        // 签名串 = 方法 + \n + 路径 + \n + 时间戳 + \n + 随机串 + \n + 请求体摘要
+        String stringToSign = String.join("\n", method, path, timestamp, nonce, sha256Hex(body));
+        String signature = hmacSha256Hex(APP_SECRET, stringToSign);
+
+        HttpRequest request = HttpRequest.newBuilder(URI.create(BASE + path))
+                .header("Content-Type", "application/json; charset=utf-8")
+                .header("X-App-Key", APP_KEY)
+                .header("X-Timestamp", timestamp)
+                .header("X-Nonce", nonce)
+                .header("X-Signature", signature)
+                .header("X-Idempotency-Key", batchNo)
+                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                .build();
+
+        HttpResponse<String> response = HttpClient.newHttpClient()
+                .send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        // 202：已受理，随后用 GET /openapi/v1/batches/{batchId} 查询逐行结果
+        // 429：按响应头 Retry-After 等待后重试；5xxx：指数退避重试
+        System.out.println(response.statusCode() + " " + response.body());
+    }
+}`;
+  const NET = String.raw`using System;
+using System.Net.Http;
+using System.Security.Cryptography;
+using System.Text;
+using System.Threading.Tasks;
+
+public static class StpOpenApiDemo
+{
+    const string Base = "https://sandbox-openapi.huodaizi-data.example";
+    static readonly string AppKey = Environment.GetEnvironmentVariable("STP_APP_KEY");
+    static readonly string AppSecret = Environment.GetEnvironmentVariable("STP_APP_SECRET");
+
+    static string Hex(byte[] bytes) => BitConverter.ToString(bytes).Replace("-", "").ToLowerInvariant();
+
+    static string Sha256Hex(string s)
+    {
+        using var sha = SHA256.Create();
+        return Hex(sha.ComputeHash(Encoding.UTF8.GetBytes(s)));
+    }
+
+    static string HmacSha256Hex(string secret, string data)
+    {
+        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));
+        return Hex(hmac.ComputeHash(Encoding.UTF8.GetBytes(data)));
+    }
+
+    public static async Task Main()
+    {
+        var method = "POST";
+        var path = "/openapi/v1/sales/batch";
+        var body = "{\"items\":[]}";   // 示意：items 中为明细行。先序列化，再用同一个字符串签名并发送
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString();
+        var nonce = Guid.NewGuid().ToString("N");
+        var batchNo = "B-HQ-20261123-001";
+
+        // 签名串 = 方法 + \n + 路径 + \n + 时间戳 + \n + 随机串 + \n + 请求体摘要
+        var stringToSign = string.Join("\n", method, path, timestamp, nonce, Sha256Hex(body));
+        var signature = HmacSha256Hex(AppSecret, stringToSign);
+
+        using var client = new HttpClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, Base + path);
+        request.Content = new StringContent(body, Encoding.UTF8, "application/json");
+        request.Headers.Add("X-App-Key", AppKey);
+        request.Headers.Add("X-Timestamp", timestamp);
+        request.Headers.Add("X-Nonce", nonce);
+        request.Headers.Add("X-Signature", signature);
+        request.Headers.Add("X-Idempotency-Key", batchNo);
+
+        var response = await client.SendAsync(request);
+        // 202：已受理，随后用 GET /openapi/v1/batches/{batchId} 查询逐行结果
+        // 429：按响应头 Retry-After 等待后重试；5xxx：指数退避重试
+        Console.WriteLine((int)response.StatusCode + " " + await response.Content.ReadAsStringAsync());
+    }
+}`;
+
+  STP.mount({
+    data() {
+      return {
+        cur: 'overview', lang: 'java', nav: NAV, headers: HEADERS, errList: ERR, errMap, javaCode: JAVA, netCode: NET,
+        conventions: [
+          ['协议', 'HTTPS（TLS 1.2 及以上），REST 风格，JSON，UTF-8'],
+          ['版本', '路径中带版本号，如 /openapi/v1/...；不兼容变更升大版本，旧版本保留期提前公告'],
+          ['鉴权', '应用标识 + 密钥，HMAC-SHA256 签名。请求头：X-App-Key、X-Timestamp、X-Nonce、X-Signature'],
+          ['防重放', '时间戳偏差超过 5 分钟拒绝；随机串在有效期内不可重复'],
+          ['幂等', '批量接口带 X-Idempotency-Key（批次号），同一批次号重复提交返回首次结果'],
+          ['批量限制', '单次不超过 1,000 行且报文不超过 5 MB'],
+          ['限流', '按应用限流，默认每秒 20 次，可按企业调整；超限返回 429 并带 Retry-After'],
+          ['处理方式', '同步完成接入校验后返回 202 和批次号；逐行处理结果通过批次查询接口获取'],
+          ['补传窗口', '允许补传或更正最近 90 天的数据；更早的需平台运营审批'],
+          ['时间', '日期用 yyyy-MM-dd，时间用 ISO 8601 带时区'],
+          ['重量', '单位吨，最多 3 位小数'],
+          ['价格与金额', '单价单位元/吨，金额单位元，最多 2 位小数。仅在企业开启价格上传时接收'],
+          ['返回结构', '统一返回 code、message、requestId、data'],
+        ],
+        grainDiff: [
+          ['接口', 'POST /sales/batch', 'POST /sales/daily-summary'],
+          ['上传内容', '销售出库与退货的单据行', '按业务日期与维度组合汇总后的净销量'],
+          ['幂等与更新', '按“企业 + 来源系统 + 单据号 + 行号”，取最新版本', '按“企业 + 来源系统 + 业务日期”整批替换'],
+          ['作废', '单行作废（opType 为 VOID）', '重传当日'],
+          ['平台可执行的规则', '全部条件', '仅汇总记录中存在的维度；单笔吨位上下限、按内部编码排除只能在 ERP 端执行'],
+          ['平台可做的校验', '单据去重、单行异常、突变', '批内唯一、批完整、突变、控制总数'],
+          ['下游自查', '单据行', '汇总记录'],
+          ['对上游的聚合结果', '相同', '相同'],
+        ],
+        priceFields: [
+          ['unitPrice', 'sales/batch', '成交单价，元/吨'],
+          ['amount', 'sales/batch、sales/daily-summary', '成交金额，元。行级接口中与 unitPrice 至少传一项，都传时校验一致性；日汇总接口为净销售金额，均价由金额 ÷ 净重得出'],
+          ['taxIncluded', 'sales/batch、sales/daily-summary', '是否含税。未传时取企业默认值'],
+          ['taxRate', 'sales/batch', '税率。不含税价格换算为含税时使用，未传时取平台配置的默认税率'],
+          ['priceTerm', 'sales/batch、sales/daily-summary', '价格条件：EX_WAREHOUSE 仓库自提价；DELIVERED 送到价（含运费）'],
+          ['provisional', 'sales/batch、sales/daily-summary', '是否暂估价（后结算、未最终定价）。暂估价不进入默认口径'],
+          ['totalAmount', 'reconcile/daily', '对账申报的金额控制总数，仅在开启价格上传时申报'],
+        ],
+        enums: [
+          ['opType', 'UPSERT 新增或更新；VOID 作废'], ['docType', 'SALE_OUT 销售出库；SALE_RETURN 销售退货'], ['deliveryMode', '自提；配送；厂家直发'], ['weightMode', '理计；磅计'],
+          ['customerType', '终端；贸易商'], ['customerIndustry', '房屋建筑；基础设施；机械制造；汽车；家电；能源；造船；其他（以 enum 字典为准）'],
+          ['priceTerm', 'EX_WAREHOUSE 仓库自提价；DELIVERED 送到价（含运费）'], ['stockType', '自有现货（默认）；已售未提；在途'], ['ageBand', '0–30；31–60；61–90；90 天以上'],
+          ['dataType', 'SALES 销售；INVENTORY 库存'], ['grain', 'LINE 行级模式；DAILY_SUMMARY 日汇总模式'],
+        ],
+        rowStatus: [
+          ['ACCEPTED', '已入库', '通过规则过滤与校验，进入明细层'], ['FILTERED', '被规则过滤', '不符合企业的上传条件规则。数据不落盘，平台只记录条数'],
+          ['REJECTED', '校验失败', '附原因码。该行进入失败明细，可更正后重传'], ['PENDING_MAPPING', '待映射', '品名、材质、钢厂或仓库尚未映射到标准值，映射完成后自动入库'],
+          ['QUARANTINED', '隔离待确认', '疑似重复或相对自身历史突变。企业确认“属实”或“更正”前不参与聚合'],
+        ],
+        rowHints: [
+          ['PRICE_DROPPED', '价格字段未接收（开关关闭或超出范围）。销量照常入库'], ['PRICE_QUARANTINED', '价格字段隔离待确认（如与本企业近期均价偏离过大），销量已入库'], ['WEIGHT_CONVERTED', '重量由件数换算得出'],
+          ['FIELD_DROPPED', '收到禁止字段或未定义字段，已丢弃不落盘'],
+        ],
+        reasons: [
+          ['R2101', 'REJECTED', '吨位超出该品名单行上限'], ['R2102', 'REJECTED', '吨位必须大于 0（日汇总净重可为负，但绝对值受限）'], ['R2201', 'REJECTED', '业务日期早于补传窗口'], ['R2203', 'REJECTED', '业务日期晚于当前日期'],
+          ['R2301', 'REJECTED', '枚举或字典取值无效'], ['R2401', 'REJECTED', '日汇总批内维度组合重复'], ['M3001', 'PENDING_MAPPING', 'ERP 物料未映射到标准品名或规格'], ['M3002', 'PENDING_MAPPING', '仓库未映射到标准仓库'],
+          ['Q4001', 'QUARANTINED', '疑似重复数据'], ['Q4002', 'QUARANTINED', '相对本企业近 30 日均值突变'],
+        ],
+        changelog: [
+          { v: 'v1.1', date: '2026-09-15', cur: true, sum: '支持日汇总模式与价格、金额的可选上传', items: [
+            '新增销售日汇总接口 POST /sales/daily-summary：日汇总模式下按业务日期整批替换。',
+            '新增上传设置查询接口 GET /settings：返回上传粒度、粒度生效日期、价格上传开关与范围。',
+            '销售出库明细新增价格与金额字段：unitPrice、amount、taxIncluded、taxRate、priceTerm、provisional、paymentTerm，全部选填，仅在企业开启价格上传且在其设定范围内时接收。',
+            '每日对账申报 POST /reconcile/daily 增加金额控制总数 totalAmount（选填）。',
+            '新增错误码 3004“上传粒度与当前设置不符”、3005“商品不在受理范围内”。',
+            '新增逐行提示 PRICE_DROPPED、PRICE_QUARANTINED、WEIGHT_CONVERTED。',
+            '库存快照：日汇总模式的来源系统可只报仓库所在市。'] },
+          { v: 'v1.0.2', date: '2026-03-20', sum: '字典与限流', items: ['字典查询支持 sinceVersion 版本比对。', '限流超限时返回 Retry-After 响应头。'] },
+          { v: 'v1.0.1', date: '2025-11-06', sum: '批次查询增强', items: ['批次结果查询支持按 status 过滤与分页。', '销售明细新增选填字段 customerIndustry。'] },
+          { v: 'v1.0', date: '2025-08-01', sum: '首个正式版本', items: ['连通性检查、销售出库批量上传、库存快照上传、批次结果查询、生效规则拉取、字典查询、每日对账申报。'] },
+        ],
+        signSample: ['# 签名串（5 行，换行符为 \\n）', 'POST', '/openapi/v1/sales/batch', '1795406727000', '9f2c41d7a6b84e03', '95b6de2367e5f1ed51836b89772a10864e82d6a8784809ecf61d5a48915d511d', '', '# X-Signature = HMAC-SHA256(密钥, 签名串)', '0fdbebc105bcc183f3f5f0cdbd3da22cd91e4dbe3761f63c8e3b39220342c24a'].join('\n'),
+      };
+    },
+    computed: {
+      api() { return APIS.find((a) => a.k === this.cur); },
+      apiHeaders() { return HEADERS.filter((h) => h.n !== 'X-Idempotency-Key' || (this.api && this.api.m === 'POST')); },
+      idx() { return FLAT.findIndex((n) => n.k === this.cur); },
+      prev() { return this.idx > 0 ? FLAT[this.idx - 1] : null; },
+      next() { return this.idx < FLAT.length - 1 ? FLAT[this.idx + 1] : null; },
+    },
+    methods: {
+      go(k) { this.cur = k; window.scrollTo(0, 0); },
+    },
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>数据池管理 · 平台运营后台 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.ent-name b { font-weight: 600; }
+.ent-name span { display: block; font-size: 12px; color: var(--stp-sub); margin-top: 2px; }
+.sec-title { font-size: 14px; font-weight: 600; margin: 20px 0 10px; display: flex; align-items: center; justify-content: space-between; }
+.sec-title::before { content: ""; width: 3px; height: 14px; background: var(--el-color-primary); border-radius: 2px; margin-right: 8px; }
+.sec-title > span:first-child { flex: 1; }
+.dist-bar { display: flex; height: 16px; border-radius: 4px; overflow: hidden; background: #eef1f5; }
+.dist-bar i { display: block; height: 100%; }
+.dist-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: 13px; }
+.dist-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
+.task-head { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+.task-head .box { border: 1px solid var(--stp-border); border-radius: 6px; padding: 12px 14px; }
+.task-head .box span { font-size: 12px; color: var(--stp-sub); }
+.task-head .box b { display: block; font-size: 20px; margin-top: 4px; font-weight: 600; }
+.task-head .box em { font-style: normal; font-size: 12px; color: var(--stp-sub); font-weight: 400; margin-left: 4px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="admin" active="pools" title="数据池管理"
+  desc="查看各上游购买主体的名额与数据池，处理下游状态变化引起的补偿（冻结、顺延、免费替换），监控数据池变更的周期生效任务。数据池成员按日期版本化，变更下一周期生效，历史默认不重算。">
+  <template #actions>
+    <el-button @click="$demo('数据池清单已导出（名额与成员版本，不含聚合数值）')"><el-icon><Download /></el-icon>导出</el-button>
+    <el-button type="primary" @click="tab = 'task'"><el-icon><Timer /></el-icon>2026-12-01 生效批次</el-button>
+  </template>
+
+  <div class="grid c5">
+    <stat-card label="付费购买主体" :value="438" unit="家" icon="Coin" tip="按集团归并后的购买主体；每个购买主体同一时间只有一个生效数据池"><span>入驻上游 <b>512</b></span></stat-card>
+    <stat-card label="在订名额" :value="86400" unit="个" icon="Tickets"><span>生效中 <b>79,640</b></span><span>待生效 <b>1,192</b></span></stat-card>
+    <div class="stat">
+      <div class="label">已分配 / 未分配<el-tooltip placement="top" content="已分配 = 已指定下游企业的名额：生效 79,640 + 冻结 1,128 + 已分配待生效 1,192（下一成员版本生效）。未分配 = 尚未指定企业的名额。这 1,192 个待生效名额都来自已购名额包内的未分配名额，不属于加购；加购名额自生效日起才计入在订名额并开始计费，目前 5 笔加购订单均待支付，未计入"><el-icon><QuestionFilled /></el-icon></el-tooltip></div>
+      <div class="value num">81,960<span class="unit">/ 4,440 个</span></div>
+      <div class="foot"><span>分配率 <b>94.9%</b></span><span>未分配名额不延长有效期</span></div>
+    </div>
+    <stat-card label="冻结名额" :value="1128" unit="个" icon="Lock" tip="对应下游企业断传（连续 10 天无有效上传）或主动暂停。冻结期间不参与聚合，上游可免费替换或顺延"><span>断传 <b>842</b></span><span>暂停 <b>286</b></span></stat-card>
+    <stat-card label="低于最小规模的数据池" :value="7" unit="个" icon="Warning" tip="池内有效企业数低于 20 家，聚合数据暂停提供，暂停天数顺延"><span>最小规模 <b>{{ $PV.nMin }}</b> 家</span><span style="color:#e5484d">聚合暂停提供</span></stat-card>
+  </div>
+
+  <div class="card">
+    <el-tabs v-model="tab">
+      <!-- 各上游数据池 -->
+      <el-tab-pane name="pool" label="各上游数据池">
+        <div class="row between mb12">
+          <div class="row">
+            <el-input v-model="kw" placeholder="购买主体名称" clearable style="width:220px"><template #prefix><el-icon><Search /></el-icon></template></el-input>
+            <el-checkbox v-model="onlyLow">只看低于最小规模</el-checkbox>
+            <el-checkbox v-model="onlyChange">只看本周期有变更申请</el-checkbox>
+          </div>
+          <span class="muted small">全平台 438 个数据池；原型展示 {{ pools.length }} 个示例</span>
+        </div>
+        <el-table :data="poolRows" size="small" border>
+          <el-table-column label="购买主体" min-width="210"><template #default="{row}"><div class="ent-name"><a href="javascript:;" @click="open(row)"><b>{{ row.name }}</b></a><span>{{ row.id }} · 归并法人 {{ row.rel }} 家</span></div></template></el-table-column>
+          <el-table-column label="已购名额" width="90" align="right"><template #default="{row}"><span class="num">{{ $fmt(row.quota) }}</span></template></el-table-column>
+          <el-table-column label="已分配（在池）" width="210" align="right"><template #default="{row}"><span class="num">{{ $fmt(row.alloc) }}</span><span class="muted small">　待生效 {{ waitOf(row) }}　未分配 {{ row.quota - row.alloc - waitOf(row) }}</span></template></el-table-column>
+          <el-table-column label="池内有效企业数" width="150" align="right"><template #default="{row}"><b class="num" :style="{color: row.eff < $PV.nMin ? '#e5484d' : ''}">{{ $fmt(row.eff) }}</b><span class="muted small">　冻结 {{ row.alloc - row.eff }}</span></template></el-table-column>
+          <el-table-column label="最小规模预警" width="150">
+            <template #default="{row}">
+              <el-tag v-if="row.eff < $PV.nMin" type="danger" size="small">低于 {{ $PV.nMin }} 家，差 {{ $PV.nMin - row.eff }} 家</el-tag>
+              <el-tag v-else-if="row.eff < $PV.nMin + 5" type="warning" size="small">接近下限</el-tag>
+              <span v-else class="muted"><span class="dot ok"></span>正常</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="expire" label="订阅到期" width="104" />
+          <el-table-column label="本周期变更申请" width="126" align="right">
+            <template #default="{row}"><span v-if="row.chg" class="num">{{ row.chg }} 条</span><span v-else class="muted">—</span> <el-tooltip v-if="row.over" content="替换数超过在用名额的 20%，预校验未通过" placement="top"><el-icon style="color:#e5484d;vertical-align:-2px"><WarningFilled /></el-icon></el-tooltip></template>
+          </el-table-column>
+          <el-table-column label="状态" width="126"><template #default="{row}"><el-tag size="small" :type="row.eff < $PV.nMin ? 'danger' : row.status === '即将到期' ? 'warning' : 'success'">{{ row.eff < $PV.nMin ? '聚合暂停提供' : row.status }}</el-tag></template></el-table-column>
+          <el-table-column label="操作" width="70" align="center"><template #default="{row}"><el-button link type="primary" @click="open(row)">详情</el-button></template></el-table-column>
+          <template #empty><div class="empty-block">没有符合条件的数据池</div></template>
+        </el-table>
+        <div class="tip-box small mt12">名额状态：未分配 → 已分配（待生效）→ 生效中 → 冻结（对应企业暂停或断传）→ 已释放（可重新分配）→ 已到期。“已分配（待生效）”期间企业数据不进入聚合、不计提分成；其中加购名额在这一期间也不计费，计费起始日等于生效日。池内有效企业数低于 {{ $PV.nMin }} 家时，看板、查询与导出均不提供任何聚合数值。</div>
+      </el-tab-pane>
+
+      <!-- 补偿处理 -->
+      <el-tab-pane name="comp">
+        <template #label>补偿处理 <el-badge :value="compTodo" type="danger" :hidden="!compTodo" style="vertical-align:1px" /></template>
+        <el-alert type="info" show-icon :closable="false">
+          <template #title>补偿规则：下游连续 10 天无有效上传或主动暂停 → 名额冻结，上游可免费替换（不占替换额度）或剩余天数顺延；下游退出 → 名额释放，可免费替换；下游收紧上传规则 → 通知上游，是否触发免费替换<b>待业务方确定</b>；数据池因此低于最小规模 → 聚合暂停，暂停天数顺延。</template>
+        </el-alert>
+        <div class="row mb12">
+          <el-radio-group v-model="compFilter">
+            <el-radio-button value="" label="全部" />
+            <el-radio-button v-for="t in compTypes" :key="t" :value="t" :label="t" />
+          </el-radio-group>
+        </div>
+        <el-table :data="compRows" size="small" border>
+          <el-table-column prop="id" label="编号" width="120" />
+          <el-table-column label="触发情形" width="120"><template #default="{row}"><el-tag size="small" :type="compTag(row.type)">{{ row.type }}</el-tag></template></el-table-column>
+          <el-table-column label="涉及企业 / 数据池" min-width="210"><template #default="{row}"><div class="ent-name"><b>{{ row.ent }}</b><span>{{ row.judge }}</span></div></template></el-table-column>
+          <el-table-column label="涉及上游" width="88" align="right"><template #default="{row}"><span class="num">{{ row.ups }}</span> 家</template></el-table-column>
+          <el-table-column label="涉及名额数" width="96" align="right"><template #default="{row}"><span class="num">{{ row.quota }}</span> 个</template></el-table-column>
+          <el-table-column label="处理方式" min-width="190"><template #default="{row}">{{ row.method }}</template></el-table-column>
+          <el-table-column label="状态" width="112"><template #default="{row}"><span class="dot" :class="row.status === '待处理' ? 'err' : row.status === '已处理' ? 'ok' : 'warn'"></span>{{ row.status }}</template></el-table-column>
+          <el-table-column prop="time" label="触发时间" width="136" />
+          <el-table-column label="操作" width="76" align="center">
+            <template #default="{row}"><el-button v-if="row.status !== '已处理'" type="primary" size="small" plain @click="openComp(row)">处理</el-button><el-button v-else link type="primary" @click="openComp(row)">查看</el-button></template>
+          </el-table-column>
+        </el-table>
+        <div class="tbl-foot"><span>断传与暂停的冻结由系统自动执行；运营负责确认处理方式、通知上游并跟进下游恢复。断传企业的跟进见 <a href="quality.html">数据质量监控</a>。</span></div>
+      </el-tab-pane>
+
+      <!-- 周期生效任务 -->
+      <el-tab-pane name="task" label="周期生效任务监控">
+        <div class="status-line">
+          <b>生效批次 PCB-20261201</b>
+          <el-tag :type="pre.done ? 'success' : 'warning'" size="small">{{ pre.done ? '预校验已完成' : '收集变更中' }}</el-tag>
+          <span>生效日 <b>2026-12-01</b>（下一自然月首日）</span>
+          <span>变更申请截止 <b>2026-11-28 18:00</b></span>
+          <span class="muted">最近预校验：{{ pre.time }}</span>
+          <span class="flex1"></span>
+          <el-button size="small" type="primary" :loading="pre.running" @click="runPre"><el-icon><Refresh /></el-icon>执行预校验</el-button>
+        </div>
+        <div class="task-head">
+          <div class="box"><span>待生效变更</span><b class="num">4,860<em>条</em></b></div>
+          <div class="box"><span>涉及购买主体</span><b class="num">312<em>个</em></b></div>
+          <div class="box"><span>变更构成</span><b class="num" style="font-size:15px;line-height:28px">新增 1,192　替换 3,268　移除 400</b></div>
+          <div class="box"><span>其中免费替换（不占额度）</span><b class="num">386<em>条，对应冻结或释放名额</em></b></div>
+        </div>
+        <div class="small muted" style="margin:-4px 0 10px">新增 1,192 条即名额台账中“已分配待生效”的 1,192 个名额；替换不改变名额数，原成员在版本切换前仍为“生效”；下游可见性只校验新增与替换进入的 4,460 家成员。
+        </div>
+        <div class="grid c-2-1">
+          <div>
+            <table class="plain-table">
+              <thead><tr><th style="width:150px">校验项</th><th>规则</th><th class="c" style="width:96px">通过</th><th class="c" style="width:96px">未通过</th><th class="c" style="width:90px">操作</th></tr></thead>
+              <tbody>
+                <tr v-for="c in checks" :key="c.k">
+                  <td><b>{{ c.t }}</b></td>
+                  <td>{{ c.rule }} <el-tag v-if="c.demo" size="small" type="warning" effect="plain">示例参数，待业务方确定</el-tag></td>
+                  <td class="c"><span class="num" style="color:#18a058">{{ $fmt(c.ok) }}</span></td>
+                  <td class="c"><b v-if="c.bad" class="num" style="color:#e5484d">{{ c.bad }}</b><span v-else class="muted">0</span></td>
+                  <td class="c"><el-button v-if="c.bad" link type="primary" @click="openFail(c)">查看</el-button><span v-else class="muted">—</span></td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="tip-box blue small mt12">
+              <b>为什么集中生效：</b>若上游今天导出一批历史数据，明天换掉 1 家再导出，两份相减就是被换企业的全部历史。因此数据池成员按日期版本化，变更按周期集中生效，默认不重算历史；仅当新旧成员差集不少于 10 家且差集整体满足优势度门槛时，才允许按新成员重算历史。未通过校验的变更不生效，系统通知上游调整，超出部分可顺延到下一周期。
+            </div>
+          </div>
+          <div class="card tight" style="margin-bottom:0">
+            <div class="card-title" style="font-size:14px"><span>任务时间线</span></div>
+            <el-timeline style="padding-left:2px">
+              <el-timeline-item v-for="t in timeline" :key="t.t" :timestamp="t.time" :type="t.type" :hollow="t.type === 'info'" placement="top">
+                <b>{{ t.t }}</b><div class="small muted" style="margin-top:2px">{{ t.d }}</div>
+              </el-timeline-item>
+            </el-timeline>
+          </div>
+        </div>
+        <div class="sec-title"><span>历史批次</span></div>
+        <el-table :data="batches" size="small" border>
+          <el-table-column prop="id" label="批次" width="150" />
+          <el-table-column prop="date" label="生效日" width="110" />
+          <el-table-column prop="subj" label="涉及购买主体" align="right" width="120" />
+          <el-table-column prop="chg" label="生效变更（条）" align="right" width="130" />
+          <el-table-column prop="rej" label="未通过校验（条）" align="right" width="140" />
+          <el-table-column prop="recalc" label="按新成员重算历史的主体" align="right" width="190" />
+          <el-table-column prop="done" label="切换完成时间" width="150" />
+          <el-table-column label="状态" min-width="100"><template #default><el-tag size="small" type="success">已生效</el-tag></template></el-table-column>
+        </el-table>
+      </el-tab-pane>
+    </el-tabs>
+  </div>
+
+  <!-- 数据池详情 -->
+  <el-drawer v-model="drawer" size="760px" :title="cur ? cur.name + ' · 数据池' : ''">
+    <template v-if="cur">
+      <el-alert v-if="cur.eff < $PV.nMin" type="error" show-icon :closable="false" :title="'池内有效企业 ' + cur.eff + ' 家，低于最小规模 ' + $PV.nMin + ' 家：聚合数据暂停提供，已通知上游补足，暂停天数顺延。'" />
+      <el-descriptions :column="3" border size="small">
+        <el-descriptions-item label="已购名额">{{ $fmt(cur.quota) }}</el-descriptions-item>
+        <el-descriptions-item label="已分配">{{ $fmt(cur.alloc) }}</el-descriptions-item>
+        <el-descriptions-item label="池内有效企业">{{ $fmt(cur.eff) }}</el-descriptions-item>
+        <el-descriptions-item label="订阅期">{{ cur.start }} 至 {{ cur.expire }}</el-descriptions-item>
+        <el-descriptions-item label="本周期可替换额度">{{ Math.floor(cur.alloc * 0.2) }} 个（在用名额的 20%）</el-descriptions-item>
+        <el-descriptions-item label="已用替换额度">{{ cur.used }} 个</el-descriptions-item>
+      </el-descriptions>
+
+      <div class="sec-title"><span>名额状态分布</span><span class="muted small" style="font-weight:400">共 {{ $fmt(cur.quota) }} 个名额</span></div>
+      <div class="dist-bar"><i v-for="d in dist" :key="d.t" :style="{width: d.n / cur.quota * 100 + '%', background: d.c}"></i></div>
+      <div class="dist-legend"><span v-for="d in dist" :key="d.t"><i :style="{background: d.c}"></i>{{ d.t }} <b class="num">{{ $fmt(d.n) }}</b></span></div>
+
+      <div class="sec-title"><span>成员版本</span>
+        <el-radio-group v-model="verFilter" size="small"><el-radio-button value="" label="全部" /><el-radio-button value="生效中" label="生效中" /><el-radio-button value="冻结" label="冻结" /><el-radio-button value="待生效" label="待生效" /><el-radio-button value="已失效" label="已失效" /></el-radio-group>
+      </div>
+      <el-table :data="verRows" size="small" border max-height="420">
+        <el-table-column label="企业" min-width="230">
+          <template #default="{row}"><span>{{ row.name }}</span><div v-if="row.anon" class="anon-name small" style="margin-top:2px">{{ row.anon }}</div></template>
+        </el-table-column>
+        <el-table-column prop="from" label="生效日" width="104" />
+        <el-table-column label="失效日" width="104"><template #default="{row}"><span v-if="row.to">{{ row.to }}</span><span v-else class="muted">—</span></template></el-table-column>
+        <el-table-column prop="batch" label="变更批次" width="136" />
+        <el-table-column label="名额状态" width="130"><template #default="{row}"><el-tag size="small" :type="row.st === '生效中' ? 'success' : row.st === '冻结' ? 'warning' : row.st === '待生效' ? 'primary' : 'info'">{{ row.st }}</el-tag><div v-if="row.why" class="small muted">{{ row.why }}</div></template></el-table-column>
+      </el-table>
+      <div class="tip-box small mt12">某业务日期的聚合值，只按该日期当天生效的成员集合计算；成员变更、下游暂停或退出造成的被动减员都按日期版本化处理，不重算历史。此处仅展示成员与名额状态，不展示任何单家企业的销量、库存、价格。</div>
+    </template>
+  </el-drawer>
+
+  <!-- 补偿处理弹窗 -->
+  <el-dialog v-model="compDlg" :title="'补偿处理 · ' + (curComp ? curComp.id : '')" width="600px">
+    <template v-if="curComp">
+      <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="触发情形">{{ curComp.type }}</el-descriptions-item>
+        <el-descriptions-item label="触发时间">{{ curComp.time }}</el-descriptions-item>
+        <el-descriptions-item label="涉及企业 / 数据池" :span="2">{{ curComp.ent }}</el-descriptions-item>
+        <el-descriptions-item label="判定" :span="2">{{ curComp.judge }}</el-descriptions-item>
+        <el-descriptions-item label="涉及上游">{{ curComp.ups }} 家</el-descriptions-item>
+        <el-descriptions-item label="涉及名额数">{{ curComp.quota }} 个</el-descriptions-item>
+      </el-descriptions>
+      <el-form label-width="96px" class="mt16">
+        <el-form-item label="处理方式">
+          <el-checkbox-group v-model="cf.methods" :disabled="curComp.status === '已处理'">
+            <el-checkbox value="冻结">冻结名额（冻结期间不参与聚合）</el-checkbox>
+            <el-checkbox value="顺延">剩余天数顺延</el-checkbox>
+            <el-checkbox value="免费替换">开放免费替换（不占替换额度）</el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+        <el-form-item label="通知对象">
+          <el-checkbox-group v-model="cf.notify" :disabled="curComp.status === '已处理'"><el-checkbox value="上游">涉及的上游购买主体</el-checkbox><el-checkbox value="下游">下游企业</el-checkbox></el-checkbox-group>
+        </el-form-item>
+        <el-form-item label="处理说明"><el-input v-model="cf.note" type="textarea" :rows="2" :disabled="curComp.status === '已处理'" placeholder="选填，将记入处理记录" /></el-form-item>
+      </el-form>
+      <div v-if="curComp.type === '收紧规则'" class="tip-box orange small">下游收紧上传规则（覆盖声明降级）是否触发免费替换，规则<b>待业务方确定</b>。当前按“通知上游，由运营逐单判定”处理。</div>
+      <div v-else class="tip-box small">免费替换同样按周期集中生效（下次生效日 2026-12-01），不重算历史；对下游只通知名额状态变化，不告知涉及的上游名称。</div>
+    </template>
+    <template #footer>
+      <el-button @click="compDlg = false">{{ curComp && curComp.status === '已处理' ? '关闭' : '取消' }}</el-button>
+      <el-button v-if="curComp && curComp.status !== '已处理'" type="primary" :disabled="!cf.methods.length" @click="doComp">确认处理</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 未通过项 -->
+  <el-dialog v-model="failDlg" :title="curFail ? curFail.t + ' · 未通过项' : ''" width="680px">
+    <el-table v-if="curFail" :data="curFail.fails" size="small" border>
+      <el-table-column prop="name" label="购买主体" min-width="200" />
+      <el-table-column prop="why" label="未通过原因" min-width="250" />
+      <el-table-column label="处理" width="150" align="center">
+        <template #default="{row}"><el-tag v-if="row.sent" size="small" type="success">已通知上游调整</el-tag><el-button v-else link type="primary" @click="row.sent = true; $demo('已通知上游在 2026-11-28 18:00 前调整')">通知上游调整</el-button></template>
+      </el-table-column>
+    </el-table>
+    <div class="small muted mt12">截止时仍未通过的变更不生效：替换超额部分顺延到下一周期；低于最小规模的数据池自生效日起暂停提供聚合数据。</div>
+    <template #footer><el-button @click="failDlg = false">关闭</el-button></template>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/upstream-directory.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const P = (id, name, rel, quota, alloc, eff, start, expire, chg, used, status, over) => ({ id, name, rel, quota, alloc, eff, start, expire, chg, used, status, over: !!over });
+  const pools = [
+    /* 名额、已分配、订阅期与“订单与计费”的生效订单一致 */
+    /* 东岳本周期变更 20 条：替换 5、新增 14（数据池调整 1 家 + 2026-11-20 名录选购时用未分配名额分配 13 家）、移出 1 */
+    P('U20001', '东岳钢铁集团有限公司', 3, 200, 186, 183, '2026-04-01', '2027-03-31', 20, 5, '正常'),
+    P('U20002', '金江钢铁股份有限公司', 6, 500, 478, 469, '2026-02-01', '2027-01-31', 42, 38, '正常'),
+    P('U20003', '海川特钢有限公司', 2, 60, 60, 58, '2026-07-01', '2027-06-30', 0, 0, '正常'),
+    P('U20004', '云岭钢铁集团有限公司', 3, 150, 142, 139, '2026-09-01', '2027-08-31', 12, 10, '正常'),
+    P('U20005', '北辰钢铁有限责任公司', 5, 1200, 1168, 1141, '2026-03-01', '2027-02-28', 96, 81, '正常'),
+    P('U20006', '瀚阳钢铁集团有限公司', 2, 80, 76, 75, '2026-05-01', '2027-04-30', 18, 18, '正常', true),
+    P('U20007', '昆仑钢铁股份有限公司', 3, 250, 241, 234, '2026-11-01', '2027-10-31', 23, 21, '正常'),
+    P('U20008', '南粤钢铁有限公司', 4, 100, 96, 94, '2026-06-01', '2027-05-31', 0, 0, '退款中'),
+    P('U20009', '中洲钢铁集团有限公司', 1, 20, 20, 17, '2026-09-01', '2027-08-31', 3, 0, '正常'),
+  ];
+
+  const members = (p) => {
+    const n = Math.min(p.alloc, 40);
+    const nm = (e) => ({ name: e.name, anon: e.mode === '匿名' ? e.anon : '' });
+    const dy = p.id === 'U20001', inc = dy ? UpDir.PENDING_IN.length : 3;
+    let list = M.enterprises(n + inc + 3, M.hash(p.id)).map(nm);
+    if (dy) {
+      /* 东岳的数据池与上游端“数据来源企业名单”是同一批企业：苏州恒运在池，冻结 3 家，12-01 待生效入池 19 家（替换 5 家、新增 14 家） */
+      const pl = UpDir.LIST.filter((e) => e.inPool), head = [pl[182], pl[23], pl[97], pl[151]], out = [3, 41, 88, 120, 166, 135].map((i) => pl[i]);
+      list = head.concat(pl.filter((e) => head.indexOf(e) < 0 && out.indexOf(e) < 0).slice(0, n - 4)).concat(UpDir.PENDING_IN).map(nm).concat(list.slice(n + inc));
+    }
+    const frozen = p.alloc - p.eff;
+    const out = [];
+    list.slice(0, n).forEach((m, i) => {
+      const first = i % 5 !== 4;
+      const r = Object.assign({ from: first ? p.start : (i % 2 ? '2026-11-01' : '2026-10-01'), to: '', batch: first ? '首次购买' : (i % 2 ? 'PCB-20261101' : 'PCB-20261001'), st: '生效中', why: '' }, m);
+      if (i > 0 && i <= frozen) { r.st = '冻结'; r.why = i === frozen && frozen > 1 ? '企业主动暂停' : '连续 10 天无有效上传'; }
+      out.push(r);
+    });
+    list.slice(n, n + inc).forEach((m) => out.push(Object.assign({ from: '2026-12-01', to: '', batch: 'PCB-20261201', st: '待生效', why: '' }, m)));
+    list.slice(n + inc, n + inc + 3).forEach((m, i) => out.push(Object.assign({ from: p.start, to: dy ? (i === 2 ? '2026-10-09' : '2026-09-30') : i ? '2026-10-31' : '2026-09-30', batch: (dy ? i === 2 : i) ? 'PCB-20261101' : 'PCB-20261001', st: '已失效', why: i === 2 ? '下游退出，名额释放' : '上游替换' }, m)));
+    return out;
+  };
+
+  const C = (id, type, ent, judge, ups, quota, method, status, time) => ({ id, type, ent, judge, ups, quota, method, status, time });
+  const comps = [
+    C('CP-1124-031', '下游断传', '临沂万隆物资有限公司', '连续 10 天无有效上传（阈值 10 天）', 3, 3, '已自动冻结；待确认：免费替换或顺延', '待处理', '2026-11-24 08:00'),
+    C('CP-1124-030', '收紧规则', '宁波广源物资有限公司', '覆盖声明：全量上传 → 部分上传：指定仓库', 9, 9, '已通知上游；是否开放免费替换待判定', '待处理', '2026-11-24 07:45'),
+    C('CP-1123-027', '最小规模', '中洲钢铁集团有限公司的数据池', '池内有效企业 17 家，低于最小规模 20 家', 1, 20, '聚合暂停提供；暂停天数顺延；已通知补足', '处理中', '2026-11-23 08:00'),
+    C('CP-1122-024', '主动暂停', '佛山嘉禾金属材料有限公司', '企业于 2026-11-22 点击暂停，预计 15 天', 7, 7, '已自动冻结；待确认：免费替换或顺延', '待处理', '2026-11-22 16:20'),
+    C('CP-1122-022', '下游断传', '徐州鑫盛钢铁贸易有限公司', '11-22 达到连续 10 天无有效上传（阈值 10 天），至今已 12 天', 4, 4, '已自动冻结；待确认：免费替换或顺延', '待处理', '2026-11-22 08:00'),
+    C('CP-1121-019', '退出', '唐山正阳钢铁有限公司', '已完成退出流程（2026-11-21 生效）', 11, 11, '名额释放；开放免费替换（不占替换额度）', '已处理', '2026-11-21 10:30'),
+    C('CP-1119-011', '主动暂停', '郑州久隆供应链管理有限公司', '企业于 2026-11-19 点击暂停', 2, 2, '冻结；上游已选择免费替换', '已处理', '2026-11-19 11:05'),
+    C('CP-1118-008', '下游断传', '合肥天润实业有限公司', '11-18 达到连续 10 天无有效上传并冻结，11-22 恢复上传（共断传 14 天）', 5, 5, '冻结 4 天后解冻；冻结天数顺延', '已处理', '2026-11-18 08:00'),
+  ];
+
+  STP.mount({
+    data() {
+      return {
+        tab: 'pool', kw: '', onlyLow: false, onlyChange: false, pools,
+        drawer: false, cur: null, verFilter: '', vers: [],
+        comps, compTypes: ['下游断传', '主动暂停', '退出', '收紧规则', '最小规模'], compFilter: '', compDlg: false, curComp: null, cf: { methods: [], notify: ['上游'], note: '' },
+        pre: { done: false, running: false, time: '2026-11-24 08:05（自动）' },
+        failDlg: false, curFail: null,
+        checks: [
+          { k: 'rep', t: '替换比例', rule: '每周期替换数不超过在用名额的 20%；冻结或释放名额的免费替换不计入。', demo: true, ok: 309, bad: 3, fails: [
+            { name: '瀚阳钢铁集团有限公司', why: '在用名额 76，可替换 15 个，已申请替换 18 个，超出 3 个', sent: false },
+            { name: '另有 2 个购买主体（原型略）', why: '替换数超过在用名额的 20%', sent: true }] },
+          { k: 'min', t: '最小池规模', rule: '变更生效后，池内有效企业数不低于 ' + STP.PV.nMin + ' 家。', ok: 310, bad: 2, fails: [
+            { name: '中洲钢铁集团有限公司', why: '生效后有效企业 17 家（3 家冻结，补足申请 3 条尚未提交支付）', sent: true },
+            { name: '另有 1 个购买主体（原型略）', why: '移除 4 家后有效企业 19 家', sent: false }] },
+          { k: 'one', t: '单一生效数据池', rule: '每个购买主体（含关联企业）同一时间只有一个生效数据池。', ok: 312, bad: 0 },
+          { k: 'diff', t: '差集与历史重算条件', rule: '申请“按新成员重算历史”的 14 个主体：新旧成员差集不少于 10 家，且差集整体满足优势度门槛；不符合的按版本化保留历史。', ok: 9, bad: 5, fails: [
+            { name: '云岭钢铁集团有限公司', why: '差集 6 家，少于最小变更批量 10 家：不重算历史，趋势图标注口径变更点', sent: true },
+            { name: '另有 4 个购买主体（原型略）', why: '差集不足 10 家，或差集整体不满足优势度门槛', sent: true }] },
+          { k: 'vis', t: '下游可见性', rule: '新增成员的上架方式允许该上游订阅（“只对指定钢厂可见”的企业仅限被指定的钢厂）；已暂停、退出的企业不可新增。', ok: 4458, bad: 2, fails: [
+            { name: '昆仑钢铁股份有限公司', why: '新增的 2 家企业已于 11-22 暂停上传，不可新增', sent: false }] },
+        ],
+        timeline: [
+          { time: '2026-11-01 00:00', t: '本周期开启', d: 'PCB-20261101 批次生效，开始收集下一周期变更', type: 'success' },
+          { time: '2026-11-24 08:05', t: '每日自动预校验', d: '4,860 条变更，未通过项已通知相关上游', type: 'primary' },
+          { time: '2026-11-28 18:00', t: '变更申请截止', d: '截止后不再接受本周期变更', type: 'info' },
+          { time: '2026-11-30 22:00', t: '终校验并冻结变更集', d: '未通过的变更剔除，生成成员版本', type: 'info' },
+          { time: '2026-12-01 00:00', t: '成员版本切换', d: '新成员集合自 2026-12-01 业务日期起生效', type: 'info' },
+          { time: '2026-12-02 08:00 前', t: '按新成员首次发布', d: '2026-12-01 的数据按新成员聚合并发布（T+1）', type: 'info' },
+        ],
+        batches: [
+          { id: 'PCB-20261101', date: '2026-11-01', subj: 298, chg: '4,412', rej: 37, recalc: 8, done: '2026-11-01 00:06' },
+          { id: 'PCB-20261001', date: '2026-10-01', subj: 276, chg: '3,985', rej: 52, recalc: 6, done: '2026-10-01 00:05' },
+          { id: 'PCB-20260901', date: '2026-09-01', subj: 261, chg: '3,640', rej: 44, recalc: 5, done: '2026-09-01 00:07' },
+        ],
+      };
+    },
+    computed: {
+      poolRows() { return this.pools.filter((p) => (!this.kw || p.name.indexOf(this.kw) >= 0) && (!this.onlyLow || p.eff < STP.PV.nMin) && (!this.onlyChange || p.chg > 0)); },
+      compRows() { return this.comps.filter((c) => !this.compFilter || c.type === this.compFilter); },
+      compTodo() { return this.comps.filter((c) => c.status === '待处理').length; },
+      dist() {
+        const p = this.cur; if (!p) return [];
+        const wait = this.waitOf(p);
+        return [
+          { t: '生效中', n: p.eff, c: '#18a058' }, { t: '冻结', n: p.alloc - p.eff, c: '#f0a020' },
+          { t: '已分配（待生效）', n: wait, c: '#409eff' }, { t: '未分配', n: p.quota - p.alloc - wait, c: '#d5dbe3' },
+        ].filter((d) => d.n > 0);
+      },
+      verRows() { return this.vers.filter((v) => !this.verFilter || v.st === this.verFilter); },
+    },
+    methods: {
+      /* 已分配待生效：新增入池占用的未分配名额（替换不占用）。东岳为新增 14 家，名额包 200 个已全部分配 */
+      waitOf(p) { return p.id === 'U20001' ? 14 : Math.min(3, p.chg, p.quota - p.alloc); },
+      compTag(t) { return { 下游断传: 'danger', 主动暂停: 'warning', 退出: 'info', 收紧规则: 'primary', 最小规模: 'danger' }[t]; },
+      open(row) { this.cur = row; this.vers = members(row); this.verFilter = ''; this.drawer = true; },
+      openComp(row) {
+        this.curComp = row;
+        this.cf = { methods: row.status === '已处理' ? row.method.split(/[；;]/).map((m) => (m.indexOf('替换') >= 0 ? '免费替换' : m.indexOf('顺延') >= 0 ? '顺延' : '冻结')) : ['冻结'], notify: ['上游'], note: '' };
+        this.compDlg = true;
+      },
+      doComp() {
+        this.curComp.method = this.cf.methods.map((m) => (m === '冻结' ? '冻结名额' : m === '顺延' ? '剩余天数顺延' : '开放免费替换（不占替换额度）')).join('；');
+        this.curComp.status = '已处理';
+        this.compDlg = false;
+        this.$demo('补偿已处理，已通知' + (this.cf.notify.join('、') || '相关方') + '，处理记录已留痕');
+      },
+      runPre() {
+        this.pre.running = true;
+        setTimeout(() => { this.pre.running = false; this.pre.done = true; this.pre.time = '2026-11-24 14:20（手动，林若彤）'; this.$demo('预校验完成，未通过项已更新到校验表'); }, 900);
+      },
+      openFail(c) { this.curFail = c; this.failDlg = true; },
+    },
+  });
+})();
+</script>
+</body>
+</html>

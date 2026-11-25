@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>数据使用透明账本 · 下游钢贸端 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.sec-nav { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.sec-nav a { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--stp-border); border-radius: 16px; background: #fff; font-size: 13px; color: #3d4b5c; text-decoration: none; }
+.sec-nav a:hover { border-color: #a8d2ff; color: var(--el-color-primary); }
+.sec-nav a i { font-style: normal; width: 18px; height: 18px; border-radius: 50%; background: #eef4fb; color: #2b5d9b; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; }
+.sec-no { display: inline-flex; width: 22px; height: 22px; border-radius: 50%; background: var(--el-color-primary); color: #fff; font-size: 13px; align-items: center; justify-content: center; margin-right: 8px; font-weight: 600; }
+.big-sub { display: flex; align-items: baseline; gap: 8px; }
+.big-sub b { font-size: 44px; line-height: 1; font-weight: 600; }
+.demo-param { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 11px; line-height: 18px; background: #fff8eb; color: #9a6400; border: 1px solid #f3dfb8; font-weight: 400; }
+.rule-table td, .rule-table th { padding: 7px 10px; }
+.rule-table td.v { font-weight: 600; white-space: nowrap; }
+.preview { border: 1px solid #d9e7fb; border-radius: 8px; background: #fbfdff; padding: 14px; }
+.preview-bar { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #6b7787; margin-bottom: 10px; }
+.preview-bar .tagx { padding: 1px 8px; border-radius: 10px; background: #eef4fb; color: #2b5d9b; }
+.note-list { margin: 0; padding: 0; list-style: none; font-size: 13px; line-height: 1.7; }
+.note-list li { display: flex; gap: 8px; padding: 5px 0; }
+.note-list li i { font-style: normal; flex: 0 0 18px; height: 18px; border-radius: 50%; background: #409eff; color: #fff; font-size: 11px; display: inline-flex; align-items: center; justify-content: center; margin-top: 2px; }
+.see-list { margin: 0; padding: 0; list-style: none; font-size: 13px; line-height: 1.7; }
+.see-list li { display: flex; gap: 8px; padding: 4px 0; align-items: flex-start; }
+.see-list li .el-icon { margin-top: 4px; flex-shrink: 0; }
+.see-list.no .el-icon { color: #e5484d; } .see-list.yes .el-icon { color: #18a058; }
+.cert { border: 1px solid var(--stp-border); border-radius: 6px; padding: 14px; background: #fff; }
+.cert h4 { margin: 0 0 8px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.cert h4 .el-icon { color: var(--el-color-primary); font-size: 18px; }
+.doc-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px dashed var(--stp-border); font-size: 13px; }
+.doc-row:last-child { border-bottom: none; }
+.doc-row .meta { color: var(--stp-sub); font-size: 12px; }
+.doc-row a { margin-left: auto; white-space: nowrap; }
+.el-descriptions__label { white-space: nowrap; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="downstream" active="ledger" title="数据使用透明账本"
+  desc="数据安全中心：你的数据被多少家钢厂订阅、钢厂能看到什么、看不到什么、平台人员什么时候经你授权看过明细，都在这里公开。">
+  <template #actions>
+    <el-button @click="$go('visibility.html')"><el-icon><View /></el-icon>名称可见性设置</el-button>
+    <el-button type="danger" plain @click="$go('pause-exit.html')"><el-icon><SwitchButton /></el-icon>暂停与退出</el-button>
+  </template>
+
+  <div class="grid c4">
+    <stat-card label="当前订阅本企业的钢厂" :value="23" unit="家" icon="OfficeBuilding" tip="按已确认规则，只显示订阅的钢厂家数，不显示钢厂名称，也不按钢厂拆分"><span>较上月 <b class="up">+2</b> 家</span><span>只显示家数</span></stat-card>
+    <div class="stat">
+      <div class="label">披露门槛</div>
+      <div class="value num">k = {{ $PV.k }}<span class="unit">每个数至少 {{ $PV.k }} 家企业</span></div>
+      <div class="foot"><span>最小数据池 {{ $PV.nMin }} 家</span><span>优势度 {{ $PV.dom1 }}% / {{ $PV.dom2 }}%</span></div>
+      <div class="ico"><el-icon><Lock /></el-icon></div>
+    </div>
+    <div class="stat">
+      <div class="label">平台人员查看本企业明细</div>
+      <div class="value num">{{ doneCount }}<span class="unit">次（近 12 个月）</span></div>
+      <div class="foot"><span>全部经你授权、限时、留痕</span><b v-if="pendingCount" style="color:#d48806">{{ pendingCount }} 条待你授权</b></div>
+      <div class="ico" style="background:#fff8eb;color:#d48806"><el-icon><Key /></el-icon></div>
+    </div>
+    <div class="stat">
+      <div class="label">上传状态</div>
+      <div class="value" style="font-size:20px;padding:5px 0 0"><span class="dot ok"></span>正常上传中</div>
+      <div class="foot"><span>可随时暂停或退出</span><a href="pause-exit.html">暂停与退出 ›</a></div>
+      <div class="ico" style="background:#e8f7ef;color:#18a058"><el-icon><SwitchButton /></el-icon></div>
+    </div>
+  </div>
+
+  <div class="sec-nav">
+    <a v-for="(s, i) in secs" :key="s" href="javascript:;" @click="jump(i)"><i>{{ i + 1 }}</i>{{ s }}</a>
+  </div>
+
+  <!-- 1 被订阅情况 -->
+  <div class="card" id="sec0">
+    <div class="card-title"><span><span class="sec-no">1</span>被订阅情况<small>只显示订阅的钢厂家数，不显示钢厂名称，也不按钢厂拆分</small></span></div>
+    <div class="grid c-3-2" style="margin-bottom:0">
+      <div>
+        <div class="row between">
+          <div class="big-sub"><b class="num">23</b><span>家钢厂正在订阅本企业的数据</span></div>
+          <span class="small muted">近 12 个月订阅家数（月末）</span>
+        </div>
+        <ve-chart :option="subChart" height="250px"></ve-chart>
+        <div class="tip-box blue small">
+          订阅是指钢厂把本企业选入它的数据池。被订阅后，你的数据与池内其他企业的数据<b>加总</b>后才展示给该钢厂；钢厂的数据池不少于 {{ $PV.nMin }} 家企业。订阅家数同时是 <a href="revenue.html">收益分成</a> 的计提依据。
+        </div>
+      </div>
+      <div>
+        <div class="small muted mb8">订阅变化记录</div>
+        <table class="plain-table rule-table">
+          <thead><tr><th>日期</th><th>事件</th><th class="r">变化数</th><th class="r">变化后家数</th></tr></thead>
+          <tbody>
+            <tr v-for="c in changes" :key="c.d + c.e">
+              <td class="num nowrap">{{ c.d }}</td>
+              <td><el-tag size="small" effect="plain" :type="c.e==='新增订阅' ? 'success' : c.e==='到期未续' ? 'info' : 'primary'">{{ c.e }}</el-tag></td>
+              <td class="r num"><b :class="c.n > 0 ? 'up' : c.n < 0 ? 'down' : ''">{{ c.t }}</b></td>
+              <td class="r num">{{ c.a }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="small muted mt8" style="line-height:1.7">新增订阅：有钢厂新购名额并选入本企业。到期未续：订阅期满未续费。数据池周期调整：钢厂每自然月可调整一次数据池，下一周期生效。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2 披露规则公示 -->
+  <div class="card" id="sec1">
+    <div class="card-title">
+      <span><span class="sec-no">2</span>披露规则公示<small>当前生效的参数，对所有钢厂一视同仁</small></span>
+      <span class="right"><span class="demo-param">示例参数（建议默认值），待业务方确定</span><span class="small muted">现行版本自 2026-07-01 起生效</span></span>
+    </div>
+    <div class="grid c2" style="margin-bottom:12px">
+      <div>
+        <div class="small muted mb8">销量与库存</div>
+        <table class="plain-table rule-table">
+          <thead><tr><th>参数</th><th>当前值</th><th>对你意味着什么</th></tr></thead>
+          <tbody>
+            <tr><td>最小数据池规模</td><td class="v">{{ $PV.nMin }} 家</td><td>钢厂的数据池少于 {{ $PV.nMin }} 家企业时，不提供任何聚合数值</td></tr>
+            <tr><td>最小贡献企业数 k</td><td class="v">{{ $PV.k }} 家</td><td>钢厂看到的每个数至少由 {{ $PV.k }} 家企业的数据加总而成，否则屏蔽</td></tr>
+            <tr><td>优势度</td><td class="v">{{ $PV.dom1 }}% / {{ $PV.dom2 }}%</td><td>最大一家占比超过 {{ $PV.dom1 }}%，或前两家合计超过 {{ $PV.dom2 }}% 时同样屏蔽</td></tr>
+            <tr><td>企业数展示</td><td class="v">只给区间</td><td>{{ $PV.bands.join('、') }} 家，钢厂看不到精确家数</td></tr>
+            <tr><td>吨位修约</td><td class="v">取整到 {{ $PV.roundTon }} 吨</td><td>降低用多次查询做精确差分的可能</td></tr>
+            <tr><td>最细粒度</td><td class="v">地级市、日</td><td>不提供区县、仓库、单据级别的数据</td></tr>
+            <tr><td>数据时效</td><td class="v">T+1</td><td>当天的数据次日 8:00 前才发布</td></tr>
+            <tr><td>数据池变更</td><td class="v">每月 1 次</td><td>下一周期生效，每次替换不超过 20%，防止靠频繁换企业做差分</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div>
+        <div class="small muted mb8">价格类（门槛比销量、库存更严）</div>
+        <table class="plain-table rule-table">
+          <thead><tr><th>参数</th><th>当前值</th><th>对你意味着什么</th></tr></thead>
+          <tbody>
+            <tr><td class="nowrap">最小有价企业数 k<sub>价</sub></td><td class="v">{{ $PV.kPrice }} 家</td><td>一个均价至少由 {{ $PV.kPrice }} 家上传了价格的企业构成</td></tr>
+            <tr><td>价格优势度</td><td class="v">{{ $PV.dom1 }}% / {{ $PV.dom2 }}%</td><td>按有价销量计算，单家或前两家占比过高时屏蔽</td></tr>
+            <tr><td>“其他品牌”构成</td><td class="v">至少 {{ $PV.otherBrands }} 个</td><td>且单一品牌不超过 50%，避免合并价实为某一家竞品的价格</td></tr>
+            <tr><td>均价修约</td><td class="v">取整到 {{ $PV.roundPrice }} 元/吨</td><td>只展示加权均价，不展示任何单笔成交价</td></tr>
+            <tr><td>价格覆盖率</td><td class="v">只给区间</td><td>{{ $PV.coverBands.join('、') }}；不披露有价销量与金额合计</td></tr>
+            <tr><td>价格粒度与时效</td><td class="v">日、T+1</td><td>不早于、不细于销量与库存的发布</td></tr>
+            <tr><td>量价联动</td><td class="v">量屏蔽则价屏蔽</td><td>销量被屏蔽的单元格，价格一并屏蔽</td></tr>
+          </tbody>
+        </table>
+        <div class="tip-box green small mt12">价格上传由你自愿开启，默认关闭。未开启时，你的数据不进入任何价格指标。</div>
+      </div>
+    </div>
+    <el-alert type="info" show-icon :closable="false" style="margin-bottom:0">
+      <template #title><b>参数调整前会通知全部下游企业</b>：通过站内信和短信提前公示调整内容与生效日期；你可以在生效前收紧上传规则、暂停或退出。现行参数上线以来未调整。</template>
+    </el-alert>
+  </div>
+
+  <!-- 3 上游视角预览 -->
+  <div class="card" id="sec2">
+    <div class="card-title">
+      <span><span class="sec-no">3</span>上游视角预览：钢厂能看到什么<small>以下为示例数据，用来说明展示形态，不是任何钢厂的真实页面</small></span>
+    </div>
+    <div class="grid c-3-2">
+      <div class="preview">
+        <div class="preview-bar"><el-icon><Monitor /></el-icon>钢厂看到的页面（示例）<span class="tagx">近 7 日</span><span class="tagx">江苏省 · 按地级市</span><span class="tagx">建筑钢材</span><span class="tagx">数据池 186 家</span></div>
+        <table class="plain-table">
+          <thead><tr><th>仓库所在地</th><th class="r">销量(吨)</th><th class="c">销量贡献企业数</th><th class="r">期末库存(吨)</th><th class="c">库存贡献企业数</th><th class="r">可销天数</th></tr></thead>
+          <tbody>
+            <tr v-for="r in sample" :key="r.name" :class="{merged: r.merged}">
+              <td class="nowrap"><template v-if="r.merged">其他<span class="merged-row-tag">合并披露</span></template><template v-else>{{ r.name }}</template></td>
+              <td class="r"><v-num :v="r.sales"></v-num></td>
+              <td class="c"><contrib-tag :band="r.nb"></contrib-tag></td>
+              <td class="r"><v-num :v="r.stock"></v-num></td>
+              <td class="c"><contrib-tag v-if="r.stock !== null" :band="r.sb"></contrib-tag><mask-cell v-else></mask-cell></td>
+              <td class="r"><v-num :v="r.days" :d="1" tip="分子或分母被屏蔽，比率类指标同步屏蔽"></v-num></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="small muted mt8"><span class="mask-cell" style="min-width:30px;height:18px">—</span> 表示样本不足，不予披露。钢厂页面不提供“企业”维度，也不能按企业筛选或排除。</div>
+      </div>
+      <div>
+        <div class="small muted mb8">这张表说明了什么</div>
+        <ul class="note-list">
+          <li><i>1</i><span><b>只有加总后的数。</b>每个数值都是多家企业合计、并取整到 1 吨的结果，没有哪一行、哪一列对应某一家企业。</span></li>
+          <li><i>2</i><span><b>企业数只给区间。</b>钢厂知道“这个数来自 5–9 家”，不知道具体是几家、是哪几家。</span></li>
+          <li><i>3</i><span><b>样本不足就屏蔽。</b>贡献企业少于 {{ $PV.k }} 家或某一家占比过高时显示“—”，并且不说明是哪种原因。</span></li>
+          <li><i>4</i><span><b>合并披露防倒推。</b>样本不足的城市与最小的可见城市合并成“其他”一行，钢厂无法用合计减去其余各行算出被屏蔽的数。</span></li>
+          <li><i>5</i><span><b>品牌只分“本厂”与“其他品牌”。</b>钢厂只能看到自己品牌的数，其余品牌合并展示。</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="grid c-3-2">
+      <div class="preview">
+        <div class="preview-bar"><el-icon><Monitor /></el-icon>钢厂看到的价格（示例）<span class="tagx">近 7 日</span><span class="tagx">螺纹钢 HRB400E</span><span class="tagx">含税 · 自提 · 非暂估</span></div>
+        <table class="plain-table">
+          <thead><tr><th>仓库所在地</th><th class="r">加权均价(元/吨)</th><th class="r">较上周</th><th class="c">价格覆盖率</th><th class="c">有价企业数</th></tr></thead>
+          <tbody>
+            <tr v-for="r in priceSample" :key="r.name">
+              <td>{{ r.name }}</td>
+              <td class="r"><v-num :v="r.price" tip="上传价格的企业样本不足，不予披露"></v-num></td>
+              <td class="r"><template v-if="r.price !== null"><v-num :v="r.d" signed></v-num> <span class="small muted">（{{ $pct(r.p) }}）</span></template><mask-cell v-else></mask-cell></td>
+              <td class="c"><cover-tag v-if="r.price !== null" :band="r.cb"></cover-tag><mask-cell v-else></mask-cell></td>
+              <td class="c"><contrib-tag v-if="r.price !== null" :band="r.nb"></contrib-tag><mask-cell v-else></mask-cell></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="small muted mt8">样本成交均价，不是市场报价。钢厂页面上<b>没有</b>销售金额合计、有价样本销量、最高价、最低价和价格分布。</div>
+      </div>
+      <div>
+        <div class="small muted mb8">价格的保护比销量、库存更严</div>
+        <ul class="note-list">
+          <li><i>1</i><span>只出现<b>加权均价、涨跌、价格覆盖率区间、有价企业数区间</b>四项，均价取整到 {{ $PV.roundPrice }} 元/吨。</span></li>
+          <li><i>2</i><span>有价企业少于 {{ $PV.kPrice }} 家即屏蔽；销量被屏蔽的地方，价格一并屏蔽。</span></li>
+          <li><i>3</i><span>只统计自愿上传价格、且同意参与披露的企业。</span></li>
+        </ul>
+        <div class="tip-box small mt8" :class="$state.gate==='open' ? 'green' : 'orange'">
+          上游价格功能受<b>平台法务闸口</b>控制，取得法务书面意见后才由平台开放。当前状态：<b>{{ $state.gate==='open' ? '已开放' : '未开放，钢厂侧没有任何价格入口' }}</b>。
+        </div>
+        <div class="tip-box small mt8">本企业价格上传：<b>{{ $state.dnPrice==='on' ? '已开启，范围内的成交价只以上述聚合形式参与' : '未开启，你的数据不进入任何价格指标' }}</b>。<a href="upload-settings.html">上传设置 ›</a></div>
+      </div>
+    </div>
+
+    <div class="grid c2" style="margin-bottom:0">
+      <div class="cert" style="border-color:#f3c9ca;background:#fffafa">
+        <h4><el-icon style="color:#e5484d"><Hide /></el-icon>钢厂看不到的</h4>
+        <ul class="see-list no">
+          <li v-for="t in cannot" :key="t"><el-icon><CircleClose /></el-icon><span v-html="t"></span></li>
+        </ul>
+      </div>
+      <div class="cert" style="border-color:#cfe9da;background:#fafdfb">
+        <h4><el-icon style="color:#18a058"><View /></el-icon>钢厂能看到的（仅限你自主申报的企业画像）</h4>
+        <ul class="see-list yes">
+          <li v-for="t in can" :key="t"><el-icon><CircleCheck /></el-icon><span>{{ t }}</span></li>
+        </ul>
+        <div class="small muted mt8">画像由你申报并确认后才展示，修改需重新确认。<a href="visibility.html">去名称可见性设置 ›</a></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4 平台访问记录 -->
+  <div class="card" id="sec3">
+    <div class="card-title">
+      <span><span class="sec-no">4</span>平台访问记录<small>平台人员经你授权查看本企业明细的每一次记录</small></span>
+      <span class="right small muted"><el-icon style="vertical-align:-2px"><Lock /></el-icon> 平台人员默认不可查看本企业明细</span>
+    </div>
+    <el-table :data="tickets" border size="small">
+      <el-table-column label="工单号 / 申请时间" width="164"><template #default="{row}"><div class="num">{{ row.no }}</div><div class="small muted">{{ row.at }}</div></template></el-table-column>
+      <el-table-column label="人员角色" width="124"><template #default="{row}"><div>{{ row.role }}</div><div class="small muted">{{ row.who }}</div></template></el-table-column>
+      <el-table-column prop="why" label="事由" min-width="190" />
+      <el-table-column label="授权人" width="84"><template #default="{row}"><span v-if="row.by">{{ row.by }}</span><span v-else class="muted">—</span></template></el-table-column>
+      <el-table-column label="时限" width="170"><template #default="{row}"><div>{{ row.limit }}</div><div class="small muted">{{ row.used }}</div></template></el-table-column>
+      <el-table-column prop="scope" label="查看范围" min-width="230" />
+      <el-table-column label="状态 / 操作" width="150">
+        <template #default="{row}">
+          <template v-if="row.st==='pending'">
+            <el-button size="small" type="primary" @click="openAuth(row)">授权</el-button>
+            <el-button size="small" @click="reject(row)">拒绝</el-button>
+          </template>
+          <template v-else-if="row.st==='active'">
+            <el-tag size="small" type="warning">查看中</el-tag>
+            <a href="javascript:;" class="small" style="margin-left:8px" @click="revoke(row)">提前收回</a>
+          </template>
+          <el-tag v-else-if="row.st==='rejected'" size="small" type="info">已拒绝</el-tag>
+          <el-tag v-else size="small" type="success" effect="plain">已结束，权限已收回</el-tag>
+        </template>
+      </el-table-column>
+    </el-table>
+    <div class="tip-box small mt12">
+      平台人员需要查看明细时，必须发起明细访问工单，写明事由、范围和时长，<b>由你授权后才能限时查看</b>，到期自动收回。查看含价格与金额的明细须单独申请。每次查看写入不可篡改的审计日志。上游查询服务没有明细层的访问权限，钢厂不存在申请查看明细的途径。
+    </div>
+  </div>
+
+  <!-- 5 安全资质与协议 -->
+  <div class="card" id="sec4">
+    <div class="card-title"><span><span class="sec-no">5</span>安全资质与协议</span></div>
+    <div class="grid c3" style="margin-bottom:0">
+      <div class="cert">
+        <h4><el-icon><Medal /></el-icon>等级保护备案</h4>
+        <dl class="kv" style="grid-template-columns:84px 1fr">
+          <dt>备案等级</dt><dd>网络安全等级保护第三级</dd>
+          <dt>备案主体</dt><dd>货袋子平台运营主体</dd>
+          <dt>最近测评</dt><dd>2026 年 6 月，已通过</dd>
+          <dt>备案证明</dt><dd><a href="javascript:;" @click="$info('原型演示：此处展示备案证明扫描件')">查看</a></dd>
+        </dl>
+        <div class="small muted mt8"><span class="demo-param">示例</span> 以货袋子平台实际备案信息为准。</div>
+      </div>
+      <div class="cert">
+        <h4><el-icon><Lock /></el-icon>加密与审计措施</h4>
+        <ul class="see-list yes">
+          <li v-for="t in measures" :key="t"><el-icon><CircleCheck /></el-icon><span>{{ t }}</span></li>
+        </ul>
+      </div>
+      <div class="cert">
+        <h4><el-icon><Document /></el-icon>协议文本</h4>
+        <div class="doc-row" v-for="d in docs" :key="d.k">
+          <div><div>{{ d.t }}</div><div class="meta">{{ d.k==='price' ? ($state.dnPrice==='on' ? '已确认（开启价格上传时）' : '未签署，开启价格上传时确认') : d.m }}</div></div>
+          <a href="javascript:;" @click="openDoc(d)">查看摘要</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="border-color:#f3dfb8;background:#fffdf8">
+    <div class="row between">
+      <div>
+        <div style="font-size:15px;font-weight:600;margin-bottom:4px">不想继续提供数据？随时可以暂停或退出</div>
+        <div class="small muted">可一键暂停上传，已上传数据保留；也可申请退出，平台停止对外提供并按协议删除明细数据。还可以只收紧上传规则、改为匿名上架。</div>
+      </div>
+      <el-button type="danger" plain @click="$go('pause-exit.html')">前往暂停与退出<el-icon class="el-icon--right"><ArrowRight /></el-icon></el-button>
+    </div>
+  </div>
+
+  <!-- 授权弹窗 -->
+  <el-dialog v-model="authDlg" title="授权平台人员查看明细" width="600px">
+    <template v-if="cur">
+      <el-descriptions :column="1" border size="small">
+        <el-descriptions-item label="工单号">{{ cur.no }}</el-descriptions-item>
+        <el-descriptions-item label="申请人">{{ cur.role }} · {{ cur.who }}</el-descriptions-item>
+        <el-descriptions-item label="事由">{{ cur.why }}</el-descriptions-item>
+        <el-descriptions-item label="查看范围">{{ cur.scope }}</el-descriptions-item>
+      </el-descriptions>
+      <el-form label-width="96px" class="mt16">
+        <el-form-item label="授权时限">
+          <el-radio-group v-model="auth.hours"><el-radio-button :value="1">1 小时</el-radio-button><el-radio-button :value="2">2 小时</el-radio-button><el-radio-button :value="4">4 小时</el-radio-button></el-radio-group>
+          <span class="small muted" style="margin-left:10px">到期自动收回，可提前收回</span>
+        </el-form-item>
+        <el-form-item v-if="$state.dnPrice==='on'" label="价格与金额">
+          <el-radio-group v-model="auth.price"><el-radio :value="false">不含价格与金额（默认）</el-radio><el-radio :value="true" disabled>包含（本工单未申请）</el-radio></el-radio-group>
+        </el-form-item>
+        <el-form-item label="通知"><el-checkbox v-model="auth.notify">查看开始和结束时通知我（站内信、短信）</el-checkbox></el-form-item>
+      </el-form>
+      <div class="tip-box orange small">授权后，该人员只能在上述范围和时限内<b>在线查看</b>，不能导出、不能复制到平台之外；查看行为逐条写入审计日志，并出现在本页的访问记录中。你也可以拒绝，改为自行在“已上传数据自查”中核对。</div>
+    </template>
+    <template #footer>
+      <el-button @click="authDlg = false">取消</el-button>
+      <el-button @click="authDlg = false; reject(cur)">拒绝</el-button>
+      <el-button type="primary" @click="doAuth">确认授权</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 协议摘要 -->
+  <el-dialog v-model="docDlg" :title="doc.t + ' · 摘要'" width="620px">
+    <div class="small muted mb12">{{ doc.k==='price' ? ($state.dnPrice==='on' ? '已确认（开启价格上传时）' : '未签署，开启价格上传时确认') : doc.m }}</div>
+    <table class="plain-table rule-table">
+      <tbody>
+        <tr v-for="r in doc.rows" :key="r[0]"><th style="width:110px">{{ r[0] }}</th><td style="line-height:1.7">{{ r[1] }}</td></tr>
+      </tbody>
+    </table>
+    <div class="tip-box small mt12">以上为便于阅读的摘要，不替代协议正文；条款内容需法务确认。</div>
+    <template #footer>
+      <el-button @click="$demo('协议全文 PDF 已生成')"><el-icon><Download /></el-icon>下载全文</el-button>
+      <el-button type="primary" @click="docDlg = false">关闭</el-button>
+    </template>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const MONTHS = ['2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11'];
+  const SUBS = [19, 20, 20, 21, 21, 22, 22, 22, 22, 23, 21, 23];
+  const DOCS = [
+    { k: 'auth', t: '《数据授权协议》', m: '已签署 · 2025-09-19 · 现行版本 V2.1', rows: [
+      ['数据权属', '上传数据的权属归本企业。平台不取得数据所有权。'],
+      ['授权范围', '授权平台对数据进行加工，并仅以聚合形态向已订阅的钢厂提供；不提供单家企业的任何数值、单据或明细。'],
+      ['披露规则', '聚合披露须满足公示的最小数据池规模、最小贡献企业数与优势度门槛；参数调整前通知全部下游企业。'],
+      ['保密义务', '平台对明细数据承担保密义务；平台人员查看明细须经本企业授权，限时并留痕。'],
+      ['撤回权利', '可随时暂停上传或申请退出。退出后停止对外提供，并按约定时限删除明细数据；已生成并已披露的历史聚合结果不回溯修改。'],
+      ['授权期限', '自签署之日起至退出完成之日止。']] },
+    { k: 'price', t: '《价格数据授权条款》', m: '', rows: [
+      ['自愿原则', '价格上传默认关闭，由企业管理员主动开启；可限定品类、品牌、仓库范围；可随时关闭并清除已上传的价格与金额。'],
+      ['采集范围', '只采集销售成交的单价与金额；不采集成本、毛利、库存金额和报价。'],
+      ['披露形式', '只以加权均价、涨跌、价格覆盖率区间、有价企业数区间的形式披露，且适用更严的披露门槛。'],
+      ['用途选择', '可选择价格“参与对上游的聚合披露”或“仅用于本企业自查与行业对标”。'],
+      ['开放条件', '上游价格功能受平台法务闸口控制，开放前不向任何钢厂提供价格指标。']] },
+    { k: 'share', t: '《收益分成条款》', m: '随《数据授权协议》V2.1 确认 · 2026-07-01', rows: [
+      ['分成对象', '已上架、被至少一家钢厂订阅、且当期满足资格门槛的企业。'],
+      ['计提与结算', '按名额日台账逐日计提，按月出具结算单；企业确认并开票后，平台对公付款到与认证主体同名的账户。'],
+      ['不计提情形', '名额冻结（暂停或断传）期间、不满足资格门槛的期间、关联方订阅。'],
+      ['冻结与追回', '涉嫌数据造假时可冻结待付金额；查实后可追回已付分成。企业可申诉。'],
+      ['参数', '分成比例、系数、门槛、起付金额等以平台公示的现行规则为准，调整提前通知。']] },
+    { k: 'up', t: '上游《数据服务协议》使用限制（公示）', m: '钢厂订阅时签署，这里公示与你有关的条款', rows: [
+      ['禁止再识别', '不得通过任何方式推算、还原单家企业的数据；违约可终止服务并追责。'],
+      ['禁止转售', '聚合数据仅限钢厂内部使用，不得转售或对外传播。'],
+      ['导出留痕', '导出文件带水印与文件指纹，可溯源；导出内容与页面一致，同样屏蔽、合并与修约。'],
+      ['价格使用限制', '不得用于与其他经营者协同定价，不得用于对经销商实施转售价格限制。']] },
+  ];
+
+  STP.mount({
+    data() {
+      return {
+        secs: ['被订阅情况', '披露规则公示', '上游视角预览', '平台访问记录', '安全资质与协议'],
+        changes: [
+          { d: '2026-11-01', e: '新增订阅', n: 2, t: '+2', a: 23 },
+          { d: '2026-10-29', e: '到期未续', n: -1, t: '−1', a: 21 },
+          { d: '2026-10-22', e: '到期未续', n: -1, t: '−1', a: 22 },
+          { d: '2026-09-16', e: '新增订阅', n: 1, t: '+1', a: 23 },
+          { d: '2026-08-01', e: '数据池周期调整', n: 0, t: '换入 1 · 换出 1', a: 22 },
+          { d: '2026-05-07', e: '新增订阅', n: 1, t: '+1', a: 22 },
+          { d: '2026-03-12', e: '新增订阅', n: 1, t: '+1', a: 21 },
+          { d: '2026-01-09', e: '新增订阅', n: 1, t: '+1', a: 20 },
+          { d: '2025-12-14', e: '新增订阅', n: 1, t: '+1', a: 19 },
+          { d: '2025-12-01', e: '数据池周期调整', n: 2, t: '+2', a: 18 }],
+        sample: [
+          { name: '苏州市', sales: 29526, nb: '20–49', stock: 58640, sb: '20–49', days: 13.9 },
+          { name: '无锡市', sales: 24542, nb: '10–19', stock: 47920, sb: '10–19', days: 13.7 },
+          { name: '南京市', sales: 19810, nb: '10–19', stock: 41350, sb: '10–19', days: 14.6 },
+          { name: '常州市', sales: 13524, nb: '5–9', stock: null, sb: null, days: null },
+          { name: '南通市', sales: 9842, nb: '5–9', stock: null, sb: null, days: null },
+          { name: '其他', merged: true, sales: 8176, nb: '5–9', stock: 16480, sb: '5–9', days: 14.1 }],
+        priceSample: [
+          { name: '苏州市', price: 3420, d: 10, p: 0.3, cb: '30%–60%', nb: '10–19' },
+          { name: '无锡市', price: 3410, d: -10, p: -0.3, cb: '高于 60%', nb: '10–19' },
+          { name: '南京市', price: 3440, d: 20, p: 0.6, cb: '30%–60%', nb: '5–9' },
+          { name: '常州市', price: null }, { name: '南通市', price: null }],
+        cannot: [
+          '<b>单家企业的任何数值</b>：销量、库存、价格、金额，一概没有',
+          '<b>任何单据</b>：单据号、单据行、汇总记录都不出平台明细层',
+          '<b>企业与数值的对应关系</b>：哪家贡献了多少、某个数里有没有你',
+          '<b>你的上传粒度</b>：行级还是日汇总，不是上游的维度或筛选条件',
+          '<b>你每天是否上传</b>、上传了多少条、是否暂停过',
+          '<b>你的上传条件规则内容</b>，以及接口本就不采集的客户名称、业务员、成本、毛利',
+          '<b>画像之外的任何信息</b>：除“是否提供价格数据”等你自主申报的画像项外，没有其他信息'],
+        can: ['企业名称或匿名编号（当前：实名上架，匿名编号 华东·建材·A0321）', '所在省市：江苏省苏州市', '主营大类：建筑钢材、热轧板卷', '规模档（自主申报的区间）：50–100 万吨', '覆盖声明、是否提供价格数据', '接入时长、质量评级、近 3 个月活跃等级、名额状态'],
+        measures: ['传输全程加密（TLS 1.2 及以上），接口签名、防重放', '明细数据存储加密，价格与金额列单独加密', '上游查询服务没有明细层权限，只能访问聚合结果', '平台人员查看明细须经企业授权，限时、留痕', '审计日志不可篡改，业务审计日志保留 3 年', '上游导出带水印与文件指纹，可溯源', '开发、测试环境不使用真实企业数据'],
+        docs: DOCS, doc: DOCS[0], docDlg: false,
+        tickets: [
+          { no: 'WO-20261124-002', at: '2026-11-24 10:12', role: '数据质量专员', who: '孙雅婷', why: '协助排查 SRC-WX 在 2026-11-23 的对账差异（平台比申报少 1 条、3.220 吨）', by: '', limit: '申请 2 小时', used: '待你授权', scope: 'SRC-WX · 2026-11-23 销售日汇总记录（45 条），不含价格与金额', st: 'pending' },
+          { no: 'WO-20261118-002', at: '2026-11-18 09:20', role: '数据质量专员', who: '孙雅婷', why: '你方申诉 SRC-WX 2026-11-17 日汇总批次的库存校验失败，协助核对', by: '陈海峰', limit: '4 小时', used: '实际查看 21 分钟，到期收回', scope: 'SRC-WX · 2026-11-17 批次的校验失败行（6 行）与同批次库存汇总记录（40 条），不含价格与金额', st: 'done' },
+          { no: 'WO-20261016-003', at: '2026-10-16 14:05', role: '主数据管理员', who: '赵启明', why: '协助处理待映射物料：规格文本解析异常', by: '陈海峰', limit: '2 小时', used: '实际查看 26 分钟，到期收回', scope: 'SRC-HQ · 2026-10-12 至 10-15 的待映射行（37 行），仅品名、材质、规格、钢厂原文，不含重量', st: 'done' },
+          { no: 'WO-20260811-001', at: '2026-08-11 09:20', role: '数据质量专员', who: '孙雅婷', why: '暂停恢复后补传的数据触发突变隔离，协助确认', by: '陈海峰', limit: '4 小时', used: '实际查看 1 小时 12 分，提前收回', scope: 'SRC-HQ · 2026-08-09 至 08-10 的隔离行（14 行），不含价格与金额', st: 'done' }],
+        authDlg: false, cur: null, auth: { hours: 2, price: false, notify: true },
+      };
+    },
+    computed: {
+      pendingCount() { return this.tickets.filter((t) => t.st === 'pending').length; },
+      doneCount() { return this.tickets.filter((t) => t.st === 'done' || t.st === 'active').length; },
+      subChart() {
+        const o = STP.chart.line({ x: MONTHS, series: [{ name: '订阅家数', data: SUBS, step: 'end', showSymbol: true, label: { show: true, color: '#4a5568', fontSize: 11 } }], unit: '家', area: true, legend: false, smooth: false, grid: { top: 24, right: 28 } });
+        o.yAxis[0].scale = false; o.yAxis[0].min = 0; o.yAxis[0].max = 30; o.yAxis[0].interval = 10;
+        return o;
+      },
+    },
+    methods: {
+      jump(i) { const el = document.getElementById('sec' + i); if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 68, behavior: 'smooth' }); },
+      openAuth(row) { this.cur = row; this.auth = { hours: 2, price: false, notify: true }; this.authDlg = true; },
+      doAuth() {
+        const r = this.cur;
+        r.st = 'active'; r.by = '陈海峰'; r.limit = this.auth.hours + ' 小时'; r.used = '2026-11-24 14:20 起，到期自动收回';
+        this.authDlg = false;
+        this.$demo('已授权 ' + r.who + ' 在 ' + this.auth.hours + ' 小时内查看指定范围的明细');
+      },
+      reject(row) { row.st = 'rejected'; row.by = '陈海峰'; row.used = '已拒绝，平台人员无法查看'; this.$demo('已拒绝该访问申请'); },
+      revoke(row) { row.st = 'done'; row.used = '实际查看 0 分钟，已提前收回'; this.$demo('已提前收回查看权限'); },
+      openDoc(d) { this.doc = d; this.docDlg = true; },
+    },
+  });
+})();
+</script>
+</body>
+</html>

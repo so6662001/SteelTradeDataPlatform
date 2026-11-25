@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>上传条件规则 · 下游钢贸端 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.src-pick { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; flex: 1; max-width: 640px; }
+.src-pick .option-card { padding: 10px 14px; }
+.src-pick .option-card b { font-size: 14px; }
+.src-pick .option-card > span { display: block; font-size: 12px; color: var(--stp-sub); margin-top: 2px; }
+.ver-box { margin-left: auto; text-align: right; font-size: 13px; line-height: 1.8; }
+.ver-box .v { font-size: 20px; font-weight: 600; color: #18a058; }
+.natural-rule { flex-wrap: nowrap; align-items: flex-start; }
+.natural-rule .body { display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; flex: 1; min-width: 0; line-height: 24px; }
+.natural-rule .pre { font-weight: 600; min-width: 56px; }
+.natural-rule .pre.ex { color: #b83a3e; }
+.natural-rule .side { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.natural-rule.added { border-color: #9cc5f7; background: #f7fbff; }
+.exec-tag { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-radius: 11px; font-size: 12px; white-space: nowrap; cursor: help; }
+.exec-tag.both { background: #f0faf4; color: #1b7a47; border: 1px solid #cfe9da; }
+.exec-tag.erp { background: #fff8eb; color: #9a6400; border: 1px solid #f3dfb8; }
+.flow { display: flex; align-items: stretch; gap: 6px; }
+.flow .node { flex: 1; border: 1px solid var(--stp-border); border-radius: 6px; padding: 8px 10px; font-size: 12px; line-height: 1.6; background: #fafbfc; }
+.flow .node b { display: block; font-size: 13px; margin-bottom: 2px; }
+.flow .arr { display: flex; align-items: center; color: #b0b7c3; }
+.tpl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.tpl .option-card { cursor: default; }
+.big-num { font-size: 26px; font-weight: 600; }
+.big-num small { font-size: 13px; font-weight: 400; color: var(--stp-sub); margin-left: 4px; }
+.preview-line { padding: 10px 12px; border: 1px dashed #c8d0db; border-radius: 6px; background: #fafbfc; font-size: 13px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="downstream" active="upload-rules" title="上传条件规则"
+  desc="由本企业决定哪些数据上传。规则在 ERP 端和平台入口各执行一次：不符合规则的数据不落盘，平台只记录被过滤的条数。每次修改都要先试算，再生成新版本。">
+  <template #actions>
+    <el-button @click="tplScroll"><el-icon><Files /></el-icon>规则模板</el-button>
+    <el-button @click="addOpen"><el-icon><Plus /></el-icon>添加条件</el-button>
+    <el-button type="primary" :disabled="!dirty" @click="trialOpen"><el-icon><DataAnalysis /></el-icon>试算并保存</el-button>
+  </template>
+
+  <div class="card">
+    <div class="row" style="align-items:stretch;flex-wrap:nowrap;gap:16px">
+      <div class="src-pick">
+        <div v-for="s in sources" :key="s.k" class="option-card" :class="{on: src===s.k}" @click="src = s.k">
+          <b><span class="code">{{ s.k }}</span> {{ s.name }}</b>
+          <span>{{ s.grainName }}{{ s.since ? '（自 ' + s.since + ' 业务日期起）' : '' }} · 日约 {{ s.vol }}</span>
+          <el-icon v-if="src===s.k" class="check"><CircleCheckFilled /></el-icon>
+        </div>
+      </div>
+      <div class="ver-box">
+        <div>当前生效版本 <span class="v num">{{ curVer.v }}</span></div>
+        <div class="muted small">生效时间 {{ curVer.eff }} · 修改人 {{ curVer.by }}</div>
+        <div v-if="pendingVer" class="small" style="color:#d48806">{{ pendingVer.v }} 待生效，将于 {{ pendingVer.eff }} 生效</div>
+      </div>
+    </div>
+    <div class="row between mt12">
+      <el-radio-group v-model="dtype">
+        <el-radio-button value="sales">销售数据规则</el-radio-button>
+        <el-radio-button value="stock">库存数据规则</el-radio-button>
+      </el-radio-group>
+      <span class="small muted">规则按数据类型分别配置，对本企业全部来源系统统一生效；选择来源系统可查看该粒度下每个条件在哪里执行。</span>
+    </div>
+  </div>
+
+  <el-alert v-if="coverAlert" type="warning" show-icon @close="coverAlert=false">
+    <template #title>本次规则变更使上传覆盖范围明显变化。钢厂在名录中看到的“数据覆盖声明”应与实际一致，请同步更新。<a href="visibility.html">去更新覆盖声明 ›</a></template>
+  </el-alert>
+
+  <div class="grid c-2-1">
+    <div class="card">
+      <div class="card-title">
+        <span>{{ dtype==='sales' ? '销售' : '库存' }}数据上传条件<small>{{ curSrc.k }} · {{ curSrc.grainName }} · {{ list.length ? '共 ' + list.length + ' 个条件' : '全量上传' }}</small></span>
+        <span class="right">
+          <el-button size="small" @click="addOpen"><el-icon><Plus /></el-icon>添加条件</el-button>
+          <el-button size="small" type="primary" :disabled="!dirty" @click="trialOpen">试算并保存</el-button>
+        </span>
+      </div>
+
+      <div v-if="dirty" class="tip-box orange small mb12">
+        <div class="row between"><span><b>有未保存的修改</b>：{{ diffText }}。修改尚未生效，保存前必须经过试算预览。</span><el-button size="small" link type="primary" @click="discard">放弃修改</el-button></div>
+      </div>
+
+      <template v-if="list.length">
+        <div v-for="(r, i) in list" :key="r.id" class="natural-rule" :class="{added: isAdded(r)}">
+          <div class="body">
+            <span class="pre" :class="{ex: r.mode==='ex'}">{{ prefix(r, i) }}</span>
+            <span class="chip" :class="{ex: r.mode==='ex'}">{{ r.dim }}</span>
+            <span>{{ r.op }}</span>
+            <span v-for="v in r.vals" :key="v" class="chip" :class="{ex: r.mode==='ex'}">{{ v }}</span>
+            <span v-if="r.note" class="muted small">（{{ r.note }}）</span>
+            <el-tag v-if="isAdded(r)" size="small" effect="plain">新增，未保存</el-tag>
+          </div>
+          <div class="side">
+            <el-tooltip placement="top" :content="execTip(r)">
+              <span class="exec-tag" :class="erpOnly(r) ? 'erp' : 'both'"><el-icon><component :is="erpOnly(r) ? 'Monitor' : 'CircleCheck'" /></el-icon>{{ erpOnly(r) ? '仅 ERP 端执行' : 'ERP 端与平台双重执行' }}</span>
+            </el-tooltip>
+            <el-tooltip content="删除该条件" placement="top"><el-button link type="info" @click="remove(r)"><el-icon><Delete /></el-icon></el-button></el-tooltip>
+          </div>
+        </div>
+      </template>
+      <div v-else class="empty-block" style="border:1px dashed var(--stp-border);border-radius:6px">
+        <div class="big"><el-icon><Filter /></el-icon></div>
+        未设置任何条件：{{ dtype==='sales' ? '销售' : '库存' }}数据全量上传。<a href="javascript:;" @click="addOpen">添加条件</a>
+      </div>
+
+      <div v-if="curSrc.grain==='daily' && dtype==='sales'" class="tip-box orange small mt12">
+        <b>日汇总模式下的执行位置：</b>“单笔吨位上下限”“按内部编码排除”标为<b>仅 ERP 端执行</b>。原因：日汇总记录是多张单据按维度汇总后的结果，汇总后没有单据号、单笔吨位和内部编码信息，平台无法在入口二次过滤（无法兜底），必须由 ERP 在汇总之前执行。其余条件平台按汇总记录中的维度二次过滤；流向地、客户类型为选填维度，未上传时以 ERP 端过滤为准。
+      </div>
+      <div v-else class="tip-box green small mt12">
+        <template v-if="dtype==='sales'"><b>行级模式下全部条件为“ERP 端与平台双重执行”：</b>ERP 拉取规则后在本地先过滤，平台入口按同一规则再过滤一次作为兜底。</template>
+        <template v-else><b>库存为日末快照，两种粒度使用同一接口，全部条件为“ERP 端与平台双重执行”。</b>库存规则没有单笔吨位、流向地、客户类型等只属于销售单据的条件。</template>
+      </div>
+      <div class="small muted mt12">
+        价格与金额字段是否上传、对哪些数据上传，不在这里设置，请到 <a href="upload-settings.html">上传设置 · 价格与金额上传</a> 单独配置。规则变更只影响生效后上传的数据；已上传的历史数据是否清理，由企业在 <a href="data-check.html">已上传数据自查</a> 中单独操作。
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="card-title"><span>规则模式</span></div>
+        <dl class="kv" style="grid-template-columns:76px 1fr">
+          <dt>白名单</dt><dd><b>只上传</b>符合条件的数据。多个白名单条件之间是“且”的关系</dd>
+          <dt>黑名单</dt><dd><b>排除</b>符合条件的数据。命中任一排除条件即不上传</dd>
+          <dt>优先级</dt><dd><b>排除优先</b>：同一条数据既符合白名单又命中排除条件时，不上传</dd>
+          <dt>未设条件</dt><dd>视为全量上传</dd>
+        </dl>
+      </div>
+      <div class="card" style="margin-bottom:0">
+        <div class="card-title"><span>双层执行<small>不符合规则的数据不落盘</small></span></div>
+        <div class="flow">
+          <div class="node"><b>ERP 源头过滤</b>ERP 调用规则拉取接口，在本地过滤后只发送符合条件的数据</div>
+          <div class="arr"><el-icon><Right /></el-icon></div>
+          <div class="node"><b>平台入口二次过滤</b>接入网关在落库前按同一规则再过滤一次</div>
+        </div>
+        <div class="tip-box blue small mt12">被过滤的数据<b>不落盘</b>，平台只记录被过滤的条数，用于每日汇总展示。昨日（{{ dataDate }}）规则过滤 <b>31</b> 条。<a href="daily-summary.html">查看每日汇总 ›</a></div>
+        <div class="small muted mt8"><el-icon style="vertical-align:-2px"><Lock /></el-icon> 规则的每次变更写入审计日志，企业管理员可见。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" id="tpl-card">
+    <div class="card-title"><span>规则模板<small>套用后替换当前{{ dtype==='sales' ? '销售' : '库存' }}规则草稿，仍需试算后才能保存</small></span></div>
+    <div class="tpl">
+      <div v-for="t in templates" :key="t.k" class="option-card">
+        <h4>{{ t.t }}</h4>
+        <p>{{ t.d }}</p>
+        <div class="mt8"><el-button size="small" @click="applyTpl(t)">套用模板</el-button></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span>版本历史<small>每次修改生成新版本，可查、可回滚</small></span></div>
+    <el-table :data="history" border size="small">
+      <el-table-column label="版本" width="70" prop="v"><template #default="{row}"><b>{{ row.v }}</b></template></el-table-column>
+      <el-table-column label="修改人" width="150"><template #default="{row}">{{ row.by }}<span class="muted small">　{{ row.role }}</span></template></el-table-column>
+      <el-table-column label="修改时间" width="146"><template #default="{row}"><span class="num">{{ row.at }}</span></template></el-table-column>
+      <el-table-column label="生效时间" width="146"><template #default="{row}"><span class="num">{{ row.eff }}</span></template></el-table-column>
+      <el-table-column label="变更摘要" min-width="300" prop="sum"></el-table-column>
+      <el-table-column label="状态" width="92" align="center"><template #default="{row}"><el-tag size="small" :type="row.status==='生效中' ? 'success' : row.status==='待生效' ? 'warning' : 'info'">{{ row.status }}</el-tag></template></el-table-column>
+      <el-table-column label="操作" width="120" align="center">
+        <template #default="{row}">
+          <el-button v-if="row.status==='已失效'" link type="primary" size="small" @click="rollback(row)">回滚到此版本</el-button>
+          <el-button v-else-if="row.status==='待生效'" link type="danger" size="small" @click="cancelPending(row)">撤销</el-button>
+          <span v-else class="muted">—</span>
+        </template>
+      </el-table-column>
+    </el-table>
+  </div>
+
+  <!-- 添加条件 -->
+  <el-dialog v-model="addDlg" title="添加条件" width="600px">
+    <el-form label-width="88px">
+      <el-form-item label="条件类型">
+        <el-radio-group v-model="nf.mode">
+          <el-radio-button value="in" :disabled="dimDef.only==='ex'">只上传（白名单）</el-radio-button>
+          <el-radio-button value="ex" :disabled="dimDef.only==='in'">排除（黑名单）</el-radio-button>
+        </el-radio-group>
+      </el-form-item>
+      <el-form-item label="维度">
+        <el-select v-model="nf.dim" style="width:100%" @change="dimChange">
+          <el-option v-for="d in dimOpts" :key="d.k" :label="d.k" :value="d.k" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="运算">
+        <el-radio-group v-if="dimDef.ops.length > 1" v-model="nf.op"><el-radio v-for="o in dimDef.ops" :key="o" :value="o">{{ o }}</el-radio></el-radio-group>
+        <span v-else>{{ dimDef.ops[0] }}</span>
+      </el-form-item>
+      <el-form-item label="取值">
+        <el-select v-if="dimDef.type==='multi'" v-model="nf.vals" multiple filterable style="width:100%" placeholder="可多选">
+          <el-option v-for="o in dimDef.options" :key="o" :label="o" :value="o" />
+        </el-select>
+        <el-date-picker v-else-if="dimDef.type==='date'" v-model="nf.date" type="date" value-format="YYYY-MM-DD" :clearable="false" style="width:200px" />
+        <template v-else-if="dimDef.type==='ton'"><el-input-number v-model="nf.ton" :min="1" :max="5000" :step="50" controls-position="right" style="width:160px" /><span style="margin-left:8px">吨</span></template>
+        <template v-else-if="dimDef.type==='range'">
+          <el-select v-model="nf.attr" style="width:110px"><el-option v-for="a in ['直径','厚度','宽度']" :key="a" :label="a" :value="a" /></el-select>
+          <el-input-number v-model="nf.lo" :min="0" :max="3000" controls-position="right" style="width:120px;margin-left:8px" /><span style="margin:0 6px">至</span>
+          <el-input-number v-model="nf.hi" :min="0" :max="3000" controls-position="right" style="width:120px" /><span style="margin-left:8px">mm</span>
+        </template>
+        <template v-else>
+          <el-input v-model="nf.codes" type="textarea" :rows="3" placeholder="每行一个 ERP 客户编码、部门编码或业务员编码" />
+          <div class="small muted">平台只保存这些编码的不可逆摘要，不保存编码原文，接口也不接收对应的名称。</div>
+        </template>
+      </el-form-item>
+    </el-form>
+    <div class="small muted mb8">自然语言预览</div>
+    <div class="preview-line">
+      <template v-if="draftRule"><b :style="{color: nf.mode==='ex' ? '#b83a3e' : ''}">{{ nf.mode==='ex' ? '排除：' : '只上传：' }}</b>{{ draftRule.dim }} {{ draftRule.op }} {{ draftRule.vals.join('、') }}<span v-if="draftRule.note" class="muted">（{{ draftRule.note }}）</span></template>
+      <span v-else class="muted">请选择取值</span>
+    </div>
+    <div v-if="dimDef.erp && curSrc.grain==='daily'" class="tip-box orange small mt12">{{ curSrc.k }} 为日汇总模式，该条件<b>仅 ERP 端执行</b>：汇总后没有单据信息，平台无法兜底，请确认 ERP 端在汇总之前已按此条件过滤。行级模式的来源系统仍为双重执行。</div>
+    <template #footer><el-button @click="addDlg=false">取消</el-button><el-button type="primary" :disabled="!draftRule" @click="addDo">添加到规则</el-button></template>
+  </el-dialog>
+
+  <!-- 试算预览与保存 -->
+  <el-dialog v-model="trialDlg" title="试算预览与保存" width="780px" :close-on-click-modal="false">
+    <el-steps :active="step" finish-status="success" simple style="margin-bottom:14px">
+      <el-step title="试算预览"></el-step><el-step title="生效时间"></el-step><el-step title="生成新版本"></el-step>
+    </el-steps>
+
+    <template v-if="step===0">
+      <div class="tip-box small mb12">
+        <b>本次修改（{{ dtype==='sales' ? '销售' : '库存' }}规则）</b>
+        <div v-for="r in diff.added" :key="r.id">＋ 新增条件：{{ r.mode==='ex' ? '排除' : '只上传' }} {{ r.dim }} {{ r.op }} {{ r.vals.join('、') }}</div>
+        <div v-for="r in diff.removed" :key="r.id">－ 移除条件：{{ r.mode==='ex' ? '排除' : '只上传' }} {{ r.dim }} {{ r.op }} {{ r.vals.join('、') }}</div>
+      </div>
+      <div class="grid c3" style="margin-bottom:12px">
+        <div class="stat"><div class="label">将不再上传的条数</div><div class="big-num num" :style="{color: trial.rows ? '#e5484d' : ''}">{{ $fmt(trial.rows) }}<small>条</small></div></div>
+        <div class="stat"><div class="label">{{ dtype==='sales' ? '将不再上传的吨位' : '将不再上传的日均库存' }}</div><div class="big-num num" :style="{color: trial.tons ? '#e5484d' : ''}">{{ $fmt(trial.tons) }}<small>吨</small></div></div>
+        <div class="stat"><div class="label">占近 7 日已上传</div><div class="big-num num">{{ trial.pct }}<small>%</small></div></div>
+      </div>
+      <p style="margin:0 0 10px;font-size:14px">按新规则，近 7 日（2026-11-17 至 2026-11-23）已上传{{ dtype==='sales' ? '数据' : '的库存快照' }}中将有 <b style="color:#e5484d">{{ $fmt(trial.rows) }}</b> 条、<b style="color:#e5484d">{{ $fmt(trial.tons) }}</b> 吨不再上传。</p>
+      <table class="plain-table">
+        <thead><tr><th>大类</th><th>品名</th><th class="r">近 7 日已上传（条）</th><th class="r">{{ dtype==='sales' ? '近 7 日已上传（吨）' : '日均库存（吨）' }}</th><th class="r">不再上传（条）</th><th class="r">不再上传（吨）</th></tr></thead>
+        <tbody>
+          <tr v-for="p in trial.items" :key="p.name"><td>{{ p.cat }}</td><td>{{ p.name }}</td><td class="r num">{{ $fmt(p.rows) }}</td><td class="r num">{{ $fmt(p.tons) }}</td><td class="r num" :style="{color: p.dRows ? '#e5484d' : '#8a94a3'}">{{ $fmt(p.dRows) }}</td><td class="r num" :style="{color: p.dTons ? '#e5484d' : '#8a94a3'}">{{ $fmt(p.dTons) }}</td></tr>
+          <tr class="total"><td colspan="2">合计</td><td class="r num">{{ $fmt(trial.baseRows) }}</td><td class="r num">{{ $fmt(trial.baseTons) }}</td><td class="r num">{{ $fmt(trial.rows) }}</td><td class="r num">{{ $fmt(trial.tons) }}</td></tr>
+        </tbody>
+      </table>
+      <div v-if="diff.removed.length" class="tip-box blue small mt12">移除条件会放宽上传范围：原先被过滤的数据平台没有留存，无法试算将新增多少，生效后可在每日汇总中查看实际变化。</div>
+      <div v-if="trial.erpOnly" class="tip-box orange small mt12">本次新增的条件中有“仅 ERP 端执行”的条件（日汇总模式的 SRC-WX）。试算按平台已入库数据估算，实际效果取决于 ERP 端是否在汇总前执行。</div>
+      <div class="small muted mt8">试算只读取本企业已上传的数据，不改变任何数据。也可以 <a href="javascript:;" @click="$info('原型演示：选择 ERP 导出的样例文件后，按新规则在浏览器本地试算，文件不上传')">上传样例文件试算</a>。</div>
+    </template>
+
+    <template v-else-if="step===1">
+      <el-form label-width="96px">
+        <el-form-item label="生效时间">
+          <el-radio-group v-model="eff.mode" style="display:flex;flex-direction:column;align-items:flex-start">
+            <el-radio value="next">次日 00:00 生效（2026-11-25 00:00，推荐）</el-radio>
+            <el-radio value="now">立即生效</el-radio>
+            <el-radio value="at">指定时间　<el-date-picker v-model="eff.at" type="datetime" value-format="YYYY-MM-DD HH:mm" format="YYYY-MM-DD HH:mm" :disabled="eff.mode!=='at'" :clearable="false" size="small" style="width:190px" /></el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="变更说明"><el-input v-model="eff.note" type="textarea" :rows="2" /></el-form-item>
+      </el-form>
+      <div class="tip-box blue small">
+        生效后 ERP 下次调用规则拉取接口即可获得新版本，平台入口同时按新版本过滤。<b>规则变更只影响生效后上传的数据</b>，已上传的历史数据保持不变；是否清理历史数据由企业单独操作。变更写入审计日志并通知企业管理员。
+      </div>
+      <div v-if="trial.pct >= 10" class="tip-box orange small mt8">本次变更将使上传量减少约 {{ trial.pct }}%，覆盖范围明显变化。保存后请同步更新名录中的“数据覆盖声明”，让钢厂知情。<a href="visibility.html">名称可见性设置 ›</a></div>
+    </template>
+
+    <template v-else>
+      <el-result icon="success" :title="'已生成新版本 ' + newVer.v" :sub-title="newVer.status==='生效中' ? '新版本已立即生效' : '新版本将于 ' + newVer.eff + ' 生效，在此之前仍按 ' + curVer.v + ' 执行'">
+        <template #extra><el-button type="primary" @click="trialDlg=false">完成</el-button></template>
+      </el-result>
+    </template>
+
+    <template v-if="step<2" #footer>
+      <el-button @click="trialDlg=false">取消</el-button>
+      <el-button v-if="step===1" @click="step=0">上一步</el-button>
+      <el-button v-if="step===0" type="primary" @click="step=1">下一步：选择生效时间</el-button>
+      <el-button v-if="step===1" type="primary" @click="save">确认并生成新版本</el-button>
+    </template>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const WH = ['苏州望亭库', '上海宝山库', '无锡惠山库', '常州新北库'];
+  const BRANDS = M.MILLS.map((m) => (m === '海川特钢' ? m : m.replace('钢铁', '')));
+  const cats = M.categories.map((c) => c.name);
+  const prods = [].concat(...M.categories.map((c) => c.products.map((p) => p.name)));
+  const mats = Array.from(new Set([].concat(...M.categories.map((c) => [].concat(...c.products.map((p) => p.materials))))));
+  const cities = [].concat(...M.provinces.slice(0, 4).map((p) => p.cities.map((c) => c[0])));
+  const DIMS = [
+    { k: '大类', type: 'multi', ops: ['属于'], options: cats },
+    { k: '品名', type: 'multi', ops: ['属于'], options: prods },
+    { k: '材质', type: 'multi', ops: ['属于'], options: mats },
+    { k: '规格范围', type: 'range', ops: ['介于'] },
+    { k: '品牌', type: 'multi', ops: ['属于'], options: BRANDS },
+    { k: '仓库', type: 'multi', ops: ['属于'], options: WH },
+    { k: '仓库所在地', type: 'multi', ops: ['属于'], options: ['苏州市', '上海市', '无锡市', '常州市'] },
+    { k: '流向地', type: 'multi', ops: ['属于'], options: cities, sales: true },
+    { k: '客户类型', type: 'multi', ops: ['属于'], options: ['终端', '贸易商'], sales: true },
+    { k: '业务日期起点', type: 'date', ops: ['不早于'], only: 'in' },
+    { k: '单笔吨位上下限', type: 'ton', ops: ['大于', '小于'], sales: true, erp: true },
+    { k: '按 ERP 内部编码排除', type: 'codes', ops: ['命中清单'], sales: true, erp: true, only: 'ex' },
+  ];
+  let seq = 100;
+  const R = (mode, dim, op, vals, note) => ({ id: 'r' + (++seq), mode, dim, op, vals, note: note || '' });
+  const base = {
+    cat: () => R('in', '大类', '属于', ['建筑钢材', '热轧板卷']),
+    wh: () => R('in', '仓库', '属于', ['苏州望亭库', '上海宝山库', '无锡惠山库']),
+    date: () => R('in', '业务日期', '不早于', ['2025-10-01']),
+    brand: () => R('ex', '品牌', '为', ['北辰']),
+    ton: () => R('ex', '单笔吨位', '大于', ['500 吨']),
+    code: () => R('ex', 'ERP 客户编码', '命中清单', ['3 个编码'], '平台只保存不可逆摘要，不接收名称'),
+  };
+  const snapOf = (keys, stockKeys) => JSON.stringify({ sales: keys.map((k) => base[k]()), stock: stockKeys.map((k) => base[k]()) });
+  const V7 = { sales: [base.cat(), base.wh(), base.date(), base.brand(), base.ton(), base.code()], stock: [base.cat(), base.wh(), base.brand()] };
+  const HISTORY = [
+    { v: 'v7', by: '陈海峰', role: '企业管理员', at: '2026-11-09 16:42', eff: '2026-11-10 00:00', sum: '销售：新增排除“单笔吨位 大于 500 吨”', status: '生效中', snap: JSON.stringify(V7) },
+    { v: 'v6', by: '刘雯', role: '数据管理员', at: '2026-09-28 10:15', eff: '2026-10-01 00:00', sum: '销售：新增按 ERP 客户编码排除（3 个编码）；配合 SRC-WX 切换为日汇总模式', status: '已失效', snap: snapOf(['cat', 'wh', 'date', 'brand', 'code'], ['cat', 'wh', 'brand']) },
+    { v: 'v5', by: '刘雯', role: '数据管理员', at: '2026-06-22 09:30', eff: '2026-06-23 00:00', sum: '销售、库存：新增排除“品牌 为 北辰”', status: '已失效', snap: snapOf(['cat', 'wh', 'date', 'brand'], ['cat', 'wh', 'brand']) },
+    { v: 'v4', by: '陈海峰', role: '企业管理员', at: '2026-03-16 14:08', eff: '2026-03-17 00:00', sum: '销售、库存：限定仓库为苏州望亭库、上海宝山库、无锡惠山库（不含常州新北库）；销售：业务日期不早于 2025-10-01', status: '已失效', snap: snapOf(['cat', 'wh', 'date'], ['cat', 'wh']) },
+    { v: 'v3', by: '陈海峰', role: '企业管理员', at: '2025-12-02 11:20', eff: '2025-12-03 00:00', sum: '销售、库存：大类增加“热轧板卷”', status: '已失效', snap: snapOf(['cat'], ['cat']) },
+    { v: 'v2', by: '陈海峰', role: '企业管理员', at: '2025-10-08 15:46', eff: '2025-10-09 00:00', sum: '套用模板“仅建材”：只上传大类为建筑钢材', status: '已失效', snap: JSON.stringify({ sales: [R('in', '大类', '属于', ['建筑钢材'])], stock: [R('in', '大类', '属于', ['建筑钢材'])] }) },
+    { v: 'v1', by: '陈海峰', role: '企业管理员', at: '2025-09-25 16:02', eff: '2025-09-25 16:02', sum: '入驻时套用模板“全量上传”', status: '已失效', snap: JSON.stringify({ sales: [], stock: [] }) },
+  ];
+  /* 近 7 日已上传基数（本企业数据，仅用于试算）：sales 为条数与吨位合计，stock 为 7 日条数与日均库存 */
+  const BASE = [
+    /* 与“每日上传汇总”一致：近 7 日入库 1,903 条、11,752 吨；库存快照 3,486 条，日末库存 28,630 吨 */
+    { cat: '建筑钢材', name: '螺纹钢', sales: [1190, 7350], stock: [1751, 14385] },
+    { cat: '建筑钢材', name: '盘螺', sales: [263, 1624], stock: [441, 3625] },
+    { cat: '建筑钢材', name: '高线', sales: [95, 587], stock: [334, 2735] },
+    { cat: '热轧板卷', name: '热轧卷板', sales: [254, 1567], stock: [681, 5595] },
+    { cat: '热轧板卷', name: '热轧带钢', sales: [101, 624], stock: [279, 2290] },
+  ];
+  const SHARE = { 品牌: { 东岳: 0.61, 金江: 0.35, 海川特钢: 0.03, 云岭: 0.01, 北辰: 0 }, 仓库: { 苏州望亭库: 0.54, 上海宝山库: 0.3, 无锡惠山库: 0.16, 常州新北库: 0 }, 仓库所在地: { 苏州市: 0.54, 上海市: 0.3, 无锡市: 0.16, 常州市: 0 }, 客户类型: { 终端: 0.58, 贸易商: 0.42 } };
+  /* 某条新增条件使某品名“不再上传”的比例 */
+  const dropFrac = (r, p) => {
+    const inMode = r.mode === 'in';
+    if (r.dim === '大类' || r.dim === '品名') { const hit = r.vals.indexOf(r.dim === '大类' ? p.cat : p.name) >= 0; return inMode ? (hit ? 0 : 1) : (hit ? 1 : 0); }
+    if (SHARE[r.dim]) { const s = Math.min(1, r.vals.reduce((a, v) => a + (SHARE[r.dim][v] === undefined ? 0.02 : SHARE[r.dim][v]), 0)); return inMode ? 1 - s : s; }
+    if (r.dim === '单笔吨位') { const n = parseFloat(r.vals[0]); const big = n >= 500 ? 0.02 : n >= 200 ? 0.07 : n >= 60 ? 0.22 : 0.6; const f = r.op === '大于' ? big : 1 - big; return inMode ? 1 - f : f; }
+    if (r.dim === '业务日期') return r.vals[0] > '2026-11-17' ? Math.min(1, (new Date(r.vals[0]) - new Date('2026-11-17')) / 864e5 / 7) : 0;
+    const f = 0.04 + (M.hash(r.dim + r.vals.join()) % 14) / 100;
+    return inMode ? 1 - Math.min(0.9, f * 4) : f;
+  };
+
+  STP.mount({
+    data() {
+      return {
+        dataDate: M.DATA_DATE,
+        sources: [{ k: 'SRC-HQ', name: '总部 ERP', grain: 'line', grainName: '行级模式', vol: '260 行', since: '' }, { k: 'SRC-WX', name: '无锡分公司进销存', grain: 'daily', grainName: '日汇总模式', vol: '40 条汇总记录', since: '2026-10-01' }],
+        src: 'SRC-HQ', dtype: 'sales',
+        rules: JSON.parse(JSON.stringify(V7)), saved: JSON.stringify(V7),
+        history: HISTORY, coverAlert: false,
+        addDlg: false, trialDlg: false, step: 0,
+        nf: { mode: 'in', dim: '大类', op: '属于', vals: [], date: '2026-01-01', ton: 300, attr: '直径', lo: 12, hi: 25, codes: '' },
+        eff: { mode: 'next', at: '2026-11-26 00:00', note: '' }, newVer: {},
+        templates: [
+          { k: 'all', t: '全量上传', d: '不设任何条件，全部销售与库存数据上传。数据最完整，收益分成的丰富度系数最高。', make: () => [] },
+          { k: 'build', t: '仅建材', d: '只上传大类为建筑钢材的数据（螺纹钢、盘螺、高线）。', make: () => [R('in', '大类', '属于', ['建筑钢材'])] },
+          { k: 'brand', t: '仅指定品牌', d: '只上传指定品牌的数据。套用后默认为本企业代理品牌：东岳、金江。', make: () => [R('in', '品牌', '属于', ['东岳', '金江'])] },
+          { k: 'wh', t: '仅指定仓库', d: '只上传指定仓库的数据。套用后默认为苏州望亭库，可再调整。', make: () => [R('in', '仓库', '属于', ['苏州望亭库'])] },
+        ],
+      };
+    },
+    computed: {
+      curSrc() { return this.sources.find((s) => s.k === this.src); },
+      list() { return this.rules[this.dtype]; },
+      savedObj() { return JSON.parse(this.saved); },
+      dirty() { return JSON.stringify(this.rules) !== this.saved; },
+      diffAll() {
+        const out = {};
+        ['sales', 'stock'].forEach((t) => {
+          const old = this.savedObj[t], cur = this.rules[t];
+          out[t] = { added: cur.filter((r) => !old.some((o) => o.id === r.id)), removed: old.filter((o) => !cur.some((r) => r.id === o.id)) };
+        });
+        return out;
+      },
+      diff() { return this.diffAll[this.dtype]; },
+      diffText() {
+        const p = [];
+        ['sales', 'stock'].forEach((t) => { const d = this.diffAll[t]; if (d.added.length || d.removed.length) p.push((t === 'sales' ? '销售' : '库存') + '规则' + (d.added.length ? '新增 ' + d.added.length + ' 个条件' : '') + (d.added.length && d.removed.length ? '、' : '') + (d.removed.length ? '移除 ' + d.removed.length + ' 个条件' : '')); });
+        return p.join('；');
+      },
+      curVer() { return this.history.find((h) => h.status === '生效中'); },
+      pendingVer() { return this.history.find((h) => h.status === '待生效'); },
+      dimOpts() { return DIMS.filter((d) => this.dtype === 'sales' || !d.sales); },
+      dimDef() { return DIMS.find((d) => d.k === this.nf.dim); },
+      draftRule() {
+        const f = this.nf, d = this.dimDef;
+        if (d.type === 'multi') return f.vals.length ? R(f.mode, d.k, f.mode === 'ex' && f.vals.length === 1 ? '为' : '属于', f.vals.slice()) : null;
+        if (d.type === 'date') return f.date ? R('in', '业务日期', '不早于', [f.date]) : null;
+        if (d.type === 'ton') return f.ton ? R(f.mode, '单笔吨位', f.op, [f.ton + ' 吨']) : null;
+        if (d.type === 'range') return f.hi > f.lo ? R(f.mode, '规格范围', '介于', [f.attr + ' ' + f.lo + '–' + f.hi + ' mm']) : null;
+        const n = f.codes.split(/\n/).filter((x) => x.trim()).length;
+        return n ? R('ex', 'ERP 内部编码', '命中清单', [n + ' 个编码'], '平台只保存不可逆摘要，不接收名称') : null;
+      },
+      trial() {
+        const key = this.dtype, added = this.diff.added;
+        const items = BASE.map((p) => {
+          const rem = added.reduce((a, r) => a * (1 - dropFrac(r, p)), 1);
+          return { cat: p.cat, name: p.name, rows: p[key][0], tons: p[key][1], dRows: Math.round(p[key][0] * (1 - rem)), dTons: Math.round(p[key][1] * (1 - rem)) };
+        });
+        const sum = (k) => items.reduce((a, p) => a + p[k], 0);
+        const baseRows = sum('rows'), baseTons = sum('tons'), rows = sum('dRows'), tons = sum('dTons');
+        return { items, baseRows, baseTons, rows, tons, pct: +(tons / baseTons * 100).toFixed(1), erpOnly: added.some((r) => this.isErpDim(r)) };
+      },
+    },
+    methods: {
+      prefix(r, i) {
+        if (r.mode === 'ex') return '排除：';
+        return this.list.findIndex((x) => x.mode === 'in') === i ? '只上传：' : '且';
+      },
+      isErpDim(r) { return r.dim === '单笔吨位' || r.dim.indexOf('编码') >= 0; },
+      erpOnly(r) { return this.dtype === 'sales' && this.curSrc.grain === 'daily' && this.isErpDim(r); },
+      execTip(r) {
+        if (this.erpOnly(r)) return '日汇总记录是多张单据汇总后的结果，汇总后没有单据信息（单笔吨位、内部编码），平台无法兜底。该条件必须由 ERP 在汇总之前执行。';
+        return 'ERP 拉取规则后在本地先过滤（源头过滤）；平台入口在落库前按同一规则再过滤一次（兜底）。不符合规则的数据不落盘。';
+      },
+      isAdded(r) { return this.diff.added.some((a) => a.id === r.id); },
+      tplScroll() { const el = document.getElementById('tpl-card'); if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); },
+      addOpen() { this.nf = { mode: 'in', dim: '大类', op: '属于', vals: [], date: '2026-01-01', ton: 300, attr: '直径', lo: 12, hi: 25, codes: '' }; this.addDlg = true; },
+      dimChange() {
+        const d = this.dimDef;
+        this.nf.vals = []; this.nf.op = d.ops[0];
+        if (d.only) this.nf.mode = d.only;
+        if (d.type === 'ton') { this.nf.mode = 'ex'; this.nf.op = '大于'; }
+      },
+      addDo() {
+        const r = this.draftRule;
+        const arr = this.rules[this.dtype];
+        if (r.mode === 'in') { const lastIn = arr.map((x) => x.mode).lastIndexOf('in'); arr.splice(lastIn + 1, 0, r); } else arr.push(r);
+        this.addDlg = false;
+        this.$demo('条件已添加到规则草稿，保存前需试算');
+      },
+      remove(r) { this.rules[this.dtype] = this.rules[this.dtype].filter((x) => x.id !== r.id); },
+      discard() { this.rules = JSON.parse(this.saved); this.$info('已放弃未保存的修改'); },
+      applyTpl(t) {
+        ElementPlus.ElMessageBox.confirm('套用模板“' + t.t + '”将替换当前' + (this.dtype === 'sales' ? '销售' : '库存') + '规则草稿中的全部条件。套用后不会立即生效，仍需试算并保存。', '套用规则模板', { confirmButtonText: '套用', cancelButtonText: '取消', type: 'warning' })
+          .then(() => { this.rules[this.dtype] = t.make(); this.$demo('已套用模板“' + t.t + '”，请试算后保存'); }).catch(() => {});
+      },
+      trialOpen() {
+        if (!this.dirty) { this.$info('规则没有修改，无需保存'); return; }
+        if (!this.diff.added.length && !this.diff.removed.length) this.dtype = this.dtype === 'sales' ? 'stock' : 'sales';
+        const d = this.diff;
+        this.eff = { mode: 'next', at: '2026-11-26 00:00', note: d.added.map((r) => '新增' + (r.mode === 'ex' ? '排除' : '只上传') + '“' + r.dim + ' ' + r.op + ' ' + r.vals.join('、') + '”').concat(d.removed.map((r) => '移除“' + r.dim + ' ' + r.op + ' ' + r.vals.join('、') + '”')).join('；') };
+        this.step = 0; this.trialDlg = true;
+      },
+      nextV() { return 'v' + (Math.max.apply(null, this.history.map((h) => +h.v.slice(1))) + 1); },
+      pushVersion(sum, mode, at) {
+        const now = '2026-11-24 14:30';
+        const immediate = mode === 'now';
+        this.history.forEach((h) => { if (h.status === '待生效') h.status = '已取消'; if (immediate && h.status === '生效中') h.status = '已失效'; });
+        const ver = { v: this.nextV(), by: '陈海峰', role: '企业管理员', at: now, eff: immediate ? now : mode === 'at' ? at : '2026-11-25 00:00', sum, status: immediate ? '生效中' : '待生效', snap: JSON.stringify(this.rules) };
+        this.history.unshift(ver);
+        this.saved = JSON.stringify(this.rules);
+        return ver;
+      },
+      save() {
+        const pct = this.trial.pct;
+        const both = ['sales', 'stock'].filter((t) => this.diffAll[t].added.length || this.diffAll[t].removed.length).map((t) => (t === 'sales' ? '销售' : '库存')).join('、');
+        this.newVer = this.pushVersion(both + '：' + (this.eff.note || '修改上传条件'), this.eff.mode, this.eff.at);
+        this.step = 2;
+        if (pct >= 10) this.coverAlert = true;
+      },
+      rollback(row) {
+        ElementPlus.ElMessageBox.confirm('将以 ' + row.v + ' 的规则内容生成一个新版本，次日 00:00（2026-11-25 00:00）生效。回滚只影响生效后上传的数据，已上传的历史数据不变。', '回滚到 ' + row.v, { confirmButtonText: '确认回滚', cancelButtonText: '取消', type: 'warning' })
+          .then(() => {
+            this.rules = JSON.parse(row.snap);
+            const v = this.pushVersion('回滚至 ' + row.v + ' 的规则内容', 'next');
+            this.coverAlert = true;
+            this.$demo('已生成 ' + v.v + '（内容同 ' + row.v + '），将于 ' + v.eff + ' 生效');
+          }).catch(() => {});
+      },
+      cancelPending(row) {
+        ElementPlus.ElMessageBox.confirm('撤销后 ' + row.v + ' 不会生效，继续按 ' + this.curVer.v + ' 执行。', '撤销待生效版本', { confirmButtonText: '确认撤销', cancelButtonText: '取消', type: 'warning' })
+          .then(() => { row.status = '已取消'; this.rules = JSON.parse(this.curVer.snap); this.saved = JSON.stringify(this.rules); this.coverAlert = false; this.$demo(row.v + ' 已撤销'); }).catch(() => {});
+      },
+    },
+  });
+})();
+</script>
+</body>
+</html>

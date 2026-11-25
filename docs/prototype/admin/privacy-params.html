@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>防反推参数 · 平台运营后台 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.grp-title { display: flex; align-items: center; gap: 10px; margin: 18px 0 10px; font-size: 14px; font-weight: 600; }
+.grp-title:first-child { margin-top: 0; }
+.grp-title i { width: 4px; height: 14px; border-radius: 2px; background: var(--el-color-primary); display: inline-block; }
+.grp-title small { font-weight: 400; color: var(--stp-sub); font-size: 12px; }
+.p-name b { display: block; font-weight: 600; }
+.p-name span { font-size: 12px; color: var(--stp-sub); }
+.p-val { font-weight: 600; font-size: 14px; }
+.flow-mini { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #4a5568; flex-wrap: wrap; }
+.flow-mini span { padding: 2px 10px; border-radius: 12px; background: #eef4fb; color: #2b5d9b; }
+.notice-paper { border: 1px solid var(--stp-border); border-radius: 6px; padding: 18px 22px; background: #fcfcfd; line-height: 1.9; font-size: 13px; }
+.notice-paper h3 { margin: 0 0 10px; text-align: center; font-size: 16px; }
+.notice-paper p { margin: 6px 0; text-indent: 2em; }
+.notice-paper .sign { text-align: right; margin-top: 12px; color: #4a5568; }
+.el-descriptions__label { white-space: nowrap; }
+.run-bar { display: flex; align-items: center; gap: 14px; padding: 10px 14px; border: 1px solid var(--stp-border); border-radius: 6px; background: #fafbfc; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="admin" :user="me" :role="roleOf(me)" active="privacy-params" title="防反推参数"
+  desc="面向上游的全部数据出口（看板、多维查询、导出、定时发送、拉取接口）都经过同一个聚合引擎，引擎按本页参数做披露判定。参数修改须经“提交 → 另一人复核 → 生效”，并在调整前通知全部下游企业。">
+  <template #actions>
+    <el-dropdown trigger="click" @command="v => me = v">
+      <el-button><el-icon><UserFilled /></el-icon>原型状态 · 当前操作人：{{ me }}（{{ roleOf(me) }}）<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+      <template #dropdown><el-dropdown-menu>
+        <el-dropdown-item v-for="s in staff" :key="s.n" :command="s.n" :disabled="s.n===me">{{ s.n }}（{{ s.r }}）</el-dropdown-item>
+      </el-dropdown-menu></template>
+    </el-dropdown>
+    <el-button @click="openNotice(null)"><el-icon><Bell /></el-icon>参数变更公告预览</el-button>
+    <el-button type="primary" :loading="run.on" @click="tab='tests'; runAll()"><el-icon><VideoPlay /></el-icon>执行全部用例</el-button>
+  </template>
+
+  <div class="grid c4">
+    <div class="stat">
+      <div class="label">当前生效参数版本</div>
+      <div class="value num">V1.{{ ver }}</div>
+      <div class="foot"><span>共 {{ params.length }} 项参数</span><span v-if="offDefault">其中 <b style="color:#b26a00">{{ offDefault }}</b> 项偏离建议值</span><span v-else>全部等于建议默认值</span></div>
+      <div class="ico"><el-icon><Lock /></el-icon></div>
+    </div>
+    <div class="stat" style="cursor:pointer" @click="tab='pending'">
+      <div class="label">待复核变更</div>
+      <div class="value num">{{ pending.length }}<span class="unit">项</span></div>
+      <div class="foot"><span>提交人不能复核自己的申请</span></div>
+      <div class="ico"><el-icon><Stamp /></el-icon></div>
+    </div>
+    <div class="stat" style="cursor:pointer" @click="tab='tests'">
+      <div class="label">反推测试用例集</div>
+      <div class="value num">{{ passTotal }} / {{ caseTotal }}<span class="unit">通过</span></div>
+      <div class="foot"><span>上次执行 {{ lastRun }}</span><b v-if="needRegress" style="color:#e5484d">参数已变更，须回归</b></div>
+      <div class="ico"><el-icon><CircleCheck /></el-icon></div>
+    </div>
+    <div class="stat" style="cursor:pointer" @click="tab='mask'">
+      <div class="label">全平台屏蔽率（近 30 日，量指标）<el-tooltip content="全部上游的查询命中单元格中，被屏蔽单元格所占比例。只统计单元格数，不涉及任何企业数值" placement="top"><el-icon><QuestionFilled /></el-icon></el-tooltip></div>
+      <div class="value num">12.4<span class="unit">%</span></div>
+      <div class="foot"><span>较上月 <b class="down">-0.9 个百分点</b></span><span>最高：不锈钢 41.2%</span></div>
+      <div class="ico"><el-icon><Hide /></el-icon></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <el-tabs v-model="tab">
+      <!-- ============ 参数配置 ============ -->
+      <el-tab-pane label="参数配置" name="params">
+        <div class="tip-box orange small mb12">
+          以下取值均为需求文档建议默认值，<b>示例参数，待业务方确定</b>（量指标参数对应待拍板事项 D-09、D-16，价格类参数对应 N-03）。放宽类变更（降低门槛、细化粒度）必须提前公告全部下游；已披露的历史聚合结果不因参数调整而回溯修改。
+        </div>
+        <template v-for="g in groups" :key="g.k">
+          <div class="grp-title"><i></i>{{ g.t }}<small>{{ g.d }}</small></div>
+          <el-table :data="paramsOf(g.k)" border size="small">
+            <el-table-column label="参数" width="200">
+              <template #default="{row}"><div class="p-name"><b>{{ row.name }}</b><span>{{ row.code }}</span></div></template>
+            </el-table-column>
+            <el-table-column label="当前值" width="210">
+              <template #default="{row}">
+                <span class="p-val">{{ disp(row, row.v) }}</span>
+                <el-tag v-if="row.v !== row.def" size="small" type="warning" style="margin-left:6px">偏离建议值</el-tag>
+                <el-tag v-if="row.legal" size="small" type="info" style="margin-left:6px">待法务意见</el-tag>
+                <div v-if="row.next" class="small" style="color:#b26a00">{{ row.next.eff }} 起改为 {{ disp(row, row.next.v) }}</div>
+                <div v-if="pendingOf(row)" class="small" style="color:#409eff">有 1 项变更待复核</div>
+              </template>
+            </el-table-column>
+            <el-table-column label="建议默认值" width="150"><template #default="{row}">{{ disp(row, row.def) }}</template></el-table-column>
+            <el-table-column label="说明" min-width="300"><template #default="{row}"><span style="color:#4a5568">{{ row.desc }}</span></template></el-table-column>
+            <el-table-column label="最近修改" width="176">
+              <template #default="{row}">
+                <template v-if="row.last"><div class="num">{{ row.last.t }}</div><div class="small muted">{{ row.last.by }} 提交 · {{ row.last.rv }} 复核</div></template>
+                <span v-else class="muted">初始配置（{{ row.g==='vol' ? '2025-07-01' : '2026-06-01' }}）</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="76" align="center">
+              <template #default="{row}"><el-button link type="primary" :disabled="!!pendingOf(row)" @click="openEdit(row)">修改</el-button></template>
+            </el-table-column>
+          </el-table>
+        </template>
+
+        <div class="grp-title"><i></i>分品类披露粒度<small>各品类最细可查的地区、时间、规格层级可单独配置，样本稀疏的品类默认更粗（PV-61）；规格层级的开放与标准化深度挂钩（PV-63）</small>
+          <span style="flex:1"></span><a href="master-category.html" style="font-weight:400;font-size:13px">去全品类主数据工作台配置 ›</a></div>
+        <el-table :data="catGrain" border size="small">
+          <el-table-column prop="name" label="大类" min-width="120" />
+          <el-table-column label="标准化深度" width="150"><template #default="{row}"><el-tag size="small" :type="row.depth==='L4' ? 'success' : row.depth==='L3' ? 'primary' : 'info'">{{ row.depth }} · {{ row.depthName }}</el-tag></template></el-table-column>
+          <el-table-column label="最细地区粒度" width="130"><template #default="{row}">{{ row.geo==='市' ? '地级市' : '省' }}</template></el-table-column>
+          <el-table-column label="最细时间粒度" width="130"><template #default="{row}">{{ row.time }}<span v-if="row.time==='日'">（T+1）</span></template></el-table-column>
+          <el-table-column label="规格段下钻" width="130"><template #default="{row}"><span v-if="row.depth==='L4'"><span class="dot ok"></span>已开放</span><span v-else class="muted"><span class="dot"></span>未开放</span></template></el-table-column>
+          <el-table-column label="上游下钻到未开放层级时" min-width="260"><template #default="{row}"><span class="muted">{{ row.geo==='市' && row.time==='日' && row.depth==='L4' ? '—' : '提示“该品类暂不提供此粒度”，不返回任何数值' }}</span></template></el-table-column>
+          <el-table-column label="近 30 日量指标屏蔽率" width="170" align="right"><template #default="{row}"><span class="num">{{ row.mask.toFixed(1) }}%</span></template></el-table-column>
+        </el-table>
+        <div class="small muted mt8">上传粒度（单据行级 / 按日汇总）不是披露参数，也不作为上游可见的维度或筛选条件（PV-60）；两种粒度的数据在企业日粒度事实层合并后统一判定（PV-62）。</div>
+      </el-tab-pane>
+
+      <!-- ============ 待复核变更 ============ -->
+      <el-tab-pane name="pending">
+        <template #label>待复核变更<el-badge v-if="pending.length" :value="pending.length" style="margin-left:6px" /></template>
+        <div class="row between mb12">
+          <div class="flow-mini"><span>1 提交变更</span><el-icon><ArrowRight /></el-icon><span>2 另一人复核</span><el-icon><ArrowRight /></el-icon><span>3 按生效时间生效</span><el-icon><ArrowRight /></el-icon><span>4 写入变更历史并触发用例回归</span></div>
+          <span class="small muted">当前操作人：<b style="color:#1f2d3d">{{ me }}</b>（{{ roleOf(me) }}）。可在页面右上角切换为另一位复核人。</span>
+        </div>
+        <el-table :data="pending" border size="small">
+          <template #empty><el-empty description="暂无待复核的参数变更" :image-size="70" /></template>
+          <el-table-column prop="id" label="申请编号" width="150" />
+          <el-table-column label="变更内容" min-width="220">
+            <template #default="{row}">
+              <b>{{ row.name }}</b><el-tag size="small" :type="row.dir==='放宽' ? 'danger' : row.dir==='收紧' ? 'success' : 'info'" style="margin-left:6px">{{ row.dir }}</el-tag>
+              <div class="mt8"><span class="code">{{ row.from }}</span> <el-icon style="vertical-align:-2px"><Right /></el-icon> <span class="code" style="color:#2b5d9b;background:#eef4fb">{{ row.to }}</span></div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="reason" label="变更原因" min-width="200" />
+          <el-table-column label="生效时间" width="130"><template #default="{row}">{{ row.effMode==='now' ? '复核后下一发布批次' : row.eff }}</template></el-table-column>
+          <el-table-column label="提前公告" width="110"><template #default="{row}"><span v-if="row.notice">全部下游<br><span class="small muted">提前 {{ row.days }} 天</span></span><span v-else class="muted">不提前公告</span></template></el-table-column>
+          <el-table-column label="提交人" width="130"><template #default="{row}">{{ row.by }}<div class="small muted num">{{ row.t }}</div></template></el-table-column>
+          <el-table-column label="操作" width="200" align="center">
+            <template #default="{row}">
+              <el-button link type="primary" @click="openNotice(row)">公告预览</el-button>
+              <template v-if="row.by===me">
+                <el-tooltip content="提交人不能复核自己的申请，请切换为另一位复核人" placement="top"><span><el-button link type="primary" disabled>通过</el-button></span></el-tooltip>
+                <el-button link type="info" @click="withdraw(row)">撤回</el-button>
+              </template>
+              <template v-else>
+                <el-button link type="success" @click="approve(row)">通过</el-button>
+                <el-button link type="danger" @click="reject(row)">驳回</el-button>
+              </template>
+            </template>
+          </el-table-column>
+        </el-table>
+        <div class="tip-box blue small mt12">复核通过后，变更按设定的生效时间进入聚合引擎的下一发布批次；需要提前公告的变更，系统在生效日前按提前天数向全部下游企业发送通知，并更新下游端“披露规则公示”。复核通过即视为参数发生变更，<b>须重新执行反推测试用例集并全部通过</b>。</div>
+      </el-tab-pane>
+
+      <!-- ============ 变更历史 ============ -->
+      <el-tab-pane label="变更历史" name="history">
+        <el-table :data="history" border size="small">
+          <el-table-column prop="id" label="申请编号" width="146" />
+          <el-table-column label="变更内容" min-width="210">
+            <template #default="{row}"><b>{{ row.name }}</b><div class="small" v-if="row.from"><span class="muted">{{ row.from }}</span> → {{ row.to }}</div><div class="small muted" v-else>{{ row.to }}</div></template>
+          </el-table-column>
+          <el-table-column prop="reason" label="原因 / 复核意见" min-width="220"><template #default="{row}">{{ row.reason }}<div v-if="row.rejectReason" class="small" style="color:#e5484d">驳回意见：{{ row.rejectReason }}</div></template></el-table-column>
+          <el-table-column label="提交" width="126"><template #default="{row}">{{ row.by }}<div class="small muted num">{{ row.t }}</div></template></el-table-column>
+          <el-table-column label="复核" width="126"><template #default="{row}"><template v-if="row.rv">{{ row.rv }}<div class="small muted num">{{ row.rvT }}</div></template><span v-else class="muted">—</span></template></el-table-column>
+          <el-table-column label="生效时间" width="110"><template #default="{row}">{{ row.status==='已驳回' || row.status==='已撤回' ? '—' : (row.effMode==='now' ? '下一发布批次' : row.eff) }}</template></el-table-column>
+          <el-table-column label="公告" width="86"><template #default="{row}"><span v-if="row.notice && row.rv && row.status!=='已驳回'">提前 {{ row.days }} 天</span><span v-else class="muted">—</span></template></el-table-column>
+          <el-table-column label="状态" width="110" align="center">
+            <template #default="{row}"><el-tag size="small" :type="row.status==='已生效' ? 'success' : row.status==='已驳回' ? 'danger' : row.status==='已撤回' ? 'info' : 'warning'">{{ row.status }}</el-tag></template>
+          </el-table-column>
+        </el-table>
+        <div class="small muted mt8"><el-icon style="vertical-align:-2px"><Lock /></el-icon> 变更记录不可修改、不可删除，同步写入<a href="audit.html">审计日志</a>“后台参数变更”分类。</div>
+      </el-tab-pane>
+
+      <!-- ============ 反推测试用例集 ============ -->
+      <el-tab-pane label="反推测试用例集" name="tests">
+        <el-alert v-if="needRegress" type="error" show-icon :closable="false" title="参数自上次执行后已发生变更，须回归全部用例。回归通过前，该变更不得进入发布批次。" />
+        <div class="run-bar">
+          <el-button type="primary" :loading="run.on" @click="runAll"><el-icon><VideoPlay /></el-icon>执行全部用例</el-button>
+          <div style="flex:1">
+            <el-progress v-if="run.on || run.done" :percentage="run.pct" :status="run.done ? 'success' : ''" :stroke-width="10" />
+            <span v-else class="small muted">共 {{ tests.length }} 类 {{ caseTotal }} 条用例。全部通过方可上线；参数或聚合引擎变更后须回归（PV-43、PV-59）。</span>
+          </div>
+          <span class="small muted" v-if="run.on">正在执行：{{ run.cur }}</span>
+          <span class="small" v-else>上次执行 <b class="num">{{ lastRun }}</b> · 引擎版本 v1.8.2 · 参数版本 V1.{{ runVer }}</span>
+        </div>
+        <el-table :data="tests" border size="small">
+          <el-table-column type="index" label="#" width="46" align="center" />
+          <el-table-column label="类别" width="150"><template #default="{row}"><b>{{ row.cat }}</b><span v-if="row.v2" class="level-tag">V0.2</span></template></el-table-column>
+          <el-table-column prop="ex" label="典型用例" min-width="290" />
+          <el-table-column prop="exp" label="期望结果" min-width="270" />
+          <el-table-column label="用例数" width="76" align="right"><template #default="{row}"><span class="num">{{ row.n }}</span></template></el-table-column>
+          <el-table-column label="上次执行时间" width="150"><template #default="{row}"><span class="num">{{ row.t }}</span></template></el-table-column>
+          <el-table-column label="结果" width="130" align="center">
+            <template #default="{row}">
+              <el-tag v-if="row.st==='run'" size="small" type="primary" disable-transitions>执行中…</el-tag>
+              <el-tag v-else-if="row.st==='wait'" size="small" type="info" disable-transitions>排队中</el-tag>
+              <el-tag v-else size="small" type="success" disable-transitions>通过 {{ row.n }} / {{ row.n }}</el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
+        <div class="grid c2 mt12" style="margin-bottom:0">
+          <div>
+            <div class="grp-title"><i></i>执行记录</div>
+            <table class="plain-table">
+              <thead><tr><th>执行时间</th><th>触发原因</th><th>执行人</th><th class="r">用例数</th><th class="c">结果</th></tr></thead>
+              <tbody><tr v-for="r in runLog" :key="r.t"><td class="num">{{ r.t }}</td><td>{{ r.why }}</td><td>{{ r.by }}</td><td class="r num">{{ r.n }}</td><td class="c"><span class="dot ok"></span>全部通过</td></tr></tbody>
+            </table>
+          </div>
+          <div>
+            <div class="grp-title"><i></i>验收规则</div>
+            <div class="tip-box small">
+              1. 用例集是上线验收项：<b>全部通过方可上线</b>，任一类失败则阻断发布。<br>
+              2. 参数变更复核通过、聚合引擎版本变更、分品类披露粒度调整后，必须回归全部用例。<br>
+              3. 用例在隔离的测试数据集上执行，使用构造的虚拟企业数据，不读取任何真实企业的上传明细。<br>
+              4. “出口一致”类用例同时校验页面、导出、定时发送、拉取接口四个出口的结果、屏蔽与修约完全一致。<br>
+              5. “闸口”类用例校验价格闸口关闭时，上游侧四个出口均不出现任何价格内容。当前闸口状态：<b>{{ $state.gate==='open' ? '已开放' : '未开放' }}</b>，见<a href="price-control.html">价格数据管控</a>。
+            </div>
+          </div>
+        </div>
+      </el-tab-pane>
+
+      <!-- ============ 屏蔽率监控 ============ -->
+      <el-tab-pane label="屏蔽率监控" name="mask" lazy>
+        <div class="grid c-3-2" style="margin-bottom:0">
+          <div>
+            <div class="grp-title"><i></i>按大类的屏蔽单元格比例<small>近 30 日，全部上游的查询命中单元格</small></div>
+            <ve-chart :option="maskOption" height="300px"></ve-chart>
+          </div>
+          <div>
+            <div class="grp-title"><i></i>全平台屏蔽率趋势<small>近 12 周，量指标</small></div>
+            <ve-chart :option="trendOption" height="300px"></ve-chart>
+          </div>
+        </div>
+        <div class="grid c-3-2 mt12" style="margin-bottom:0">
+          <div>
+            <div class="grp-title"><i></i>屏蔽率最高的“地区 × 大类”组合<small>供需匹配：样本不足导致上游“买了看不到”的位置</small></div>
+            <el-table :data="maskTop" border size="small">
+              <el-table-column prop="geo" label="地区" width="70" />
+              <el-table-column prop="cat" label="大类" width="100" />
+              <el-table-column label="屏蔽率" min-width="130"><template #default="{row}"><el-progress :percentage="row.r" :stroke-width="8" :color="row.r > 60 ? '#e5484d' : '#f0a020'" /></template></el-table-column>
+              <el-table-column label="命中单元格" width="96" align="right"><template #default="{row}"><span class="num">{{ $fmt(row.cells) }}</span></template></el-table-column>
+              <el-table-column label="已上架企业数" width="104" align="center"><template #default="{row}">{{ row.band }} 家</template></el-table-column>
+              <el-table-column prop="act" label="建议动作" min-width="150" />
+            </el-table>
+          </div>
+          <div>
+            <div class="grp-title"><i></i>说明</div>
+            <div class="tip-box blue small">
+              屏蔽率 = 被屏蔽单元格数 ÷ 查询命中单元格数，只统计单元格个数，<b>不含任何企业的销量、库存、价格数值</b>。<br>
+              屏蔽率偏高说明该位置样本稀疏。处理方向依次是：定向招募该地区、品类的下游企业；在购买前的池可用性预估中向上游说明；把该品类的披露粒度调粗（如地区到省、时间到旬），见<a href="master-category.html">全品类主数据工作台</a>。<b>不应通过降低 k 或放宽优势度来压低屏蔽率。</b><br>
+              价格指标屏蔽率高于量指标是预期结果：k_价（{{ valOf('kPrice') }}）高于 k（{{ valOf('k') }}），且只有已开启价格上传的企业参与。<template v-if="$state.gate!=='open'">上游价格功能闸口当前<b>未开放</b>，价格指标屏蔽率为引擎预演结果，上游不可见。</template>
+            </div>
+          </div>
+        </div>
+      </el-tab-pane>
+    </el-tabs>
+  </div>
+
+  <!-- 修改参数 -->
+  <el-dialog v-model="dlg.show" :title="'修改参数：' + (dlg.p ? dlg.p.name : '')" width="640px">
+    <template v-if="dlg.p">
+      <el-descriptions :column="2" border size="small" class="mb12">
+        <el-descriptions-item label="当前值"><b>{{ disp(dlg.p, dlg.p.v) }}</b></el-descriptions-item>
+        <el-descriptions-item label="建议默认值">{{ disp(dlg.p, dlg.p.def) }}</el-descriptions-item>
+        <el-descriptions-item label="说明" :span="2">{{ dlg.p.desc }}</el-descriptions-item>
+      </el-descriptions>
+      <el-form label-width="110px">
+        <el-form-item label="新值" required>
+          <template v-if="dlg.p.type==='num'">
+            <el-input-number v-model="form.v" :min="dlg.p.min" :max="dlg.p.max" :step="dlg.p.step || 1" style="width:160px" />
+            <span style="margin-left:8px">{{ dlg.p.unit.trim() }}</span>
+          </template>
+          <el-select v-else-if="dlg.p.type==='select'" v-model="form.v" style="width:340px"><el-option v-for="o in dlg.p.opts" :key="o" :label="o" :value="o" /></el-select>
+          <el-input v-else v-model="form.v" style="width:340px" />
+          <el-tag v-if="formDir" :type="formDir==='放宽' ? 'danger' : formDir==='收紧' ? 'success' : 'info'" style="margin-left:10px">{{ formDir }}</el-tag>
+        </el-form-item>
+        <el-form-item label="变更原因" required><el-input v-model="form.reason" type="textarea" :rows="2" placeholder="请说明变更依据，如法务意见、业务方决策编号、监管要求等" /></el-form-item>
+        <el-form-item label="提前公告">
+          <el-switch v-model="form.notice" :disabled="formDir==='放宽'" />
+          <span style="margin:0 8px 0 12px">向全部下游企业提前</span>
+          <el-input-number v-model="form.days" :min="formDir==='放宽' ? 7 : 1" :max="60" :disabled="!form.notice" size="small" style="width:110px" />
+          <span style="margin-left:8px">天公告</span>
+        </el-form-item>
+        <el-form-item label="生效时间" required>
+          <el-radio-group v-model="form.effMode">
+            <el-radio value="date">指定日期</el-radio>
+            <el-radio value="now" :disabled="form.notice">复核通过后的下一发布批次</el-radio>
+          </el-radio-group>
+          <el-date-picker v-if="form.effMode==='date'" v-model="form.eff" type="date" value-format="YYYY-MM-DD" :clearable="false" style="width:160px;margin-left:12px" />
+        </el-form-item>
+      </el-form>
+      <div v-if="formDir==='放宽'" class="tip-box red small">本次为<b>放宽</b>类变更，会降低对下游企业数据的保护强度：必须提前不少于 7 天公告全部下游企业，下游可在生效前暂停上传或退出。</div>
+      <div v-else-if="!form.notice" class="tip-box orange small">下游端公示的披露规则要求“参数调整前通知全部下游”。仅在监管要求或紧急收紧时可不提前公告，生效后系统仍会补发通知。</div>
+      <div v-else class="tip-box blue small">提交后进入“待复核变更”列表，须由<b>另一位</b>平台人员复核通过后才会生效；系统将于 {{ noticeDate(form) }} 向全部 21,386 家下游企业发送公告。</div>
+    </template>
+    <template #footer>
+      <el-button @click="dlg.show=false">取消</el-button>
+      <el-button :disabled="!form.notice" @click="openNotice(draft())">预览公告</el-button>
+      <el-button type="primary" @click="submit">提交复核</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 公告预览 -->
+  <el-dialog v-model="notice.show" title="参数变更公告预览（发给全部下游企业）" width="700px">
+    <template v-if="notice.row">
+      <el-descriptions :column="2" border size="small" class="mb12">
+        <el-descriptions-item label="发送对象">全部已入驻下游企业（21,386 家）的企业管理员</el-descriptions-item>
+        <el-descriptions-item label="发送渠道">站内信、短信、邮件；下游端工作台置顶</el-descriptions-item>
+        <el-descriptions-item label="发送时间">{{ notice.row.notice ? noticeDate(notice.row) + '（生效前 ' + notice.row.days + ' 天）' : '生效后补发' }}</el-descriptions-item>
+        <el-descriptions-item label="发送条件">变更经另一人复核通过后才会发送</el-descriptions-item>
+      </el-descriptions>
+      <div class="notice-paper">
+        <h3>关于调整数据披露规则参数的通知</h3>
+        <div>各入驻企业：</div>
+        <p>为持续保护贵司上传数据的安全，平台拟自 <b>{{ notice.row.effMode==='now' ? '下一发布批次' : notice.row.eff }}</b> 起调整以下数据披露规则参数。披露规则决定钢厂能看到什么：任何聚合数据都必须先满足这些门槛，才会对钢厂展示。</p>
+        <table class="plain-table" style="margin:8px 0">
+          <thead><tr><th>参数</th><th>调整前</th><th>调整后</th><th>变化方向</th></tr></thead>
+          <tbody><tr><td>{{ notice.row.name }}</td><td>{{ notice.row.from }}</td><td><b>{{ notice.row.to }}</b></td><td>{{ notice.row.dir==='放宽' ? '披露门槛放宽' : notice.row.dir==='收紧' ? '披露门槛收紧（保护更强）' : '展示方式调整' }}</td></tr></tbody>
+        </table>
+        <p>调整原因：{{ notice.row.reason }}</p>
+        <p v-if="notice.row.dir==='放宽'">本次调整会放宽披露门槛。如贵司不同意，可在生效日前到“数据安全中心 → 暂停与退出”暂停上传或申请退出；暂停期间平台不再接收贵司数据。</p>
+        <p v-else>本次调整不会降低对贵司数据的保护强度，贵司无需进行任何操作。</p>
+        <p>无论参数如何调整，钢厂在任何页面、导出文件和接口中都看不到单家企业的销量、库存和价格；已披露的历史聚合结果不回溯修改。当前生效的全部披露规则可随时在下游端“数据安全中心”查看。</p>
+        <div class="sign">货袋子平台 · 数据板块<br>{{ notice.row.notice ? noticeDate(notice.row) : '2026-11-24' }}</div>
+      </div>
+    </template>
+    <template #footer><el-button type="primary" @click="notice.show=false">关闭预览</el-button></template>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const STAFF = [{ n: '林若彤', r: '运营主管' }, { n: '吴靖', r: '安全审计员' }, { n: '唐蕾', r: '法务' }, { n: '何志远', r: '财务' }];
+  let tick = 0;
+  const nowStr = () => { const m = 32 + (tick++) * 4; return '2026-11-24 ' + (14 + Math.floor(m / 60)) + ':' + STP.pad(m % 60); };
+  const P = (o) => Object.assign({ last: null, next: null }, o);
+  const PARAMS = [
+    P({ id: 'nMin', g: 'vol', name: '最小数据池企业数', code: 'N_min', type: 'num', v: 20, def: 20, unit: ' 家', min: 5, max: 200, loose: 'down', desc: '上游数据池的有效企业数低于该值时，不提供任何聚合数据（PV-01）。也是首次购买的最小名额数。' }),
+    P({ id: 'k', g: 'vol', name: '单元格最小贡献企业数', code: 'k', type: 'num', v: 5, def: 5, unit: ' 家', min: 3, max: 50, loose: 'down', desc: '单元格贡献企业数低于 k 时屏蔽（PV-02）。销量与库存分别判定。' }),
+    P({ id: 'dom1', g: 'vol', name: '优势度 1', code: '最大一家占比上限', type: 'num', v: 50, def: 50, unit: '%', min: 20, max: 90, step: 5, loose: 'up', desc: '单元格内最大一家企业的占比超过该值时屏蔽（PV-03）。库存按库存吨位计算。' }),
+    P({ id: 'dom2', g: 'vol', name: '优势度 2', code: '前两家合计占比上限', type: 'num', v: 80, def: 80, unit: '%', min: 30, max: 95, step: 5, loose: 'up', desc: '单元格内前两家企业合计占比超过该值时屏蔽（PV-03）。' }),
+    P({ id: 'time', g: 'vol', name: '最细时间粒度', code: '量指标', type: 'select', v: '日（T+1）', def: '日（T+1）', opts: ['日（T+1）', '日（T+3）', '周', '旬', '月'], desc: '上游可查询的最细时间。日粒度本身须满足披露条件，否则该日只并入更长周期展示（PV-24）。' }),
+    P({ id: 'geo', g: 'vol', name: '最细地区粒度', code: '量指标', type: 'select', v: '地级市', def: '地级市', opts: ['地级市', '省'], desc: '上游可查询的最细地区层级。各品类可在此基础上单独调粗。' }),
+    P({ id: 'spec', g: 'vol', name: '最细规格粒度', code: '量指标', type: 'select', v: '规格段', def: '规格段', opts: ['规格段', '材质', '品名'], desc: '上游可查询的最细规格层级。满足门槛时可到单规格；与品类标准化深度挂钩。' }),
+    P({ id: 'roundTon', g: 'vol', name: '吨位取整', code: '数值修约', type: 'select', v: '取整到 1 吨', def: '取整到 1 吨', opts: ['取整到 1 吨', '取整到 10 吨', '取整到 100 吨'], desc: '展示与导出的吨位精度，降低用多次查询做精确差分的可行性（PV-25）。' }),
+    P({ id: 'bands', g: 'vol', name: '企业数展示区间', code: '贡献企业数', type: 'text', v: '5–9、10–19、20–49、50+', def: '5–9、10–19、20–49、50+', desc: '单元格贡献企业数只以区间展示，不展示精确家数与企业名称。' }),
+    P({ id: 'freq', g: 'vol', name: '池变更频率', code: '数据池调整', type: 'select', v: '每自然月 1 次，下一周期生效', def: '每自然月 1 次，下一周期生效', opts: ['每自然月 1 次，下一周期生效', '每季度 1 次，下一周期生效'], desc: '数据池调整按周期集中生效，周期内不可反复调整（PV-35）；成员按日期版本化，变更不重算历史。' }),
+    P({ id: 'replace', g: 'vol', name: '替换比例上限', code: '每周期，占在用名额', type: 'num', v: 20, def: 20, unit: '%', min: 5, max: 50, step: 5, loose: 'up', desc: '防止用“轮换”方式低成本遍历全部企业。冻结名额的免费替换不占额度（D-16）。', last: { t: '2026-09-22 16:40', by: '林若彤', rv: '吴靖' } }),
+    P({ id: 'batch', g: 'vol', name: '最小变更批量', code: '历史重算门槛', type: 'num', v: 10, def: 10, unit: ' 家', min: 5, max: 50, loose: 'down', desc: '新旧成员差集企业数不低于该值且差集整体满足优势度门槛时，才允许按新成员重算历史（PV-33）。' }),
+    P({ id: 'kPrice', g: 'price', name: '价格单元格最小有价企业数', code: 'k_价', type: 'num', v: 8, def: 8, unit: ' 家', min: 3, max: 50, loose: 'down', desc: '只统计上传了价格且同意参与披露的企业，有价企业数低于 k_价时价格屏蔽（PV-50）。不得低于 k。', last: { t: '2026-10-13 17:05', by: '吴靖', rv: '林若彤' } }),
+    P({ id: 'pDom1', g: 'price', name: '价格优势度 1', code: '按有价销量，最大一家', type: 'num', v: 50, def: 50, unit: '%', min: 20, max: 90, step: 5, loose: 'up', desc: '按有价销量计算，最大一家占比超过该值时价格屏蔽（PV-51）。可比量指标单独收紧。' }),
+    P({ id: 'pDom2', g: 'price', name: '价格优势度 2', code: '按有价销量，前两家合计', type: 'num', v: 80, def: 80, unit: '%', min: 30, max: 95, step: 5, loose: 'up', desc: '按有价销量计算，前两家合计占比超过该值时价格屏蔽（PV-51）。' }),
+    P({ id: 'obN', g: 'price', name: '“其他品牌”最少品牌数', code: '其他品牌构成', type: 'num', v: 3, def: 3, unit: ' 个', min: 2, max: 10, loose: 'down', desc: '“其他品牌”合并均价至少由该数量的品牌构成，否则屏蔽（PV-57），避免合并项实际就是某一家竞品。' }),
+    P({ id: 'obDom', g: 'price', name: '“其他品牌”单一品牌占比上限', code: '其他品牌构成', type: 'num', v: 50, def: 50, unit: '%', min: 20, max: 80, step: 5, loose: 'up', desc: '“其他品牌”内任一品牌的有价销量占比超过该值时屏蔽（PV-57）。' }),
+    P({ id: 'pTime', g: 'price', name: '价格最细时间粒度与延迟', code: '价格指标', type: 'select', v: '日，T+1', def: '日，T+1', opts: ['日，T+1', '日，T+3', '周', '旬'], legal: true, desc: '备选为 T+3 或只到周、旬，以法务意见为准。不得比量指标更细、更早（PV-56）。' }),
+    P({ id: 'roundPrice', g: 'price', name: '均价取整', code: '价格修约', type: 'select', v: '取整到 10 元/吨', def: '取整到 10 元/吨', opts: ['取整到 10 元/吨', '取整到 50 元/吨', '取整到 100 元/吨'], desc: '加权均价的展示精度；涨跌幅保留一位小数（PV-55）。' }),
+    P({ id: 'cover', g: 'price', name: '价格覆盖率区间', code: '有价销量 ÷ 全部销量', type: 'text', v: '低于 30%、30%–60%、高于 60%', def: '低于 30%、30%–60%、高于 60%', desc: '覆盖率只以区间展示；不披露有价样本的精确销量与金额合计（PV-52），防止差分出“未上传价格的企业”。' }),
+  ];
+  const TESTS = [
+    ['小池', '数据池只有 19 家', '不提供任何聚合数据', 8], ['单维穷举', '筛选到只有 3 家企业有数据的城市', '该单元格屏蔽', 14], ['优势度', '某单元格 6 家贡献，其中 1 家占 70%', '屏蔽', 12],
+    ['合计倒推', '某省下 10 个市仅 1 个市被屏蔽', '被屏蔽市与最小可见市合并为“其他（合并披露）”', 16], ['多选差分', '先查“苏州 + 无锡”，再查“无锡”，苏州自身不满足披露条件', '第一次查询结果不含苏州并提示', 12],
+    ['时间差分', '查“1–20 日”与“1–19 日”，20 日当天不满足披露条件', '两次区间结果不能差出 20 日的值', 10], ['池变更差分', '替换 1 家企业后重新导出历史', '变更日前的历史数据与替换前完全一致', 12],
+    ['分组差分', '创建两个只相差 1 个市的自定义大区，该市不满足披露条件', '第二个分组不可用', 6], ['出口一致', '同一查询分别在页面、导出、定时邮件获取', '三者结果、屏蔽、修约完全一致', 18], ['比率屏蔽', '库存可披露但销量被屏蔽的单元格查看可销天数', '可销天数屏蔽', 9],
+    ['价格小样本', '某单元格 20 家有销量，其中只有 6 家上传了价格', '销量披露，价格屏蔽', 10, 1], ['价格优势度', '某单元格 10 家有价，其中 1 家占有价销量的 70%', '价格屏蔽', 10, 1],
+    ['有价销量反推', '尝试从页面、导出、接口获取有价样本的精确销量或金额合计', '任何出口都得不到；覆盖率只有区间', 9, 1], ['其他品牌单一', '某城市除本厂外只有 1 个品牌在流通，查看“其他品牌”均价', '屏蔽', 7, 1],
+    ['价格开关差分', '某下游关闭价格上传并清除历史价格后，上游重新导出历史价格', '历史价格聚合与此前导出的完全一致', 8, 1], ['闸口', '运营后台关闭上游价格功能', '上游侧页面、导出、定时发送、接口均不出现任何价格内容', 12, 1],
+    ['粒度筛选', '尝试按上传粒度筛选或分组', '不提供该维度', 5, 1], ['多粒度一致', '同一份数据分别以行级和日汇总上传', '聚合结果和披露判定完全一致', 14, 1],
+    ['粒度重复', '同一来源系统同一业务日期先后以两种粒度上传', '与当前设置不符的一方被拒收，销量不翻倍', 8, 1], ['品类粒度', '对只开放到省、到旬的品类下钻到市、到日', '不提供，并提示原因', 12, 1],
+  ].map((a) => ({ cat: a[0], ex: a[1], exp: a[2], n: a[3], v2: !!a[4], t: '2026-11-20 02:14', st: 'pass' }));
+  const MASK = { 建筑钢材: [6.8, 18.5], 热轧板卷: [9.4, 24.1], 中厚板: [14.2, 31.6], 冷轧及涂镀: [17.5, 38.2], 管材: [21.3, 44.7], 型钢: [19.6, 42.3], 优特钢: [33.8, 58.9], 不锈钢: [41.2, 66.4] };
+  const DEPTH = { L2: '品名', L3: '材质', L4: '规格段' };
+
+  STP.mount({
+    data() {
+      return {
+        staff: STAFF, me: '林若彤', tab: 'params', ver: 3, runVer: 3, needRegress: false, lastRun: '2026-11-20 02:14',
+        groups: [
+          { k: 'vol', t: '量指标参数', d: '适用于销量、库存及其派生指标，共 12 项' },
+          { k: 'price', t: '价格类参数', d: '价格单元格独立判定，量指标被屏蔽的单元格价格一并屏蔽；取值以法务意见为准，共 8 项' }],
+        params: PARAMS,
+        pending: [
+          { id: 'CHG-20261123-01', pid: 'pTime', name: '价格最细时间粒度与延迟', from: '日，T+1', to: '日，T+3', raw: '日，T+3', dir: '收紧', reason: '法务初步意见：成交价格的发布延迟不宜少于 3 天，以降低即时价格信息交换的风险。', effMode: 'date', eff: '2026-12-01', notice: true, days: 7, by: '吴靖', t: '2026-11-23 16:42' }],
+        history: [
+          { id: 'CHG-20261013-01', name: '价格单元格最小有价企业数（k_价）', from: '6 家', to: '8 家', reason: '与待确认事项 N-03 的建议值对齐，在价格功能联调前收紧。', by: '吴靖', t: '2026-10-13 15:20', rv: '林若彤', rvT: '2026-10-13 17:05', effMode: 'date', eff: '2026-10-21', notice: true, days: 7, status: '已生效' },
+          { id: 'CHG-20260922-01', name: '替换比例上限', from: '25%', to: '20%', reason: '按 D-16 建议值执行，降低通过轮换遍历企业的可行性。', by: '林若彤', t: '2026-09-22 14:10', rv: '吴靖', rvT: '2026-09-22 16:40', effMode: 'date', eff: '2026-10-01', notice: true, days: 7, status: '已生效' },
+          { id: 'CHG-20260918-02', name: '优势度 2', from: '80%', to: '85%', reason: '部分上游反馈管材品类屏蔽率偏高，申请放宽。', rejectReason: '放宽优势度会降低对头部企业的保护；屏蔽率应通过扩大样本或调粗披露粒度解决。', by: '林若彤', t: '2026-09-18 10:26', rv: '吴靖', rvT: '2026-09-18 11:52', effMode: 'date', eff: '—', notice: true, days: 7, status: '已驳回' },
+          { id: 'CHG-20260520-01', name: '价格类参数首次配置', from: '', to: '新增 8 项价格类参数，按待确认事项 N-03 的建议值配置（其中 k_价初始为 6 家）', reason: '下游价格上传功能上线前配置；上游价格功能闸口保持关闭。', by: '吴靖', t: '2026-05-20 10:00', rv: '唐蕾', rvT: '2026-05-21 15:30', effMode: 'date', eff: '2026-06-01', notice: true, days: 7, status: '已生效' },
+          { id: 'CHG-20250620-01', name: '初始参数集上线', from: '', to: '12 项量指标参数按需求文档建议默认值配置（其中替换比例上限初始为 25%）', reason: '板块一期上线初始配置。', by: '吴靖', t: '2025-06-20 10:00', rv: '林若彤', rvT: '2025-06-20 16:10', effMode: 'date', eff: '2025-07-01', notice: false, days: 0, status: '已生效' }],
+        dlg: { show: false, p: null }, form: { v: null, reason: '', notice: true, days: 7, effMode: 'date', eff: '2026-12-01' },
+        notice: { show: false, row: null },
+        tests: TESTS, run: { on: false, done: false, pct: 0, cur: '' },
+        runLog: [
+          { t: '2026-11-20 02:14', why: '聚合引擎 v1.8.2 发布前回归', by: '系统（发布流水线）', n: 212 },
+          { t: '2026-10-13 17:20', why: '参数变更 CHG-20261013-01 复核通过后、生效前回归', by: '吴靖', n: 212 },
+          { t: '2026-09-22 16:55', why: '参数变更 CHG-20260922-01 复核通过后、生效前回归', by: '吴靖', n: 204 }],
+        catGrain: M.categories.map((c) => ({ name: c.name, depth: c.depth, depthName: DEPTH[c.depth], geo: c.geo, time: c.time, mask: MASK[c.name][0] })),
+        maskTop: [
+          { geo: '甘肃', cat: '不锈钢', r: 92, cells: 1260, band: '低于 5', act: '定向招募；披露粒度已调到省、旬' },
+          { geo: '重庆', cat: '优特钢', r: 84, cells: 2140, band: '5–9', act: '定向招募' },
+          { geo: '江西', cat: '管材', r: 71, cells: 3380, band: '5–9', act: '定向招募；购买前预估中提示' },
+          { geo: '辽宁', cat: '冷轧及涂镀', r: 66, cells: 2950, band: '10–19', act: '购买前预估中提示' },
+          { geo: '陕西', cat: '型钢', r: 58, cells: 4120, band: '10–19', act: '观察' },
+          { geo: '湖南', cat: '中厚板', r: 52, cells: 5270, band: '10–19', act: '观察' }],
+      };
+    },
+    computed: {
+      offDefault() { return this.params.filter((p) => p.v !== p.def).length; },
+      caseTotal() { return this.tests.reduce((a, t) => a + t.n, 0); },
+      passTotal() { return this.tests.filter((t) => t.st === 'pass').reduce((a, t) => a + t.n, 0); },
+      formDir() { return this.dlg.p ? this.dirOf(this.dlg.p, this.form.v) : ''; },
+      maskOption() {
+        const open = this.$state.gate === 'open';
+        const o = STP.chart.bar({ x: Object.keys(MASK), unit: '%', series: [{ name: '量指标（销量、库存）', data: Object.values(MASK).map((v) => v[0]) }, { name: open ? '价格指标' : '价格指标（引擎预演，闸口未开放）', data: Object.values(MASK).map((v) => v[1]), color: '#f7b500' }] });
+        o.yAxis.axisLabel = { color: '#6b7787', formatter: '{value}%' }; o.yAxis.max = 80; o.xAxis.axisLabel = { color: '#6b7787', interval: 0 };
+        return o;
+      },
+      trendOption() {
+        const x = STP.dayList('2026-11-22', 78).filter((d, i) => i % 7 === 0).map((d) => d.slice(5) + ' 周');
+        const o = STP.chart.line({ x: x.concat(['11-16 周']), unit: '%', area: true, legend: false, series: [{ name: '全平台屏蔽率', data: [15.8, 15.5, 15.1, 14.6, 14.4, 13.9, 13.6, 13.3, 13.1, 12.8, 12.6, 12.4] }] });
+        o.yAxis[0].axisLabel = { color: '#6b7787', formatter: '{value}%' }; o.yAxis[0].min = 10; o.yAxis[0].max = 18;
+        return o;
+      },
+    },
+    methods: {
+      roleOf(n) { return STAFF.find((s) => s.n === n).r; },
+      paramsOf(g) { return this.params.filter((p) => p.g === g); },
+      pendingOf(p) { return this.pending.find((x) => x.pid === p.id); },
+      disp(p, v) { return p.type === 'num' ? v + p.unit : v; },
+      valOf(id) { const p = this.params.find((x) => x.id === id); return this.disp(p, p.v); },
+      dirOf(p, v) {
+        if (v === p.v || v === null || v === '') return '';
+        if (p.type === 'num') return (v < p.v) === (p.loose === 'down') ? '放宽' : '收紧';
+        if (p.type === 'select') return p.opts.indexOf(v) < p.opts.indexOf(p.v) ? '放宽' : '收紧';
+        return '调整';
+      },
+      noticeDate(r) { return r.effMode === 'now' ? '2026-11-24' : STP.addDays(r.eff, -r.days); },
+      openEdit(p) {
+        this.dlg = { show: true, p };
+        this.form = { v: p.v, reason: '', notice: true, days: 7, effMode: 'date', eff: '2026-12-01' };
+      },
+      draft() {
+        const p = this.dlg.p, f = this.form;
+        return { pid: p.id, name: p.name + (p.code.length < 5 ? '（' + p.code + '）' : ''), from: this.disp(p, p.v), to: this.disp(p, f.v), raw: f.v, dir: this.formDir || '调整', reason: f.reason || '（未填写）', effMode: f.effMode, eff: f.eff, notice: f.notice, days: f.days };
+      },
+      submit() {
+        const p = this.dlg.p, f = this.form, val = (id) => this.params.find((x) => x.id === id).v;
+        const warn = (m) => ElementPlus.ElMessage({ message: m, type: 'warning' });
+        if (f.v === p.v || f.v === '' || f.v === null) return warn('新值与当前值相同，无需提交');
+        if (!f.reason.trim()) return warn('请填写变更原因');
+        if (p.id === 'kPrice' && f.v < val('k')) return warn('k_价不得低于 k（当前 ' + val('k') + ' 家）');
+        if (p.id === 'k' && f.v > val('kPrice')) return warn('k 不得高于 k_价（当前 ' + val('kPrice') + ' 家），请先调高 k_价');
+        if (p.id === 'k' && f.v > val('nMin')) return warn('k 不得高于最小数据池企业数（当前 ' + val('nMin') + ' 家）');
+        if ((p.id === 'dom1' && f.v > val('dom2')) || (p.id === 'dom2' && f.v < val('dom1'))) return warn('优势度 1 不得高于优势度 2');
+        if ((p.id === 'pDom1' && f.v > val('pDom2')) || (p.id === 'pDom2' && f.v < val('pDom1'))) return warn('价格优势度 1 不得高于价格优势度 2');
+        if (f.notice && f.effMode === 'now') f.effMode = 'date';
+        if (f.effMode === 'date' && f.eff < STP.addDays(M.TODAY, f.notice ? f.days : 1)) return warn(f.notice ? '生效日期须不早于 ' + STP.addDays(M.TODAY, f.days) + '（今天起满 ' + f.days + ' 天公告期）' : '生效日期须晚于今天');
+        const row = Object.assign(this.draft(), { id: 'CHG-20261124-0' + (this.pending.length + this.history.filter((h) => h.id.indexOf('20261124') > 0).length + 1), by: this.me, t: nowStr() });
+        this.pending.unshift(row);
+        this.dlg.show = false; this.tab = 'pending';
+        this.$demo('已提交，等待另一位平台人员复核。提交人不能复核自己的申请。');
+      },
+      approve(row) {
+        if (row.by === this.me) return this.$info('提交人不能复核自己的申请，请切换为另一位复核人');
+        ElementPlus.ElMessageBox.confirm('确认通过“' + row.name + '：' + row.from + ' → ' + row.to + '”？通过后将按生效时间进入聚合引擎，并须回归全部反推测试用例。', '复核参数变更', { type: 'warning', confirmButtonText: '确认通过', cancelButtonText: '取消' }).then(() => {
+          const p = this.params.find((x) => x.id === row.pid), t = nowStr();
+          p.last = { t, by: row.by, rv: this.me };
+          if (row.effMode === 'now') { p.v = row.raw; p.next = null; } else p.next = { v: row.raw, eff: row.eff };
+          this.pending = this.pending.filter((x) => x !== row);
+          this.history.unshift(Object.assign({}, row, { rv: this.me, rvT: t, status: row.effMode === 'now' ? '已生效' : '已复核，待生效' }));
+          this.ver++; this.needRegress = true;
+          this.$demo('复核通过。' + (row.effMode === 'now' ? '参数已更新，下一发布批次起适用。' : '将于 ' + row.eff + ' 生效' + (row.notice ? '，系统按期向全部下游发送公告。' : '。')) + '请回归反推测试用例集。');
+        }).catch(() => {});
+      },
+      reject(row) {
+        ElementPlus.ElMessageBox.prompt('请填写驳回意见（提交人可见，写入变更历史）', '驳回参数变更', { confirmButtonText: '确认驳回', cancelButtonText: '取消', inputPlaceholder: '驳回意见', inputValidator: (v) => !!(v && v.trim()) || '请填写驳回意见' }).then(({ value }) => {
+          this.pending = this.pending.filter((x) => x !== row);
+          this.history.unshift(Object.assign({}, row, { rv: this.me, rvT: nowStr(), status: '已驳回', rejectReason: value }));
+          this.$demo('已驳回，参数保持不变');
+        }).catch(() => {});
+      },
+      withdraw(row) {
+        this.pending = this.pending.filter((x) => x !== row);
+        this.history.unshift(Object.assign({}, row, { rv: '', rvT: '', status: '已撤回' }));
+        this.$demo('已撤回申请');
+      },
+      openNotice(row) {
+        const r = row || this.pending[0] || this.history.find((h) => h.from);
+        this.notice = { show: true, row: r };
+      },
+      runAll() {
+        if (this.run.on) return;
+        this.run = { on: true, done: false, pct: 0, cur: this.tests[0].cat };
+        this.tests.forEach((t) => { t.st = 'wait'; });
+        let i = 0; const t0 = nowStr();
+        const step = () => {
+          if (i > 0) { this.tests[i - 1].st = 'pass'; this.tests[i - 1].t = t0; }
+          this.run.pct = Math.round(i / this.tests.length * 100);
+          if (i >= this.tests.length) {
+            this.run.on = false; this.run.done = true; this.lastRun = t0; this.runVer = this.ver;
+            this.runLog.unshift({ t: t0, why: this.needRegress ? '参数变更回归' : '手动执行', by: this.me, n: this.caseTotal });
+            this.needRegress = false;
+            return this.$demo('全部 ' + this.caseTotal + ' 条用例执行通过');
+          }
+          this.tests[i].st = 'run'; this.run.cur = this.tests[i].cat + '（' + this.tests[i].n + ' 条）'; i++;
+          setTimeout(step, 180);
+        };
+        step();
+      },
+    },
+  });
+})();
+</script>
+</body>
+</html>

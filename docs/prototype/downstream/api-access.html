@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ERP 接口接入 · 下游钢贸端 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.env-bar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.env-bar .addr { font-size: 13px; }
+.mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: 12px; }
+.mono-input textarea, .mono-input input { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: 12px; line-height: 1.6; }
+.secret-box { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px dashed #f0a020; border-radius: 6px; background: #fffaf0; }
+.secret-box .mono { font-size: 13px; word-break: break-all; flex: 1; color: #1f2d3d; }
+.resp-head { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; font-size: 13px; }
+.hdr-table td, .hdr-table th { padding: 5px 8px !important; font-size: 12px; }
+.res-stat { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.res-stat > div { border: 1px solid var(--stp-border); border-radius: 6px; padding: 8px; background: #fafbfc; min-width: 0; }
+.res-stat .k { font-size: 11px; color: var(--stp-sub); }
+.res-stat .k b { display: block; font-size: 10.5px; color: #4a5568; font-weight: 600; }
+.res-stat .v { font-size: 20px; font-weight: 600; margin-top: 4px; }
+.doc-card { display: flex; gap: 12px; align-items: flex-start; }
+.doc-card .ic { width: 40px; height: 40px; border-radius: 8px; background: var(--el-color-primary-light-9); color: var(--el-color-primary); display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+.ip-list { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; border: 1px solid var(--stp-border); border-radius: 4px; min-height: 40px; background: #fafbfc; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="downstream" active="api-access" title="ERP 接口接入"
+  desc="管理应用密钥与 IP 白名单，在沙箱环境完成联调，查看接口调用日志。本页面向接口对接员，只涉及接入技术信息，不展示销量、库存等业务数值。">
+  <template #actions>
+    <el-button @click="handDlg = true"><el-icon><UserFilled /></el-icon>转交给接口对接员</el-button>
+    <el-button type="primary" @click="openCreate"><el-icon><Plus /></el-icon>创建应用</el-button>
+  </template>
+
+  <div class="card tight">
+    <div class="env-bar">
+      <el-radio-group v-model="env">
+        <el-radio-button value="prod">正式环境</el-radio-button>
+        <el-radio-button value="sandbox">沙箱环境</el-radio-button>
+      </el-radio-group>
+      <span class="addr">接口地址 <span class="code">{{ E.base }}</span></span>
+      <el-button size="small" link type="primary" @click="copy(E.base)"><el-icon><CopyDocument /></el-icon>复制</el-button>
+      <span class="muted small" style="margin-left:auto">TLS 1.2 及以上 · REST · JSON · UTF-8 · 当前接口版本 v1.1</span>
+    </div>
+    <div class="tip-box small mt8" :class="env==='sandbox' ? 'orange' : 'blue'">
+      <template v-if="env==='sandbox'"><b>沙箱环境</b>：地址与密钥独立于正式环境，上传的数据<b>不进入正式库</b>、不参与任何聚合，可放心用任意样例数据调试。沙箱密钥不能调用正式地址。</template>
+      <template v-else><b>正式环境</b>：上传的数据经规则过滤与质量校验后入库。正式环境与沙箱环境的地址、密钥相互独立；调试请切换到沙箱环境。</template>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">
+      <span>应用管理<small>{{ E.name }} · 一个应用对应一个来源系统，按来源系统区分幂等键</small></span>
+      <span class="right"><el-button size="small" @click="openCreate"><el-icon><Plus /></el-icon>创建应用</el-button></span>
+    </div>
+    <el-table :data="apps[env]" border>
+      <el-table-column label="应用 / 来源系统" min-width="180">
+        <template #default="{row}"><b>{{ row.name }}</b><div class="small muted"><span class="code">{{ row.src }}</span> {{ row.srcName }} · {{ row.grain }}</div></template>
+      </el-table-column>
+      <el-table-column label="应用标识 AppKey" width="150"><template #default="{row}"><span class="mono">{{ row.appKey }}</span></template></el-table-column>
+      <el-table-column min-width="190">
+        <template #header>密钥 <el-tooltip content="密钥只在创建或轮换时完整展示一次，平台不保存明文，之后只显示掩码" placement="top"><el-icon style="vertical-align:-2px"><QuestionFilled /></el-icon></el-tooltip></template>
+        <template #default="{row}">
+          <span class="mono">{{ E.prefix }}••••••••{{ row.tail }}</span>
+          <div class="small muted">到期 {{ row.expire }}<el-tag v-if="row.rotating" size="small" type="warning" effect="plain" style="margin-left:6px">新旧并行至 {{ row.rotating }}</el-tag></div>
+        </template>
+      </el-table-column>
+      <el-table-column label="状态" width="72" align="center"><template #default="{row}"><el-tag :type="row.status==='启用' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag></template></el-table-column>
+      <el-table-column label="IP 白名单" width="122"><template #default="{row}"><template v-if="row.ipOn"><span class="dot ok"></span>已开启 · {{ row.ips.length }} 个</template><template v-else><span class="dot"></span>未开启</template></template></el-table-column>
+      <el-table-column label="限流" width="82" align="center"><template #default="{row}">{{ row.qps }} 次/秒</template></el-table-column>
+      <el-table-column label="最近调用时间" width="156"><template #default="{row}"><span class="num">{{ row.last || '尚未调用' }}</span></template></el-table-column>
+      <el-table-column label="操作" width="180">
+        <template #default="{row}">
+          <el-button link type="primary" size="small" :disabled="row.status!=='启用'" @click="openRotate(row)">轮换密钥</el-button>
+          <el-button link type="primary" size="small" @click="openIp(row)">白名单</el-button>
+          <el-button link :type="row.status==='启用' ? 'danger' : 'success'" size="small" @click="toggle(row)">{{ row.status==='启用' ? '停用' : '启用' }}</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+    <div class="tbl-foot"><span><el-icon style="vertical-align:-2px"><Lock /></el-icon> 密钥<b>只在创建或轮换时完整展示一次</b>，之后仅以掩码显示；遗失请轮换。轮换后新旧密钥并行 7 天（可配置），期间两个密钥都可用。</span><span>超限返回 429 并带 Retry-After；限流可联系平台按企业调整</span></div>
+  </div>
+
+  <div class="grid c-2-1">
+    <div class="card">
+      <div class="card-title"><span>联调状态清单<small>在沙箱环境逐项验证，全部通过后再切换到正式环境</small></span><span class="right small muted">已通过 {{ passCount }} / {{ needCount }} 项</span></div>
+      <el-table :data="checks" border size="small">
+        <el-table-column label="联调项" min-width="150"><template #default="{row}">{{ row.name }}</template></el-table-column>
+        <el-table-column label="接口" min-width="210"><template #default="{row}"><span class="mono">{{ row.path }}</span></template></el-table-column>
+        <el-table-column v-for="s in ['hq','wx']" :key="s" :label="s==='hq' ? 'SRC-HQ（行级模式）' : 'SRC-WX（日汇总模式）'" min-width="186">
+          <template #default="{row}">
+            <template v-if="row[s].st==='ok'"><span class="dot ok"></span>通过 <span class="muted small num">{{ row[s].at }}</span></template>
+            <template v-else-if="row[s].st==='na'"><span class="muted">不适用（{{ row[s].why }}）</span></template>
+            <template v-else><span class="dot warn"></span><b style="color:#d48806">未联调</b>　<a href="javascript:;" @click="toDebug(row, s)">去调试</a></template>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div class="tip-box orange small mt12" v-if="needCount > passCount">“上传设置查询”在 SRC-HQ 上尚未联调。该接口返回来源系统当前的上传粒度与价格上传开关，ERP 端据此组织报文；切换粒度或开启价格上传前建议补齐，未联调不影响按当前设置的日常上传。</div>
+      <div class="tip-box green small mt12" v-else>两个来源系统的联调项已全部通过。</div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="doc-card">
+          <div class="ic"><el-icon><Document /></el-icon></div>
+          <div>
+            <div class="card-title" style="margin-bottom:6px"><span>接口文档中心</span></div>
+            <div class="small muted" style="line-height:1.7">在线文档、字段字典、错误码、变更日志，以及 Java 与 .NET 的签名示例代码。</div>
+            <div class="row mt8"><el-button type="primary" size="small" @click="$go('api-docs.html')">打开接口文档<el-icon class="el-icon--right"><ArrowRight /></el-icon></el-button><span class="small muted">最近更新 v1.1（2026-09-15）</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:0">
+        <div class="card-title"><span>接入约定速查</span></div>
+        <dl class="kv" style="grid-template-columns:86px 1fr">
+          <dt>鉴权</dt><dd>应用标识 + 密钥，HMAC-SHA256 签名</dd>
+          <dt>防重放</dt><dd>时间戳偏差超过 5 分钟拒绝；随机串有效期内不可重复</dd>
+          <dt>幂等</dt><dd>批量接口带 <span class="code">X-Idempotency-Key</span>，重复提交返回首次结果</dd>
+          <dt>批量限制</dt><dd>单次不超过 1,000 行且报文不超过 5 MB</dd>
+          <dt>处理方式</dt><dd>接入校验通过后返回 202 和批次号，逐行结果用批次查询接口获取</dd>
+          <dt>字段最小化</dt><dd>客户名称、业务员、成本、毛利等禁止字段收到即丢弃，不落盘</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" id="debug-card">
+    <el-tabs v-model="tab">
+      <el-tab-pane label="在线调试（沙箱）" name="debug">
+        <div class="grid c2" style="margin-bottom:0">
+          <div>
+            <el-form label-width="76px" size="small">
+              <el-form-item label="接口">
+                <el-select v-model="dbg.api" style="width:100%" @change="resetDbg">
+                  <el-option v-for="a in apis" :key="a.k" :label="a.m + ' ' + a.p + '　' + a.t" :value="a.k" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="调用应用">
+                <el-select v-model="dbg.app" style="width:100%">
+                  <el-option v-for="a in apps.sandbox" :key="a.appKey" :label="a.name + '（' + a.src + ' · ' + a.grain + '）'" :value="a.src" />
+                </el-select>
+              </el-form-item>
+            </el-form>
+            <table class="plain-table hdr-table mb8">
+              <tbody>
+                <tr><th style="width:140px">请求地址</th><td class="mono">{{ curApi.m }} {{ envs.sandbox.base }}{{ curApi.p }}</td></tr>
+                <tr><th>X-App-Key</th><td class="mono">{{ dbgApp.appKey }}</td></tr>
+                <tr><th>X-Timestamp / X-Nonce</th><td class="mono">1795501800000 / 9f2c41d7a6b84e03</td></tr>
+                <tr><th>X-Signature</th><td class="mono">由沙箱密钥自动计算</td></tr>
+                <tr v-if="curApi.m==='POST'"><th>X-Idempotency-Key</th><td class="mono">{{ dbgBatch }}</td></tr>
+              </tbody>
+            </table>
+            <template v-if="curApi.m==='POST'">
+              <div class="small muted mb8">示例请求报文（可修改后发送）</div>
+              <el-input v-model="dbg.body" type="textarea" :rows="14" class="mono-input" spellcheck="false" />
+            </template>
+            <div v-else class="tip-box small">该接口为 GET 请求，无请求体。</div>
+            <div class="row mt12">
+              <el-button type="primary" :loading="dbg.loading" @click="send"><el-icon><Promotion /></el-icon>发送请求</el-button>
+              <el-button @click="resetDbg">恢复示例报文</el-button>
+              <span class="small muted">沙箱数据不进入正式库</span>
+            </div>
+          </div>
+          <div>
+            <div class="resp-head">
+              <b>返回结果</b>
+              <template v-if="dbg.resp">
+                <el-tag :type="dbg.resp.http < 300 ? 'success' : 'danger'" size="small">HTTP {{ dbg.resp.http }} {{ dbg.resp.http===202 ? 'Accepted' : dbg.resp.http===200 ? 'OK' : 'Conflict' }}</el-tag>
+                <span class="muted small">耗时 {{ dbg.resp.ms }} ms</span>
+              </template>
+            </div>
+            <pre v-if="dbg.resp" class="codeblock" style="min-height:220px">{{ dbg.resp.text }}</pre>
+            <div v-else class="empty-block" style="border:1px dashed var(--stp-border);border-radius:6px"><div class="big"><el-icon><Promotion /></el-icon></div>点击“发送请求”查看沙箱返回</div>
+            <div v-if="dbg.resp && dbg.resp.note" class="tip-box small mt12" :class="dbg.resp.http < 300 ? 'green' : 'red'">{{ dbg.resp.note }}</div>
+            <div v-if="dbg.resp && dbg.resp.batchId" class="small mt8">下一步：用 <span class="code">GET /batches/{{ dbg.resp.batchId }}</span> 查询逐行处理结果。<a href="javascript:;" @click="dbg.api='batch'; resetDbg()">切换到批次结果查询</a></div>
+          </div>
+        </div>
+      </el-tab-pane>
+
+      <el-tab-pane label="签名校验工具" name="sign">
+        <div class="grid c2" style="margin-bottom:0">
+          <el-form label-width="96px" size="small">
+            <el-form-item label="请求方法"><el-radio-group v-model="sg.method"><el-radio-button value="POST">POST</el-radio-button><el-radio-button value="GET">GET</el-radio-button></el-radio-group></el-form-item>
+            <el-form-item label="请求路径"><el-input v-model="sg.path" class="mono-input" /></el-form-item>
+            <el-form-item label="X-Timestamp"><el-input v-model="sg.ts" class="mono-input" /></el-form-item>
+            <el-form-item label="X-Nonce"><el-input v-model="sg.nonce" class="mono-input" /></el-form-item>
+            <el-form-item label="请求体"><el-input v-model="sg.body" type="textarea" :rows="4" class="mono-input" placeholder="GET 请求留空" /></el-form-item>
+            <el-form-item label="密钥"><el-input v-model="sg.secret" class="mono-input" placeholder="建议只使用沙箱密钥" /><div class="small muted">只在浏览器本地计算，不会发送到平台。请不要在此粘贴正式环境密钥。</div></el-form-item>
+            <el-form-item label="ERP 端签名"><el-input v-model="sg.mine" class="mono-input" placeholder="粘贴 ERP 端算出的 X-Signature，用于比对（可选）" /></el-form-item>
+            <el-form-item><el-button type="primary" @click="calcSign">计算签名</el-button></el-form-item>
+          </el-form>
+          <div>
+            <div class="small muted mb8">签名串 = 请求方法 + 换行 + 路径 + 换行 + 时间戳 + 换行 + 随机串 + 换行 + 请求体摘要（SHA-256，十六进制小写）</div>
+            <pre class="codeblock">{{ sg.out ? sg.out.str : signPreview }}</pre>
+            <template v-if="sg.out">
+              <div class="small muted mt12 mb8">X-Signature = HMAC-SHA256(密钥, 签名串)，十六进制小写</div>
+              <pre class="codeblock">{{ sg.out.sig }}</pre>
+              <div v-if="sg.mine" class="tip-box small mt12" :class="sg.out.match ? 'green' : 'red'">
+                <template v-if="sg.out.match"><b>一致</b>：ERP 端签名与平台算法结果相同。</template>
+                <template v-else><b>不一致</b>：请逐项核对签名串的拼接顺序、换行符、请求体是否与实际发送的字节完全相同（空格、换行、字段顺序），以及时间戳是否为毫秒。</template>
+              </div>
+            </template>
+            <div v-else class="tip-box small mt12">填写左侧各项后点击“计算签名”。把这里的签名串与 ERP 端日志中的签名串逐行比对，可以快速定位 1002 签名错误的原因。</div>
+          </div>
+        </div>
+      </el-tab-pane>
+    </el-tabs>
+  </div>
+
+  <div class="card">
+    <div class="card-title">
+      <span>接口调用日志<small>{{ E.name }} · 保留近 30 天</small></span>
+      <span class="right">
+        <el-select v-model="logSrc" size="small" style="width:150px"><el-option label="全部来源系统" value="all" /><el-option label="SRC-HQ" value="SRC-HQ" /><el-option label="SRC-WX" value="SRC-WX" /></el-select>
+        <el-select v-model="logRes" size="small" style="width:120px"><el-option label="全部结果" value="all" /><el-option label="成功" value="ok" /><el-option label="失败" value="fail" /></el-select>
+        <el-button size="small" @click="$demo('日志已刷新')"><el-icon><Refresh /></el-icon>刷新</el-button>
+      </span>
+    </div>
+    <el-table :data="logRows" border size="small">
+      <el-table-column label="调用时间" width="150"><template #default="{row}"><span class="num">{{ row.time }}</span></template></el-table-column>
+      <el-table-column label="来源系统" width="88"><template #default="{row}"><span class="code">{{ row.src }}</span></template></el-table-column>
+      <el-table-column label="接口" min-width="186"><template #default="{row}"><span class="mono">{{ row.api }}</span></template></el-table-column>
+      <el-table-column label="批次号" min-width="168">
+        <template #default="{row}"><a v-if="row.batch && row.detail" href="javascript:;" class="mono" @click="openBatch(row)">{{ row.batch }}</a><span v-else-if="row.batch" class="mono">{{ row.batch }}</span><span v-else class="muted">—</span></template>
+      </el-table-column>
+      <el-table-column label="条数" width="64" align="right"><template #default="{row}"><span class="num">{{ row.count == null ? '—' : row.count }}</span></template></el-table-column>
+      <el-table-column label="结果" min-width="230"><template #default="{row}"><span class="dot" :class="row.ok ? 'ok' : 'err'"></span>HTTP {{ row.http }} · {{ row.result }}</template></el-table-column>
+      <el-table-column label="提示" width="130">
+        <template #default="{row}">
+          <el-tooltip v-if="row.detail && row.detail.price && $state.dnPrice==='off'" content="PRICE_DROPPED：价格字段未接收（开关关闭）。销量照常入库" placement="top"><el-tag size="small" type="warning" effect="plain">PRICE_DROPPED</el-tag></el-tooltip>
+          <el-tooltip v-else-if="row.detail && row.detail.priceOut" :content="'PRICE_DROPPED：' + row.detail.priceOut + ' 条的价格字段超出企业设定的上传范围，未接收。销量照常入库'" placement="top"><el-tag size="small" type="info" effect="plain">PRICE_DROPPED</el-tag></el-tooltip>
+          <span v-else class="muted">—</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="耗时" width="74" align="right"><template #default="{row}"><span class="num">{{ row.ms }} ms</span></template></el-table-column>
+    </el-table>
+    <div v-if="!logRows.length" class="empty-block">当前筛选条件下没有调用记录</div>
+    <div class="tbl-foot"><span>共 {{ logRows.length }} 条 · 点击批次号查看逐行处理结果统计</span><span>日志只记录调用元数据与处理状态，不含吨位等业务数值</span></div>
+  </div>
+
+  <!-- 创建应用 -->
+  <el-dialog v-model="createDlg" title="创建应用" width="540px">
+    <el-form label-width="96px">
+      <el-form-item label="所属环境"><el-tag :type="env==='prod' ? 'primary' : 'warning'">{{ E.name }}</el-tag></el-form-item>
+      <el-form-item label="应用名称"><el-input v-model="nf.name" placeholder="例如：上海分公司 ERP 上传" maxlength="20" show-word-limit /></el-form-item>
+      <el-form-item label="来源系统">
+        <el-select v-model="nf.src" style="width:100%">
+          <el-option label="SRC-HQ 总部 ERP（行级模式）" value="SRC-HQ" /><el-option label="SRC-WX 无锡分公司进销存（日汇总模式）" value="SRC-WX" /><el-option label="登记新的来源系统 SRC-SH 上海分公司 ERP" value="SRC-SH" />
+        </el-select>
+        <div class="small muted">新来源系统的上传粒度在“上传设置”中选择，默认行级模式。</div>
+      </el-form-item>
+      <el-form-item label="密钥有效期"><el-radio-group v-model="nf.term"><el-radio value="1 年">1 年</el-radio><el-radio value="2 年">2 年</el-radio></el-radio-group></el-form-item>
+    </el-form>
+    <div class="tip-box orange small">创建后密钥<b>只完整展示一次</b>，请在弹出的窗口中立即复制并保存到 ERP 配置中。</div>
+    <template #footer><el-button @click="createDlg=false">取消</el-button><el-button type="primary" :disabled="!nf.name" @click="doCreate">创建并生成密钥</el-button></template>
+  </el-dialog>
+
+  <!-- 轮换密钥 -->
+  <el-dialog v-model="rotateDlg" title="轮换密钥" width="540px">
+    <el-descriptions :column="1" border size="small">
+      <el-descriptions-item label="应用">{{ cur.name }}（{{ cur.src }}）</el-descriptions-item>
+      <el-descriptions-item label="当前密钥"><span class="mono">{{ E.prefix }}••••••••••••{{ cur.tail }}</span></el-descriptions-item>
+      <el-descriptions-item label="新旧并行期">
+        <el-select v-model="parallel" size="small" style="width:120px"><el-option v-for="d in [1,3,7,14]" :key="d" :label="d + ' 天'" :value="d" /></el-select>
+        <span class="small muted" style="margin-left:8px">默认 7 天</span>
+      </el-descriptions-item>
+    </el-descriptions>
+    <div class="tip-box blue small mt12">轮换后立即生成新密钥。<b>新旧密钥并行 {{ parallel }} 天</b>：并行期内两个密钥都能通过鉴权，便于 ERP 端从容切换；并行期结束后旧密钥自动失效。轮换操作写入审计日志并通知企业管理员。</div>
+    <template #footer><el-button @click="rotateDlg=false">取消</el-button><el-button type="primary" @click="doRotate">确认轮换</el-button></template>
+  </el-dialog>
+
+  <!-- 一次性展示密钥 -->
+  <el-dialog v-model="secretDlg" :title="secret.title" width="600px" :close-on-click-modal="false" :close-on-press-escape="false" :show-close="false">
+    <el-alert type="warning" show-icon :closable="false" title="请立即复制并妥善保存。关闭本窗口后，完整密钥不会再次展示。"></el-alert>
+    <dl class="kv" style="grid-template-columns:120px 1fr">
+      <dt>应用</dt><dd>{{ secret.name }}（{{ secret.src }}）</dd>
+      <dt>应用标识 AppKey</dt><dd class="mono">{{ secret.appKey }}</dd>
+    </dl>
+    <div class="small muted mt12 mb8">密钥 AppSecret</div>
+    <div class="secret-box"><span class="mono">{{ secret.full }}</span><el-button type="primary" size="small" @click="copy(secret.full)"><el-icon><CopyDocument /></el-icon>复制</el-button></div>
+    <div v-if="secret.parallel" class="tip-box blue small mt12">旧密钥继续有效至 <b>{{ secret.parallel }}</b>（新旧并行 {{ parallel }} 天），之后自动失效。</div>
+    <el-checkbox v-model="secret.saved" class="mt12">我已复制并保存密钥</el-checkbox>
+    <template #footer><el-button type="primary" :disabled="!secret.saved" @click="secretDlg=false">完成</el-button></template>
+  </el-dialog>
+
+  <!-- IP 白名单 -->
+  <el-dialog v-model="ipDlg" title="IP 白名单" width="540px">
+    <div class="row between mb12"><span>应用：<b>{{ cur.name }}</b>（{{ cur.src }}）</span><span>启用白名单 <el-switch v-model="ipf.on" /></span></div>
+    <div class="small muted mb8">{{ ipf.on ? '只有下列 IP 发出的请求才能通过鉴权，其他来源返回 1005。支持单个 IP 或 CIDR 网段，最多 20 条。' : '未启用时不限制来源 IP，只校验密钥与签名。建议正式环境开启。' }}</div>
+    <div class="ip-list" :style="{opacity: ipf.on ? 1 : .5}">
+      <el-tag v-for="ip in ipf.ips" :key="ip" closable :disable-transitions="true" @close="ipf.ips = ipf.ips.filter(x => x !== ip)"><span class="mono">{{ ip }}</span></el-tag>
+      <span v-if="!ipf.ips.length" class="muted small">暂无 IP</span>
+    </div>
+    <div class="row mt8" style="flex-wrap:nowrap">
+      <el-input v-model="ipf.input" :disabled="!ipf.on" placeholder="例如 58.210.36.20 或 58.210.36.0/28" class="mono-input" @keyup.enter="addIp" />
+      <el-button :disabled="!ipf.on" @click="addIp"><el-icon><Plus /></el-icon>添加</el-button>
+    </div>
+    <template #footer><el-button @click="ipDlg=false">取消</el-button><el-button type="primary" :disabled="ipf.on && !ipf.ips.length" @click="saveIp">保存</el-button></template>
+  </el-dialog>
+
+  <!-- 转交 -->
+  <el-dialog v-model="handDlg" title="转交给接口对接员" width="540px">
+    <el-form label-width="96px">
+      <el-form-item label="选择成员">
+        <el-radio-group v-model="hand.member" style="display:flex;flex-direction:column;align-items:flex-start">
+          <el-radio v-for="m in members" :key="m.id" :value="m.id">{{ m.name }}<span class="muted small">　{{ m.dept }}</span></el-radio>
+        </el-radio-group>
+      </el-form-item>
+      <el-form-item label="转交范围">
+        <el-checkbox-group v-model="hand.scope">
+          <el-checkbox value="应用与密钥">应用与密钥</el-checkbox><el-checkbox value="IP 白名单">IP 白名单</el-checkbox><el-checkbox value="沙箱联调">沙箱联调</el-checkbox><el-checkbox value="接口日志">接口日志</el-checkbox>
+        </el-checkbox-group>
+      </el-form-item>
+      <el-form-item label="留言"><el-input v-model="hand.note" type="textarea" :rows="2" placeholder="例如：请在本周内补齐 SRC-HQ 的上传设置查询联调" /></el-form-item>
+    </el-form>
+    <div class="tip-box blue small"><b>接口对接员默认不可查看业务明细。</b>该角色只能管理应用密钥、IP 白名单、沙箱调试并查看接口日志（调用时间、接口、批次号、条数、处理状态），看不到销量、库存、价格等数值，也不能修改上传规则、上架方式和价格开关。转交记录写入审计日志。</div>
+    <template #footer><el-button @click="handDlg=false">取消</el-button><el-button type="primary" :disabled="!hand.scope.length" @click="doHand">确认转交</el-button></template>
+  </el-dialog>
+
+  <!-- 批次逐行结果 -->
+  <el-drawer v-model="batchDrawer" :title="'批次处理结果 · ' + (bt.batch || '')" size="640px">
+    <template v-if="bt.detail">
+      <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="接口"><span class="mono">{{ bt.api }}</span></el-descriptions-item>
+        <el-descriptions-item label="来源系统"><span class="code">{{ bt.src }}</span> {{ bt.src==='SRC-HQ' ? '行级模式' : '日汇总模式' }}</el-descriptions-item>
+        <el-descriptions-item label="接收时间">{{ bt.time }}</el-descriptions-item>
+        <el-descriptions-item label="处理状态"><span class="dot ok"></span>处理完成</el-descriptions-item>
+        <el-descriptions-item label="接收条数">{{ bt.count }} {{ bt.src==='SRC-HQ' ? '行' : '条汇总记录' }}</el-descriptions-item>
+        <el-descriptions-item label="业务日期">{{ bt.detail.bizDate }}</el-descriptions-item>
+      </el-descriptions>
+
+      <div class="side-panel-title">逐行处理结果统计</div>
+      <div class="res-stat">
+        <div><div class="k"><b>ACCEPTED</b>已入库</div><div class="v num" style="color:#18a058">{{ bt.detail.a }}</div></div>
+        <div><div class="k"><b>FILTERED</b>被规则过滤</div><div class="v num">{{ bt.detail.f }}</div></div>
+        <div><div class="k"><b>REJECTED</b>校验失败</div><div class="v num" :style="{color: bt.detail.r ? '#e5484d' : ''}">{{ bt.detail.r }}</div></div>
+        <div><div class="k"><b>PENDING_MAPPING</b>待映射</div><div class="v num" :style="{color: bt.detail.p ? '#d48806' : ''}">{{ bt.detail.p }}</div></div>
+        <div><div class="k"><b>QUARANTINED</b>隔离待确认</div><div class="v num" :style="{color: bt.detail.q ? '#9254de' : ''}">{{ bt.detail.q }}</div></div>
+      </div>
+      <div class="small muted mt8">被规则过滤的数据不落盘，平台只记录条数。</div>
+
+      <template v-if="bt.detail.price">
+        <div v-if="$state.dnPrice==='off'" class="tip-box orange small mt12">
+          <b>PRICE_DROPPED：价格字段未接收（开关关闭）</b><br>本批次有 {{ bt.detail.price }} {{ bt.src==='SRC-HQ' ? '行' : '条' }}带有 unitPrice / amount 等价格与金额字段。企业未开启价格上传，这些字段已丢弃、不落盘，销量照常入库。如需上传价格，请企业管理员在 <a href="upload-settings.html">上传设置</a> 中开启。
+        </div>
+        <div v-else class="tip-box green small mt12">
+          本批次 {{ bt.detail.price }} {{ bt.src==='SRC-HQ' ? '行' : '条' }}带有价格与金额字段：<b>{{ bt.detail.price - bt.detail.priceOut }}</b> 条在企业设定的上传范围内，已接收；<b>{{ bt.detail.priceOut }}</b> 条为 <b>PRICE_DROPPED</b>（超出上传范围），价格字段已丢弃、不落盘，销量照常入库。
+        </div>
+      </template>
+
+      <template v-if="bt.detail.reasons.length">
+        <div class="side-panel-title">失败与待处理原因</div>
+        <table class="plain-table">
+          <thead><tr><th>状态</th><th>原因码</th><th>说明</th><th class="r">条数</th></tr></thead>
+          <tbody><tr v-for="r in bt.detail.reasons" :key="r.code"><td><el-tag size="small" :type="r.st==='REJECTED' ? 'danger' : r.st==='QUARANTINED' ? 'info' : 'warning'" effect="plain">{{ r.st }}</el-tag></td><td class="mono">{{ r.code }}</td><td>{{ r.text }}</td><td class="r num">{{ r.n }}</td></tr></tbody>
+        </table>
+      </template>
+
+      <div class="side-panel-title">逐行结果（异常行）</div>
+      <el-table v-if="bt.detail.lines.length" :data="bt.detail.lines" border size="small">
+        <el-table-column label="序号" width="60" align="center" prop="i"></el-table-column>
+        <el-table-column :label="bt.src==='SRC-HQ' ? '单据号 / 行号' : '汇总记录键'" min-width="170"><template #default="{row}"><span class="mono">{{ row.key }}</span></template></el-table-column>
+        <el-table-column label="状态" width="150"><template #default="{row}"><span class="mono">{{ row.st }}</span></template></el-table-column>
+        <el-table-column label="原因码" min-width="150"><template #default="{row}"><span class="mono">{{ row.code }}</span></template></el-table-column>
+      </el-table>
+      <div v-else class="empty-block" style="padding:18px 0">本批次没有异常行</div>
+      <div class="tip-box small mt12"><el-icon style="vertical-align:-2px"><Lock /></el-icon> 接口对接员默认不可查看业务明细，这里只展示处理状态与原因码，不展示品名、吨位等内容。数据管理员可在 <a href="data-check.html">已上传数据自查</a> 中查看并下载失败明细。</div>
+    </template>
+  </el-drawer>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  /* ---- SHA-256 与 HMAC-SHA256（浏览器本地计算，供签名校验工具使用） ---- */
+  const K = [];
+  (function () { let n = 2, i = 0; const isP = (x) => { for (let d = 2; d * d <= x; d++) if (x % d === 0) return false; return true; }; while (i < 64) { if (isP(n)) { K[i++] = (Math.pow(n, 1 / 3) * 4294967296) | 0; } n++; } })();
+  const sha256 = (bytes) => {
+    const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+    const l = bytes.length, n = (((l + 8) >> 6) + 1) << 4, w = new Int32Array(n);
+    for (let i = 0; i < l; i++) w[i >> 2] |= bytes[i] << (24 - (i % 4) * 8);
+    w[l >> 2] |= 0x80 << (24 - (l % 4) * 8);
+    w[n - 2] = Math.floor(l / 536870912); w[n - 1] = l << 3;
+    const rr = (x, c) => (x >>> c) | (x << (32 - c));
+    const W = new Int32Array(64);
+    for (let o = 0; o < n; o += 16) {
+      let [a, b, c, d, e, f, g, h] = H;
+      for (let i = 0; i < 64; i++) {
+        if (i < 16) W[i] = w[o + i];
+        else { const x = W[i - 15], y = W[i - 2]; W[i] = (W[i - 16] + (rr(x, 7) ^ rr(x, 18) ^ (x >>> 3)) + W[i - 7] + (rr(y, 17) ^ rr(y, 19) ^ (y >>> 10))) | 0; }
+        const t1 = (h + (rr(e, 6) ^ rr(e, 11) ^ rr(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + W[i]) | 0;
+        const t2 = ((rr(a, 2) ^ rr(a, 13) ^ rr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+        h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+      }
+      H[0] = (H[0] + a) | 0; H[1] = (H[1] + b) | 0; H[2] = (H[2] + c) | 0; H[3] = (H[3] + d) | 0; H[4] = (H[4] + e) | 0; H[5] = (H[5] + f) | 0; H[6] = (H[6] + g) | 0; H[7] = (H[7] + h) | 0;
+    }
+    const out = new Uint8Array(32);
+    H.forEach((v, i) => { out[i * 4] = v >>> 24; out[i * 4 + 1] = (v >>> 16) & 255; out[i * 4 + 2] = (v >>> 8) & 255; out[i * 4 + 3] = v & 255; });
+    return out;
+  };
+  const utf8 = (s) => new TextEncoder().encode(s);
+  const hex = (b) => Array.from(b).map((x) => x.toString(16).padStart(2, '0')).join('');
+  const hmac = (key, msg) => {
+    let k = utf8(key); if (k.length > 64) k = sha256(k);
+    const ip = new Uint8Array(64), op = new Uint8Array(64);
+    for (let i = 0; i < 64; i++) { const v = k[i] || 0; ip[i] = v ^ 0x36; op[i] = v ^ 0x5c; }
+    const m = utf8(msg), inner = new Uint8Array(64 + m.length); inner.set(ip); inner.set(m, 64);
+    const outer = new Uint8Array(96); outer.set(op); outer.set(sha256(inner), 64);
+    return hex(sha256(outer));
+  };
+  window.__SIGN__ = { sha256hex: (s) => hex(sha256(utf8(s))), hmac };
+
+  const ENVS = {
+    prod: { name: '正式环境', base: 'https://openapi.huodaizi-data.example/openapi/v1', prefix: 'sk_live_' },
+    sandbox: { name: '沙箱环境', base: 'https://sandbox-openapi.huodaizi-data.example/openapi/v1', prefix: 'sk_test_' },
+  };
+  const J = (o) => JSON.stringify(o, null, 2);
+  const SALE_LINE = { sourceSystem: 'SRC-HQ', docNo: 'XS2611230158', lineNo: 1, opType: 'UPSERT', docType: 'SALE_OUT', bizDate: '2026-11-23', warehouseCode: 'WH01', warehouseName: '苏州望亭库', destRegionCode: '320500', deliveryMode: '自提', itemCode: 'LW-400E-20-9', categoryName: '建筑钢材', productName: '螺纹钢', material: 'HRB400E', spec: 'Φ20×9m', millName: '东岳', weight: 34.56, weightMode: '理计', customerType: '终端', updatedAt: '2026-11-23T16:42:10+08:00' };
+  const SUM_LINE = { warehouseRegionCode: '320200', categoryName: '建筑钢材', productName: '螺纹钢', material: 'HRB400E', spec: 'Φ20×9m', millName: '东岳', netWeight: 86.4, outWeight: 89.28, returnWeight: 2.88, lineCount: 7 };
+  const APIS = [
+    { k: 'ping', m: 'GET', p: '/ping', t: '连通性与鉴权检查' },
+    { k: 'sales', m: 'POST', p: '/sales/batch', t: '销售出库批量上传（行级）', src: 'SRC-HQ', body: { items: [SALE_LINE, Object.assign({}, SALE_LINE, { lineNo: 2, itemCode: 'PL-400E-8', productName: '盘螺', spec: 'Φ8', weight: 12.085 })] } },
+    { k: 'daily', m: 'POST', p: '/sales/daily-summary', t: '销售日汇总上传', src: 'SRC-WX', body: { sourceSystem: 'SRC-WX', bizDate: '2026-11-23', summaryBatchNo: 'SB-WX-20261123-01', seq: 1, isLast: true, items: [SUM_LINE, Object.assign({}, SUM_LINE, { productName: '热轧卷板', categoryName: '热轧板卷', material: 'Q235B', spec: '5.75×1500×C', millName: '金江', netWeight: 61.92, outWeight: 61.92, returnWeight: 0, lineCount: 3 })] } },
+    { k: 'inv', m: 'POST', p: '/inventory/snapshot', t: '库存快照上传', body: { sourceSystem: 'SRC-HQ', snapshotDate: '2026-11-23', snapshotBatchNo: 'S-HQ-20261123-01', seq: 1, isLast: true, items: [{ warehouseCode: 'WH01', warehouseName: '苏州望亭库', itemCode: 'LW-400E-20-9', categoryName: '建筑钢材', productName: '螺纹钢', material: 'HRB400E', spec: 'Φ20×9m', millName: '东岳', weight: 1286.4, stockType: '自有现货', ageBand: '0–30' }] } },
+    { k: 'batch', m: 'GET', p: '/batches/B-SBX-20261124-001', t: '批次结果查询' },
+    { k: 'rules', m: 'GET', p: '/rules/effective', t: '生效规则拉取' },
+    { k: 'settings', m: 'GET', p: '/settings', t: '上传设置查询' },
+    { k: 'dicts', m: 'GET', p: '/dicts/category', t: '字典同步' },
+    { k: 'recon', m: 'POST', p: '/reconcile/daily', t: '每日对账申报', body: { sourceSystem: 'SRC-HQ', bizDate: '2026-11-23', dataType: 'SALES', lineCount: 300, totalWeight: 1528.34 } },
+  ];
+  const ok = (at) => ({ st: 'ok', at }), na = (why) => ({ st: 'na', why }), none = () => ({ st: 'none' });
+  const mkDetail = (bizDate, a, f, r, p, q, price, priceOut, src) => {
+    const reasons = [], lines = [];
+    const hq = src === 'SRC-HQ';
+    const key = (i) => (hq ? 'XS26112' + (30100 + i * 37) + ' / ' + (1 + (i % 3)) : '320200|' + ['螺纹钢', '盘螺', '热轧卷板', '高线'][i % 4] + '|#' + (i + 3));
+    if (r) {
+      const r1 = Math.min(r, 1), r2 = r - r1;
+      if (r1) reasons.push({ st: 'REJECTED', code: 'R2101', text: '吨位超出该品名单行上限', n: r1 });
+      if (r2) reasons.push({ st: 'REJECTED', code: 'R2203', text: '业务日期晚于当前日期', n: r2 });
+      for (let i = 0; i < r; i++) lines.push({ i: 12 + i * 23, key: key(i), st: 'REJECTED', code: i < r1 ? 'R2101' : 'R2203' });
+    }
+    if (p) { reasons.push({ st: 'PENDING_MAPPING', code: 'M3001', text: 'ERP 物料未映射到标准品名或规格', n: p }); for (let i = 0; i < p; i++) lines.push({ i: 5 + i * 17, key: key(i + 5), st: 'PENDING_MAPPING', code: 'M3001' }); }
+    if (q) { reasons.push({ st: 'QUARANTINED', code: 'Q4002', text: '相对本企业近 30 日均值突变，待企业确认', n: q }); for (let i = 0; i < q; i++) lines.push({ i: 71 + i, key: key(i + 9), st: 'QUARANTINED', code: 'Q4002' }); }
+    lines.sort((x, y) => x.i - y.i);
+    return { bizDate, a, f, r, p, q, price, priceOut, reasons, lines };
+  };
+  const LOGS = {
+    prod: [
+      { time: '2026-11-23 23:58:30', src: 'SRC-WX', api: 'POST /inventory/snapshot', batch: 'S-WX-20261123-01', count: 86, http: 202, result: '已受理 · 处理完成', ok: true, ms: 142, detail: mkDetail('2026-11-23', 86, 0, 0, 0, 0, 0, 0, 'SRC-WX') },
+      { time: '2026-11-23 23:56:02', src: 'SRC-WX', api: 'POST /reconcile/daily', batch: 'RC-WX-20261123-01', count: 1, http: 202, result: '已受理 · 对账有差异（1 条）', ok: true, ms: 64 },
+      { time: '2026-11-23 23:55:08', src: 'SRC-WX', api: 'POST /sales/daily-summary', batch: 'SB-WX-20261123-01', count: 45, http: 202, result: '已受理 · 整批替换生效', ok: true, ms: 127, detail: mkDetail('2026-11-23', 41, 0, 0, 4, 0, 0, 0, 'SRC-WX') },
+      { time: '2026-11-23 23:52:05', src: 'SRC-HQ', api: 'POST /inventory/snapshot', batch: 'S-HQ-20261123-01', count: 412, http: 202, result: '已受理 · 处理完成', ok: true, ms: 318, detail: mkDetail('2026-11-23', 412, 0, 0, 0, 0, 0, 0, 'SRC-HQ') },
+      { time: '2026-11-23 23:40:36', src: 'SRC-HQ', api: 'POST /sales/batch', batch: 'B-HQ-20261123-003', count: 75, http: 202, result: '已受理 · 处理完成', ok: true, ms: 186, detail: mkDetail('2026-11-23', 65, 8, 0, 2, 0, 75, 16, 'SRC-HQ') },
+      { time: '2026-11-23 23:40:02', src: 'SRC-HQ', api: 'GET /rules/effective', batch: '', count: null, http: 200, result: '成功 · 规则版本 v7', ok: true, ms: 42 },
+      { time: '2026-11-23 23:40:01', src: 'SRC-HQ', api: 'GET /settings', batch: '', count: null, http: 200, result: '成功', ok: true, ms: 38 },
+      { time: '2026-11-23 18:05:31', src: 'SRC-HQ', api: 'POST /sales/batch', batch: 'B-HQ-20261123-002', count: 118, http: 202, result: '已受理 · 处理完成', ok: true, ms: 204, detail: mkDetail('2026-11-23', 100, 12, 2, 3, 1, 118, 22, 'SRC-HQ') },
+      { time: '2026-11-23 12:05:27', src: 'SRC-HQ', api: 'POST /sales/batch', batch: 'B-HQ-20261123-001', count: 108, http: 202, result: '已受理 · 处理完成', ok: true, ms: 221, detail: mkDetail('2026-11-23', 93, 11, 1, 3, 0, 108, 20, 'SRC-HQ') },
+      { time: '2026-11-23 09:14:22', src: 'SRC-WX', api: 'POST /sales/batch', batch: 'B-WX-20261123-001', count: 38, http: 409, result: '3004 上传粒度与当前设置不符', ok: false, ms: 21 },
+      { time: '2026-11-22 23:41:48', src: 'SRC-HQ', api: 'POST /sales/batch', batch: 'B-HQ-20261122-002', count: 87, http: 202, result: '已受理 · 处理完成', ok: true, ms: 173, detail: mkDetail('2026-11-22', 74, 10, 0, 3, 0, 87, 18, 'SRC-HQ') },
+      { time: '2026-11-22 13:02:43', src: 'SRC-HQ', api: 'POST /sales/batch', batch: 'B-HQ-20261122-001', count: 102, http: 202, result: '已受理 · 处理完成', ok: true, ms: 196, detail: mkDetail('2026-11-22', 88, 12, 0, 2, 0, 102, 26, 'SRC-HQ') },
+      { time: '2026-11-22 12:58:12', src: 'SRC-HQ', api: 'POST /sales/batch', batch: 'B-HQ-20261122-001', count: 102, http: 401, result: '1003 时间戳过期（偏差超过 5 分钟）', ok: false, ms: 9 },
+    ],
+    sandbox: [
+      { time: '2026-11-20 15:42:10', src: 'SRC-WX', api: 'POST /reconcile/daily', batch: 'RC-SBX-20261119-01', count: 1, http: 202, result: '已受理', ok: true, ms: 58 },
+      { time: '2026-11-20 15:40:33', src: 'SRC-WX', api: 'POST /sales/daily-summary', batch: 'SB-SBX-20261119-01', count: 12, http: 202, result: '已受理 · 整批替换生效', ok: true, ms: 96, detail: mkDetail('2026-11-19', 11, 1, 0, 0, 0, 12, 12, 'SRC-WX') },
+      { time: '2026-11-18 10:05:27', src: 'SRC-HQ', api: 'POST /sales/batch', batch: 'B-SBX-20261118-002', count: 20, http: 202, result: '已受理 · 处理完成', ok: true, ms: 133, detail: mkDetail('2026-11-17', 15, 2, 2, 1, 0, 20, 6, 'SRC-HQ') },
+      { time: '2026-11-18 10:03:02', src: 'SRC-HQ', api: 'POST /sales/batch', batch: 'B-SBX-20261118-001', count: 20, http: 400, result: '2002 必填缺失：millName', ok: false, ms: 12 },
+      { time: '2026-11-18 10:01:44', src: 'SRC-HQ', api: 'GET /ping', batch: '', count: null, http: 200, result: '成功', ok: true, ms: 18 },
+    ],
+  };
+
+  STP.mount({
+    data() {
+      return {
+        env: 'prod', envs: ENVS, tab: 'debug',
+        apps: {
+          prod: [
+            { name: '总部 ERP 上传', src: 'SRC-HQ', srcName: '总部 ERP', grain: '行级模式', appKey: 'hy3a8f26c1d07e45', tail: '7f3a', status: '启用', ipOn: true, ips: ['58.210.36.18', '58.210.36.19'], qps: 20, last: '2026-11-23 23:52:05', expire: '2027-02-22', rotating: '' },
+            { name: '无锡分公司上传', src: 'SRC-WX', srcName: '无锡分公司进销存', grain: '日汇总模式', appKey: 'hy9d41b7e2a65c08', tail: 'c2e9', status: '启用', ipOn: false, ips: [], qps: 20, last: '2026-11-23 23:58:30', expire: '2027-11-20', rotating: '2026-11-27' },
+          ],
+          sandbox: [
+            { name: '总部 ERP 联调', src: 'SRC-HQ', srcName: '总部 ERP', grain: '行级模式', appKey: 'sbx5c07e19ab3d264', tail: '0b6d', status: '启用', ipOn: false, ips: [], qps: 20, last: '2026-11-18 10:05:27', expire: '2027-09-21', rotating: '' },
+            { name: '无锡分公司联调', src: 'SRC-WX', srcName: '无锡分公司进销存', grain: '日汇总模式', appKey: 'sbx2e86d40f7a91c3', tail: 'a41f', status: '启用', ipOn: false, ips: [], qps: 20, last: '2026-11-20 15:42:10', expire: '2027-09-21', rotating: '' },
+          ],
+        },
+        checks: [
+          { k: 'ping', name: '连通性与鉴权', path: 'GET /ping', hq: ok('2025-09-22 14:06'), wx: ok('2026-09-21 10:12') },
+          { k: 'sign', name: '签名校验', path: 'HMAC-SHA256 · 防重放', hq: ok('2025-09-22 14:06'), wx: ok('2026-09-21 10:12') },
+          { k: 'sales', name: '销售出库批量上传', path: 'POST /sales/batch', hq: ok('2025-09-23 16:31'), wx: na('日汇总模式') },
+          { k: 'daily', name: '销售日汇总上传', path: 'POST /sales/daily-summary', hq: na('行级模式'), wx: ok('2026-09-24 11:20') },
+          { k: 'inv', name: '库存快照上传', path: 'POST /inventory/snapshot', hq: ok('2025-09-24 09:48'), wx: ok('2026-09-24 11:36') },
+          { k: 'batch', name: '批次结果查询', path: 'GET /batches/{batchId}', hq: ok('2025-09-24 09:52'), wx: ok('2026-09-24 11:38') },
+          { k: 'rules', name: '生效规则拉取', path: 'GET /rules/effective', hq: ok('2025-09-25 10:15'), wx: ok('2026-09-24 14:02') },
+          { k: 'settings', name: '上传设置查询', path: 'GET /settings', hq: none(), wx: ok('2026-09-24 14:05') },
+          { k: 'dicts', name: '字典同步', path: 'GET /dicts/{type}', hq: ok('2025-09-25 10:40'), wx: ok('2026-09-25 09:30') },
+          { k: 'recon', name: '每日对账申报', path: 'POST /reconcile/daily', hq: ok('2026-10-14 15:20'), wx: ok('2026-09-26 16:44') },
+        ],
+        apis: APIS,
+        dbg: { api: 'sales', app: 'SRC-HQ', body: J(APIS[1].body), loading: false, resp: null },
+        sg: { method: 'POST', path: '/openapi/v1/sales/batch', ts: '1795501800000', nonce: '9f2c41d7a6b84e03', body: '{"items":[{"docNo":"XS2611230158","lineNo":1}]}', secret: 'sk_test_demo_only_4d8a17c96e0b', mine: '', out: null },
+        logSrc: 'all', logRes: 'all',
+        createDlg: false, rotateDlg: false, secretDlg: false, ipDlg: false, handDlg: false, batchDrawer: false,
+        cur: {}, bt: {}, parallel: 7,
+        nf: { name: '', src: 'SRC-HQ', term: '1 年' },
+        secret: { title: '', name: '', src: '', appKey: '', full: '', parallel: '', saved: false },
+        ipf: { on: false, ips: [], input: '' },
+        hand: { member: 'u2', scope: ['应用与密钥', 'IP 白名单', '沙箱联调', '接口日志'], note: '' },
+        members: [{ id: 'u2', name: '周凯', dept: '信息部 · 已是接口对接员' }, { id: 'u3', name: '沈立新', dept: '无锡分公司 · 已是接口对接员' }, { id: 'u4', name: '刘雯', dept: '业务部 · 数据管理员（将追加接口对接员角色）' }, { id: 'u9', name: '邀请新成员', dept: '通过手机号发送邀请，加入后授予接口对接员角色' }],
+      };
+    },
+    computed: {
+      E() { return ENVS[this.env]; },
+      curApi() { return APIS.find((a) => a.k === this.dbg.api); },
+      dbgApp() { return this.apps.sandbox.find((a) => a.src === this.dbg.app) || this.apps.sandbox[0]; },
+      dbgBatch() { return this.dbg.api === 'daily' ? 'SB-SBX-20261124-01' : this.dbg.api === 'inv' ? 'S-SBX-20261124-01' : this.dbg.api === 'recon' ? 'RC-SBX-20261124-01' : 'B-SBX-20261124-001'; },
+      passCount() { return this.checks.reduce((n, c) => n + (c.hq.st === 'ok') + (c.wx.st === 'ok'), 0); },
+      needCount() { return this.checks.reduce((n, c) => n + (c.hq.st !== 'na') + (c.wx.st !== 'na'), 0); },
+      logRows() { return LOGS[this.env].filter((l) => (this.logSrc === 'all' || l.src === this.logSrc) && (this.logRes === 'all' || (this.logRes === 'ok') === l.ok)); },
+      signPreview() { return [this.sg.method, this.sg.path, this.sg.ts, this.sg.nonce, '<请求体的 SHA-256 摘要>'].join('\n'); },
+    },
+    methods: {
+      copy(text) {
+        try { const t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select(); document.execCommand('copy'); document.body.removeChild(t); } catch (e) { /* ignore */ }
+        this.$demo('已复制到剪贴板');
+      },
+      rand(n, seed) { const r = M.rngOf(M.hash(seed + Date.now())); let s = ''; for (let i = 0; i < n; i++) s += '0123456789abcdef'[Math.floor(r() * 16)]; return s; },
+      openCreate() { this.nf = { name: '', src: 'SRC-HQ', term: '1 年' }; this.createDlg = true; },
+      doCreate() {
+        const full = this.E.prefix + this.rand(32, this.nf.name);
+        const names = { 'SRC-HQ': ['总部 ERP', '行级模式'], 'SRC-WX': ['无锡分公司进销存', '日汇总模式'], 'SRC-SH': ['上海分公司 ERP', '行级模式'] }[this.nf.src];
+        const app = { name: this.nf.name, src: this.nf.src, srcName: names[0], grain: names[1], appKey: (this.env === 'prod' ? 'hy' : 'sbx') + this.rand(14, 'k' + this.nf.name), tail: full.slice(-4), status: '启用', ipOn: false, ips: [], qps: 20, last: '', expire: this.nf.term === '1 年' ? '2027-11-24' : '2028-11-24', rotating: '' };
+        this.apps[this.env].push(app);
+        this.createDlg = false;
+        this.secret = { title: '应用已创建 · 请保存密钥', name: app.name, src: app.src, appKey: app.appKey, full, parallel: '', saved: false };
+        this.secretDlg = true;
+      },
+      openRotate(row) { this.cur = row; this.parallel = 7; this.rotateDlg = true; },
+      doRotate() {
+        const full = this.E.prefix + this.rand(32, this.cur.appKey);
+        const until = STP.addDays(M.TODAY, this.parallel);
+        this.cur.tail = full.slice(-4); this.cur.rotating = until; this.cur.expire = '2027-11-24';
+        this.rotateDlg = false;
+        this.secret = { title: '密钥已轮换 · 请保存新密钥', name: this.cur.name, src: this.cur.src, appKey: this.cur.appKey, full, parallel: until + ' 24:00', saved: false };
+        this.secretDlg = true;
+      },
+      toggle(row) {
+        const stop = row.status === '启用';
+        ElementPlus.ElMessageBox.confirm(stop ? '停用后，该应用的密钥立即失效，来源系统 ' + row.src + ' 的上传请求将被拒绝（1001 密钥无效）。已上传的数据不受影响，可随时重新启用。' : '重新启用后，该应用可继续使用原密钥上传。', (stop ? '停用' : '启用') + '应用“' + row.name + '”', { type: stop ? 'warning' : 'info', confirmButtonText: stop ? '确认停用' : '确认启用', cancelButtonText: '取消' })
+          .then(() => { row.status = stop ? '已停用' : '启用'; this.$demo('应用已' + (stop ? '停用' : '启用')); }).catch(() => {});
+      },
+      openIp(row) { this.cur = row; this.ipf = { on: row.ipOn, ips: row.ips.slice(), input: '' }; this.ipDlg = true; },
+      addIp() {
+        const v = this.ipf.input.trim();
+        if (!/^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/.test(v)) { this.$info('请输入正确的 IPv4 地址或 CIDR 网段'); return; }
+        if (this.ipf.ips.indexOf(v) < 0) this.ipf.ips.push(v);
+        this.ipf.input = '';
+      },
+      saveIp() { this.cur.ipOn = this.ipf.on; this.cur.ips = this.ipf.ips.slice(); this.ipDlg = false; this.$demo('IP 白名单已保存，立即生效'); },
+      doHand() { const m = this.members.find((x) => x.id === this.hand.member); this.handDlg = false; this.$demo('已转交给 ' + m.name + '，并已发送站内信与短信通知'); },
+      toDebug(row, s) {
+        this.tab = 'debug'; this.dbg.api = row.k; this.dbg.app = s === 'hq' ? 'SRC-HQ' : 'SRC-WX'; this.resetDbg(true);
+        const el = document.getElementById('debug-card'); if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      },
+      resetDbg(keepApp) {
+        const a = this.curApi;
+        if (keepApp !== true && a.src) this.dbg.app = a.src;
+        let body = a.body ? JSON.parse(JSON.stringify(a.body)) : null;
+        if (body && a.k === 'recon') body.sourceSystem = this.dbg.app;
+        this.dbg.body = body ? J(body) : '';
+        this.dbg.resp = null;
+      },
+      send() {
+        const a = this.curApi, src = this.dbg.app;
+        if (a.m === 'POST') { try { JSON.parse(this.dbg.body); } catch (e) { this.dbg.resp = { http: 400, ms: 6, text: J({ code: 2004, message: '请求体不是合法的 JSON', requestId: 'req-' + this.rand(16, 'x'), data: null }), note: '2xxx 为请求格式错误，整批拒绝。请检查报文。' }; return; } }
+        this.dbg.loading = true;
+        setTimeout(() => {
+          const requestId = 'req-' + this.rand(16, a.k);
+          const grainBad = (a.k === 'sales' && src === 'SRC-WX') || (a.k === 'daily' && src === 'SRC-HQ');
+          let resp;
+          if (grainBad) resp = { http: 409, text: J({ code: 3004, message: '上传粒度与当前设置不符：' + src + ' 当前为' + (src === 'SRC-WX' ? '日汇总模式' : '行级模式'), requestId, data: null }), note: '同一来源系统、同一业务日期只接受一种粒度的销售数据，另一种粒度的数据拒收。可用 GET /settings 查询当前粒度。' };
+          else if (a.m === 'POST') resp = { http: 202, batchId: this.dbgBatch, text: J({ code: 0, message: '已受理', requestId, data: { batchId: this.dbgBatch } }), note: '接入校验通过。逐行处理（规则过滤、字段校验、映射）异步进行，请用批次结果查询接口获取。' };
+          else if (a.k === 'ping') resp = { http: 200, text: J({ code: 0, message: '成功', requestId, data: { appKey: this.dbgApp.appKey, sourceSystem: src, env: 'sandbox', serverTime: '2026-11-24T14:30:00+08:00' } }), note: '密钥与签名校验通过。' };
+          else if (a.k === 'batch') resp = { http: 200, text: J({ code: 0, message: '成功', requestId, data: { batchId: 'B-SBX-20261124-001', status: 'DONE', received: 2, accepted: 2, filtered: 0, rejected: 0, pendingMapping: 0, quarantined: 0, lines: [{ docNo: 'XS2611230158', lineNo: 1, status: 'ACCEPTED' }, { docNo: 'XS2611230158', lineNo: 2, status: 'ACCEPTED' }] } }) };
+          else if (a.k === 'rules') resp = { http: 200, text: J({ code: 0, message: '成功', requestId, data: { version: 'v7', effectiveFrom: '2026-11-10T00:00:00+08:00', dataType: 'SALES', include: [{ dim: 'category', op: 'IN', values: ['建筑钢材', '热轧板卷'] }, { dim: 'warehouse', op: 'IN', values: ['WH01', 'WH02', 'WH03'] }, { dim: 'bizDate', op: 'GTE', values: ['2025-10-01'] }], exclude: [{ dim: 'mill', op: 'IN', values: ['北辰'] }, { dim: 'lineWeight', op: 'GT', values: [500], erpOnly: src === 'SRC-WX' }, { dim: 'customerCodeDigest', op: 'IN', values: ['3 个摘要'], erpOnly: src === 'SRC-WX' }] } }) };
+          else if (a.k === 'settings') resp = { http: 200, text: J({ code: 0, message: '成功', requestId, data: { sourceSystem: src, grain: src === 'SRC-WX' ? 'DAILY_SUMMARY' : 'LINE', grainEffectiveFrom: src === 'SRC-WX' ? '2026-10-01' : '2025-09-26', priceUpload: this.$state.dnPrice === 'on' ? { enabled: true, scope: { categories: ['建筑钢材', '热轧板卷'], mills: ['东岳', '金江'], warehouses: 'ALL' } } : { enabled: false } } }) };
+          else resp = { http: 200, text: J({ code: 0, message: '成功', requestId, data: { type: 'category', version: '2026.11.02', items: [{ code: 'C01', name: '建筑钢材' }, { code: 'C02', name: '热轧板卷' }, { code: 'C03', name: '中厚板' }, { code: '…', name: '共 8 个大类，此处省略' }] } }) };
+          resp.ms = 40 + (M.hash(requestId) % 160);
+          this.dbg.resp = resp; this.dbg.loading = false;
+          if (resp.http < 300) {
+            const c = this.checks.find((x) => x.k === a.k), s = src === 'SRC-HQ' ? 'hq' : 'wx';
+            if (c && c[s].st === 'none') { c[s] = ok('2026-11-24 14:30'); this.$demo('“' + c.name + '”在 ' + src + ' 上联调通过，已更新联调状态清单'); }
+          }
+        }, 600);
+      },
+      calcSign() {
+        const digest = window.__SIGN__.sha256hex(this.sg.body || '');
+        const str = [this.sg.method, this.sg.path, this.sg.ts, this.sg.nonce, digest].join('\n');
+        const sig = window.__SIGN__.hmac(this.sg.secret || '', str);
+        this.sg.out = { str, sig, match: this.sg.mine.trim().toLowerCase() === sig };
+      },
+      openBatch(row) { this.bt = row; this.batchDrawer = true; },
+    },
+  });
+})();
+</script>
+</body>
+</html>

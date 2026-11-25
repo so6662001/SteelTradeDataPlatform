@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>名称可见性设置 · 下游钢贸端 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.option-card { display: flex; flex-direction: column; }
+.option-card h4 .el-tag { font-weight: 400; }
+.option-card .ic { width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; margin-bottom: 10px; }
+.option-card.off { cursor: not-allowed; background: #f7f8fa; opacity: .75; }
+.option-card.off:hover { border-color: var(--stp-border); }
+.option-card.row2 { flex-direction: row; gap: 12px; align-items: flex-start; }
+.option-card.row2 .ic { margin-bottom: 0; flex-shrink: 0; }
+.eg { margin-top: 10px; padding: 8px 10px; border-radius: 4px; background: #f6f8fa; font-size: 12px; color: #5b6778; }
+.eg b { color: var(--stp-text); }
+.pick-bar { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 6px; background: #fff8eb; border: 1px solid #f3dfb8; margin-top: 12px; font-size: 13px; }
+.dir-card { border: 1px solid var(--stp-border); border-radius: 8px; padding: 14px 16px; background: #fff; box-shadow: 0 2px 8px rgba(20, 40, 80, .06); }
+.dir-card .nm { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dir-card .tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.dir-card dl { display: grid; grid-template-columns: 108px 1fr; gap: 6px 10px; font-size: 13px; margin: 0; }
+.dir-card dt { color: var(--stp-sub); } .dir-card dd { margin: 0; }
+.dir-card .src { font-size: 11px; color: #8a94a3; margin-left: 6px; }
+.dir-card .foot { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--stp-border); font-size: 12px; color: var(--stp-sub); }
+.cant { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; margin-top: 8px; }
+.cant span { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #8a4a4d; }
+.cant .el-icon { color: #e5484d; }
+.viewer { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--stp-sub); margin-bottom: 10px; }
+.chg td { font-size: 13px; }
+.chg .old { color: #8a94a3; text-decoration: line-through; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="downstream" active="visibility" title="名称可见性设置"
+  desc="由本企业决定在钢厂的企业名录里以什么身份出现：实名、匿名编号，或只让指定的钢厂看到。无论哪种方式，钢厂都看不到本企业的销量、库存和价格。">
+  <template #actions>
+    <el-button @click="$go('ledger.html')"><el-icon><View /></el-icon>上游视角预览</el-button>
+    <el-button type="primary" :disabled="!profileDirty" @click="profileDlg = true"><el-icon><Check /></el-icon>确认并重新上架</el-button>
+  </template>
+
+  <div class="status-line">
+    <span><span class="dot ok"></span>当前上架方式 <b>{{ modeName(mode) }}</b></span>
+    <span>匿名编号 <span class="anon-name">华东·建材·A0321</span></span>
+    <span>当前被 <b>23</b> 家钢厂订阅<span class="muted small">（只显示家数，不显示钢厂名称）</span></span>
+    <span>画像最近确认 <b>{{ confirmedAt }}</b></span>
+    <span style="margin-left:auto" class="muted small"><el-icon style="vertical-align:-2px"><Lock /></el-icon> 仅企业管理员可修改</span>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span>上架方式<small>三种方式由企业自选，可随时切换</small></span></div>
+    <div class="grid c3" style="margin-bottom:12px">
+      <div v-for="o in mainOpts" :key="o.k" class="option-card" :class="{on: pick===o.k}" @click="pick = o.k">
+        <div class="ic" :style="{background: o.bg, color: o.color}"><el-icon><component :is="o.icon" /></el-icon></div>
+        <h4>{{ o.t }}<el-tag v-if="mode===o.k" size="small" type="success">当前</el-tag></h4>
+        <p>{{ o.d }}</p>
+        <ul><li v-for="l in o.pts" :key="l">{{ l }}</li></ul>
+        <div v-if="o.k==='real'" class="eg">名录中显示：<b>苏州恒运钢铁贸易有限公司</b></div>
+        <div v-else-if="o.k==='anon'" class="eg">名录中显示：<span class="anon-name">华东·建材·A0321</span></div>
+        <div v-else class="eg" @click.stop>
+          <div class="mb8">选择可见的钢厂（白名单，可多选）：</div>
+          <el-select v-model="white" multiple placeholder="请选择钢厂" style="width:100%" :disabled="pick!=='white'" collapse-tags :max-collapse-tags="3">
+            <el-option v-for="m in mills" :key="m" :label="m" :value="m" />
+          </el-select>
+        </div>
+        <el-icon v-if="pick===o.k" class="check"><CircleCheckFilled /></el-icon>
+      </div>
+    </div>
+    <div class="grid c2" style="margin-bottom:0">
+      <div class="option-card row2" :class="{on: pick==='none'}" @click="pick = 'none'">
+        <div class="ic" style="background:#f4f5f7;color:#5b6778"><el-icon><Hide /></el-icon></div>
+        <div>
+          <h4>不上架<el-tag size="small" type="warning" effect="plain">是否保留待确认</el-tag><el-tag v-if="mode==='none'" size="small" type="success">当前</el-tag></h4>
+          <p>只上传，用于自身行业对标，不出现在名录中，钢厂不能订阅。<b>不参与收益分成</b>，可获得的对标数据范围可能少于上架企业。</p>
+        </div>
+        <el-icon v-if="pick==='none'" class="check"><CircleCheckFilled /></el-icon>
+      </div>
+      <el-tooltip content="“对指定钢厂不可见”不在已确认范围内，暂列二期" placement="top">
+        <div class="option-card row2 off">
+          <div class="ic" style="background:#f4f5f7;color:#a0a9b6"><el-icon><CircleClose /></el-icon></div>
+          <div>
+            <h4 style="color:#8a94a3">对指定钢厂不可见（黑名单）<span class="level-tag lock" style="margin-left:0">二期</span></h4>
+            <p>对除所选钢厂以外的全部钢厂可见。一期暂不提供；如需屏蔽个别钢厂，可先使用“只对指定钢厂可见”。</p>
+          </div>
+        </div>
+      </el-tooltip>
+    </div>
+
+    <div v-if="modeDirty" class="pick-bar">
+      <el-icon style="color:#d48806;font-size:16px"><WarningFilled /></el-icon>
+      <span>已选择 <b>{{ modeName(pick) }}</b><template v-if="pick==='white'">（{{ white.length }} 家钢厂）</template>，尚未生效。切换需要确认影响。</span>
+      <span style="margin-left:auto"></span>
+      <el-button size="small" @click="resetPick">取消</el-button>
+      <el-button size="small" type="primary" :disabled="pick==='white' && !white.length" @click="openSwitch">{{ pick===mode ? '保存白名单' : '确认切换' }}</el-button>
+    </div>
+  </div>
+
+  <div class="grid c-3-2">
+    <div class="card">
+      <div class="card-title">
+        <span>企业画像自主申报<small>修改后需重新确认才对外生效</small></span>
+        <span class="right"><el-button size="small" :disabled="!profileDirty" @click="resetProfile">撤销修改</el-button><el-button size="small" type="primary" :disabled="!profileDirty" @click="profileDlg = true">确认并重新上架</el-button></span>
+      </div>
+      <div v-if="profileDirty" class="tip-box orange small mb12">画像已修改 {{ changes.length }} 项，<b>尚未对钢厂生效</b>。点击“确认并重新上架”后，名录中的展示才会更新。</div>
+      <el-form label-width="134px">
+        <el-form-item label="所在地">
+          <el-cascader v-model="form.loc" :options="locOpts" style="width:280px" :clearable="false" />
+          <span class="small muted" style="margin-left:10px">展示到省、市；匿名编号中的大区随之变化</span>
+        </el-form-item>
+        <el-form-item label="主营大类">
+          <el-select v-model="form.cats" multiple style="width:100%" placeholder="请选择主营大类"><el-option v-for="c in catOpts" :key="c" :label="c" :value="c" /></el-select>
+        </el-form-item>
+        <el-form-item label="代理品牌">
+          <el-select v-model="form.brands" multiple style="width:100%" placeholder="请选择代理品牌"><el-option v-for="b in brandOpts" :key="b" :label="b" :value="b" /></el-select>
+          <div class="small muted">不在名录卡片上展示，仅用于钢厂按代理品牌筛选名录。</div>
+        </el-form-item>
+        <el-form-item label="规模档">
+          <el-select v-model="form.scale" style="width:280px"><el-option v-for="s in scaleOpts" :key="s" :label="'年销量 ' + s" :value="s" /></el-select>
+          <span class="small muted" style="margin-left:10px">自主申报的区间，平台不展示由上传数据计算的数值</span>
+        </el-form-item>
+        <el-form-item label="数据覆盖声明">
+          <el-select v-model="form.cover" style="width:100%"><el-option v-for="c in coverOpts" :key="c" :label="c" :value="c" /></el-select>
+          <div class="small muted">让钢厂知道你上传的是全部还是部分数据。应与 <a href="upload-rules.html">上传条件规则</a> 一致：当前 v7 为“仅建筑钢材、热轧板卷；仅苏州望亭库、上海宝山库、无锡惠山库”。</div>
+        </el-form-item>
+        <el-form-item label="是否提供价格数据">
+          <el-tag v-if="$state.dnPrice==='on'" type="success">提供</el-tag><el-tag v-else type="info">不提供</el-tag>
+          <span class="small muted" style="margin-left:10px">随“价格与金额上传”开关确定，<a href="upload-settings.html">去上传设置</a>。名录只显示是否提供，不显示任何价格</span>
+        </el-form-item>
+      </el-form>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span>钢厂在名录中看到的你</span><span class="right"><el-tag v-if="modeDirty || profileDirty" size="small" type="warning" effect="plain">预览 · 尚未生效</el-tag><el-tag v-else size="small" type="success" effect="plain">与当前生效内容一致</el-tag></span></div>
+      <div class="viewer" v-if="pick==='white'">
+        查看身份
+        <el-radio-group v-model="viewer" size="small"><el-radio-button value="in">白名单内的钢厂</el-radio-button><el-radio-button value="out">其他钢厂</el-radio-button></el-radio-group>
+      </div>
+      <div v-if="pick==='none' || (pick==='white' && viewer==='out')" class="empty-block" style="border:1px dashed var(--stp-border);border-radius:8px">
+        <div class="big"><el-icon><Hide /></el-icon></div>
+        {{ pick==='none' ? '不上架：你不会出现在任何钢厂的企业名录中' : '白名单以外的钢厂在企业名录中看不到你，也搜索不到' }}
+      </div>
+      <div v-else class="dir-card">
+        <div class="nm">
+          <span v-if="pick==='anon'" class="anon-name">{{ anonNo }}</span>
+          <span v-else>苏州恒运钢铁贸易有限公司</span>
+          <el-tag size="small" effect="plain" :type="pick==='anon' ? 'info' : 'primary'">{{ pick==='anon' ? '匿名上架' : pick==='white' ? '仅对指定钢厂可见' : '实名' }}</el-tag>
+        </div>
+        <div class="tags">
+          <el-tag size="small" type="info">{{ form.loc[0] }} · {{ form.loc[1] }}</el-tag>
+          <el-tag v-for="c in form.cats" :key="c" size="small">{{ c }}</el-tag>
+          <el-tag size="small" type="success">质量评级 A</el-tag>
+          <el-tag size="small" type="success" effect="plain">活跃</el-tag>
+        </div>
+        <dl>
+          <dt>所在省市</dt><dd>{{ form.loc[0] }} · {{ form.loc[1] }}<span class="src">自主申报</span></dd>
+          <dt>主营大类</dt><dd>{{ form.cats.join('、') || '—' }}<span class="src">自主申报</span></dd>
+          <dt>规模档</dt><dd>年销量 {{ form.scale }}<span class="src">自主申报</span></dd>
+          <dt>数据覆盖声明</dt><dd>{{ form.cover }}<span class="src">自主申报</span></dd>
+          <dt>价格数据</dt><dd>{{ $state.dnPrice==='on' ? '提供' : '不提供' }}<span class="src">企业确认</span></dd>
+          <dt>接入时长</dt><dd>14 个月<span class="src">平台记录</span></dd>
+          <dt>数据质量评级</dt><dd>A<span class="src">平台评定</span></dd>
+          <dt>近 3 个月活跃等级</dt><dd>活跃<span class="src">平台评定，只分 活跃 / 一般 / 停更</span></dd>
+        </dl>
+        <div class="foot"><span>钢厂按名额订阅，订阅后只能看到包含你在内的聚合数据</span><el-button size="small" type="primary" plain disabled>加入购物清单</el-button></div>
+      </div>
+
+      <div class="tip-box red small mt12">
+        <b>无论哪种上架方式，钢厂都看不到：</b>
+        <div class="cant">
+          <span v-for="c in cants" :key="c"><el-icon><CircleCloseFilled /></el-icon>{{ c }}</span>
+        </div>
+      </div>
+      <div class="small muted mt8">想看钢厂订阅后看到的聚合数据长什么样，可以打开 <a href="ledger.html">上游视角预览</a>。</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span>画像与上架方式变更记录</span><span class="right small muted">每次变更写入审计日志</span></div>
+    <el-table :data="logs" border size="small">
+      <el-table-column label="时间" width="150"><template #default="{row}"><span class="num">{{ row.at }}</span></template></el-table-column>
+      <el-table-column label="类型" width="110"><template #default="{row}"><el-tag size="small" effect="plain" :type="row.type==='上架方式' ? 'primary' : 'info'">{{ row.type }}</el-tag></template></el-table-column>
+      <el-table-column label="变更内容" min-width="420" prop="text"></el-table-column>
+      <el-table-column label="对钢厂生效" width="200" prop="eff"></el-table-column>
+      <el-table-column label="操作人" width="170" prop="by"></el-table-column>
+    </el-table>
+  </div>
+
+  <!-- 切换上架方式确认 -->
+  <el-dialog v-model="switchDlg" :title="pick===mode ? '保存可见钢厂白名单' : '确认切换上架方式'" width="620px">
+    <el-descriptions :column="1" border size="small">
+      <el-descriptions-item label="当前方式">{{ modeName(mode) }}<template v-if="mode==='white'">（{{ whiteSaved.join('、') }}）</template></el-descriptions-item>
+      <el-descriptions-item label="切换为"><b>{{ modeName(pick) }}</b><template v-if="pick==='white'">（{{ white.join('、') }}）</template></el-descriptions-item>
+      <el-descriptions-item label="名录展示">确认后立即生效</el-descriptions-item>
+      <el-descriptions-item label="已订阅你的钢厂">下一周期（2026-12-01）起，其“数据来源企业名单”中的展示随之变化</el-descriptions-item>
+    </el-descriptions>
+    <div class="tip-box orange small mt12">
+      <b>切换的影响</b>
+      <div v-for="(t, i) in impacts" :key="i">{{ i + 1 }}. {{ t }}</div>
+    </div>
+    <div class="tip-box green small mt8">不变的是：无论哪种方式，钢厂都只能看到聚合数据，看不到你的销量、库存、价格和每日是否上传；你这里也只显示订阅的钢厂家数。</div>
+    <el-checkbox v-model="swOk" class="mt12">我已了解以上影响</el-checkbox>
+    <template #footer><el-button @click="switchDlg=false">取消</el-button><el-button type="primary" :disabled="!swOk" @click="doSwitch">确认{{ pick===mode ? '保存' : '切换' }}</el-button></template>
+  </el-dialog>
+
+  <!-- 确认并重新上架 -->
+  <el-dialog v-model="profileDlg" title="确认并重新上架" width="620px">
+    <p style="margin:0 0 10px;line-height:1.8">以下画像信息由本企业自主申报，确认后在企业名录中对钢厂展示。请核对修改内容：</p>
+    <table class="plain-table chg">
+      <thead><tr><th style="width:120px">项目</th><th>修改前</th><th>修改后</th></tr></thead>
+      <tbody><tr v-for="c in changes" :key="c.k"><td>{{ c.k }}</td><td class="old">{{ c.a }}</td><td><b>{{ c.b }}</b></td></tr></tbody>
+    </table>
+    <div class="tip-box blue small mt12">确认后名录立即按新画像展示；已订阅你的钢厂在其名单中同步看到新画像。画像只含申报的区间与文字说明，不含任何由上传数据计算出的数值。</div>
+    <el-checkbox v-model="pfOk" class="mt12">我确认以上信息真实、与实际上传范围一致</el-checkbox>
+    <template #footer><el-button @click="profileDlg=false">取消</el-button><el-button type="primary" :disabled="!pfOk" @click="doProfile">确认并重新上架</el-button></template>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const NOW = '2026-11-24 14:30', ME = '陈海峰（企业管理员）';
+  const NAMES = { real: '实名上架', anon: '匿名上架', white: '只对指定钢厂可见', none: '不上架' };
+  const PROFILE = { loc: ['江苏', '苏州市'], cats: ['建筑钢材', '热轧板卷'], brands: ['东岳', '金江'], scale: '50–100 万吨', cover: '部分上传：仅主营大类、指定仓库' };
+  const clone = (o) => JSON.parse(JSON.stringify(o));
+  STP.mount({
+    data() {
+      return {
+        mode: 'real', pick: 'real', white: ['东岳钢铁', '金江钢铁'], whiteSaved: [], viewer: 'in',
+        mills: M.MILLS, switchDlg: false, swOk: false, profileDlg: false, pfOk: false,
+        confirmedAt: '2026-03-17',
+        pub: clone(PROFILE), form: clone(PROFILE),
+        locOpts: M.provinces.map((p) => ({ value: p.name, label: p.name, children: p.cities.map((c) => ({ value: c[0], label: c[0] })) })),
+        catOpts: M.categories.map((c) => c.name),
+        brandOpts: M.MILLS.map((m) => (m === '海川特钢' ? m : m.replace('钢铁', ''))),
+        scaleOpts: M.SCALE,
+        coverOpts: ['全量上传', '部分上传：仅主营大类', '部分上传：指定仓库', '部分上传：指定品牌', '部分上传：仅主营大类、指定仓库', '部分上传：仅主营大类、指定品牌'],
+        cants: ['单家销量', '单家库存', '单家价格与金额', '每日是否上传', '客户信息（平台本就不采集）', '上传粒度'],
+        mainOpts: [
+          { k: 'real', t: '实名上架', icon: 'OfficeBuilding', bg: '#eef4fb', color: '#2b6fd6', d: '名录中显示企业名称和画像，全部钢厂可见、可订阅。', pts: ['便于钢厂识别并优先选购，被订阅机会最多', '钢厂知道你在它的数据池里，但看不到你的任何单家数据'] },
+          { k: 'anon', t: '匿名上架', icon: 'User', bg: '#f4ecff', color: '#7044c4', d: '名录中只显示编号和画像，不显示企业名称，全部钢厂可订阅。', pts: ['钢厂只能按地区、主营大类、规模档等画像选购', '订阅后钢厂的名单里也只显示编号'] },
+          { k: 'white', t: '只对指定钢厂可见', icon: 'Aim', bg: '#e8f7ef', color: '#18a058', d: '只有白名单内的钢厂能在名录中看到并订阅你（实名展示），其他钢厂看不到。', pts: ['适合只愿意把数据提供给合作钢厂的企业', '白名单可随时增减'] },
+        ],
+        logs: [
+          { at: '2026-03-17 09:20', type: '企业画像', text: '数据覆盖声明：“部分上传：仅主营大类” → “部分上传：仅主营大类、指定仓库”（随上传条件规则 v4 同步）', eff: '确认后立即', by: ME },
+          { at: '2026-01-12 15:36', type: '企业画像', text: '规模档：“年销量 20–50 万吨” → “年销量 50–100 万吨”', eff: '确认后立即', by: ME },
+          { at: '2025-12-03 10:05', type: '企业画像', text: '主营大类：增加“热轧板卷”（随上传条件规则 v3 同步）', eff: '确认后立即', by: ME },
+          { at: '2025-10-09 09:12', type: '企业画像', text: '数据覆盖声明：“全量上传” → “部分上传：仅主营大类”（随上传条件规则 v2 同步）', eff: '确认后立即', by: ME },
+          { at: '2025-09-26 08:40', type: '上架方式', text: '首次上架：实名上架', eff: '2025-09-26 起', by: ME },
+          { at: '2025-09-19 15:22', type: '企业画像', text: '首次申报并确认：江苏 · 苏州市；建筑钢材；东岳、金江；年销量 20–50 万吨；全量上传；不提供价格数据', eff: '上架后', by: ME },
+        ],
+      };
+    },
+    computed: {
+      modeDirty() { return this.pick !== this.mode || (this.mode === 'white' && this.white.join() !== this.whiteSaved.join()); },
+      profileDirty() { return JSON.stringify(this.form) !== JSON.stringify(this.pub); },
+      anonNo() { const p = M.provinces.find((x) => x.name === this.form.loc[0]); return (p ? p.region : '华东') + '·' + (M.CAT_ABBR[this.form.cats[0]] || '综合') + '·A0321'; },
+      changes() {
+        const f = this.form, p = this.pub, out = [];
+        const add = (k, a, b) => { if (a !== b) out.push({ k, a, b }); };
+        add('所在地', p.loc.join(' · '), f.loc.join(' · '));
+        add('主营大类', p.cats.join('、') || '—', f.cats.join('、') || '—');
+        add('代理品牌', p.brands.join('、') || '—', f.brands.join('、') || '—');
+        add('规模档', '年销量 ' + p.scale, '年销量 ' + f.scale);
+        add('数据覆盖声明', p.cover, f.cover);
+        return out;
+      },
+      impacts() {
+        const to = this.pick, out = [];
+        if (to === 'anon') out.push('匿名后，钢厂在名录和它的“数据来源企业名单”中都看不到企业名称，只看到编号“华东·建材·A0321”和画像。', '对已订阅你的钢厂，下一周期（2026-12-01）起名单中的展示由企业名称改为编号；此前已经看到过名称的钢厂，平台无法让其不知情。');
+        if (to === 'real') out.push('实名后，全部钢厂都能在名录中看到企业名称和画像。', '对已订阅你的钢厂，下一周期（2026-12-01）起名单中的展示由编号改为企业名称。');
+        if (to === 'white') out.push('只有所选的 ' + this.white.length + ' 家钢厂能在名录中看到并订阅你，对它们实名展示；其他钢厂在名录中看不到你。', '白名单以外、但当前已订阅你的钢厂：本周期内不受影响，下一周期（2026-12-01）起其名额释放，钢厂可免费替换（具体处理规则待业务方确定），你无需操作。被订阅家数可能减少，收益随之变化。', '为保护订阅方，平台不显示白名单内哪些钢厂已订阅你。');
+        if (to === 'none') out.push('不上架后，你不再出现在任何钢厂的名录中，不能被新订阅。', '当前 23 家订阅在本周期结束后（2026-12-01 起）终止，钢厂的名额释放并可免费替换（具体处理规则待业务方确定）。', '不上架的企业不参与收益分成：自生效之日起不再计提收益，已计提未结算的部分照常结算。可获得的行业对标数据范围可能少于上架企业。');
+        if (to !== 'none') out.push('实名、匿名、只对指定钢厂可见三种方式都参与收益分成，分成规则相同。');
+        return out;
+      },
+    },
+    methods: {
+      modeName(m) { return NAMES[m]; },
+      resetPick() { this.pick = this.mode; this.white = this.whiteSaved.length ? this.whiteSaved.slice() : ['东岳钢铁', '金江钢铁']; },
+      openSwitch() { this.swOk = false; this.switchDlg = true; },
+      doSwitch() {
+        const from = this.mode, to = this.pick;
+        const w = to === 'white' ? '（' + this.white.join('、') + '）' : '';
+        this.logs.unshift({ at: NOW, type: '上架方式', text: from === to ? '修改可见钢厂白名单：' + this.white.join('、') : NAMES[from] + ' → ' + NAMES[to] + w, eff: '名录立即；已订阅钢厂 2026-12-01 起', by: ME });
+        this.mode = to; this.whiteSaved = to === 'white' ? this.white.slice() : [];
+        this.switchDlg = false;
+        this.$demo('上架方式已切换为“' + NAMES[to] + '”');
+      },
+      resetProfile() { this.form = clone(this.pub); },
+      doProfile() {
+        this.logs.unshift({ at: NOW, type: '企业画像', text: this.changes.map((c) => c.k + '：“' + c.a + '” → “' + c.b + '”').join('；'), eff: '确认后立即', by: ME });
+        this.pub = clone(this.form); this.confirmedAt = '2026-11-24';
+        this.profileDlg = false; this.pfOk = false;
+        this.$demo('画像已确认并重新上架，名录展示已更新');
+      },
+    },
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>数据质量监控 · 平台运营后台 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.ent-name b { font-weight: 600; }
+.ent-name span { display: block; font-size: 12px; color: var(--stp-sub); margin-top: 2px; }
+.opt-rate { display: grid; gap: 5px; margin-top: 8px; font-size: 12px; }
+.opt-rate div { display: grid; grid-template-columns: 56px 1fr 44px; align-items: center; gap: 6px; color: var(--stp-sub); }
+.opt-rate i { display: block; height: 6px; border-radius: 3px; background: #eef1f5; overflow: hidden; }
+.opt-rate i em { display: block; height: 100%; background: #409eff; border-radius: 3px; }
+.opt-rate b { text-align: right; color: var(--stp-text); }
+.grade-list { display: grid; gap: 10px; margin-top: 6px; }
+.grade-list .g { display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 10px; font-size: 13px; }
+.grade-list .g .lv { width: 30px; height: 30px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; }
+.grade-list .g span { color: var(--stp-sub); font-size: 12px; display: block; }
+.filter-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 12px; }
+.cat-over td .el-input-number { width: 120px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="admin" active="quality" title="数据质量监控"
+  desc="全平台与分品类的质量指标、断传跟进、隔离数据处置、补传审批与校验规则配置。本页只展示状态、计数与比率；平台人员默认不可查看企业上传明细，确需查看须发起明细访问工单。">
+  <template #actions>
+    <span class="muted small">数据日期 {{ dataDate }}</span>
+    <el-button @click="$demo('质量日报已导出（仅含指标、计数与比率）')"><el-icon><Download /></el-icon>导出质量日报</el-button>
+    <el-button type="primary" @click="tab = 'rules'"><el-icon><Setting /></el-icon>校验规则配置</el-button>
+  </template>
+
+  <!-- 平台质量指标 -->
+  <div class="grid c6">
+    <stat-card label="上传及时率" :value="94.8" :d="1" unit="%" tip="稳定上传企业中，在次日 2:00 前完成当日数据上传的占比"><span>较上周 <b class="up">+0.3%</b></span></stat-card>
+    <stat-card label="连续性" :value="92.6" :d="1" unit="%" tip="近 30 日无断档（每个应上传日都有有效上传）的企业占比"><span>较上周 <b class="down">-0.2%</b></span></stat-card>
+    <stat-card label="标准映射率" :value="96.3" :d="1" unit="%" tip="能映射到平台标准品名的入库行数占比；未映射数据不参与聚合"><span>待映射 <b>1,246</b> 项</span></stat-card>
+    <stat-card label="校验通过率" :value="98.7" :d="1" unit="%" tip="字段校验与分品类规则校验通过的行数占比"><span>失败率 <b>1.3%</b></span></stat-card>
+    <stat-card label="可疑率" :value="0.42" :d="2" unit="%" tip="被业务校验标记可疑并进入隔离区的记录占比；隔离区数据不参与聚合"><span>隔离待处置 <b>312</b> 项</span></stat-card>
+    <div class="stat">
+      <div class="label">选填字段填报率<el-tooltip content="流向地、客户类型、下游行业为选填，填报率计入企业质量评分；价格为自愿上传，不计入质量评分" placement="top"><el-icon><QuestionFilled /></el-icon></el-tooltip></div>
+      <div class="opt-rate">
+        <div v-for="o in optional" :key="o.t"><span>{{ o.t }}</span><i><em :style="{width: o.v + '%'}"></em></i><b class="num">{{ o.v }}%</b></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid c-2-1">
+    <div class="card">
+      <div class="card-title"><span>质量趋势<small>近 30 日，全平台</small></span></div>
+      <ve-chart :option="trendOption" height="280px"></ve-chart>
+    </div>
+    <div class="card">
+      <div class="card-title"><span>企业质量评级分布<small>已上架 17,902 家</small></span></div>
+      <ve-chart :option="gradeOption" height="150px"></ve-chart>
+      <div class="grade-list">
+        <div class="g" v-for="g in grades" :key="g.k">
+          <div class="lv" :style="{background: g.c}">{{ g.k }}</div>
+          <div>{{ g.t }}<span>{{ g.d }}</span></div>
+          <b class="num">{{ $fmt(g.n) }} 家</b>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 分品类质量看板 -->
+  <div class="card">
+    <div class="card-title"><span>分品类质量看板<small>按大类展示，用于判断某品类能否提升标准化深度</small></span><span class="right"><a href="master-category.html">前往全品类主数据工作台 ›</a></span></div>
+    <el-table :data="catRows" size="small" border>
+      <el-table-column label="大类" width="110"><template #default="{row}"><b>{{ row.name }}</b></template></el-table-column>
+      <el-table-column label="映射率" min-width="170"><template #default="{row}"><el-progress :percentage="row.map" :stroke-width="6" :color="row.map >= row.th ? '#18a058' : '#e5484d'" :format="p => p.toFixed(1) + '%'" /></template></el-table-column>
+      <el-table-column label="映射率门槛" width="100" align="right"><template #default="{row}"><span class="num">{{ row.th }}%</span></template></el-table-column>
+      <el-table-column label="失败率" width="90" align="right"><template #default="{row}"><span class="num" :style="{color: row.fail >= 3 ? '#e5484d' : ''}">{{ row.fail.toFixed(1) }}%</span></template></el-table-column>
+      <el-table-column label="隔离率" width="90" align="right"><template #default="{row}"><span class="num" :style="{color: row.qr >= 0.8 ? '#e5484d' : ''}">{{ row.qr.toFixed(2) }}%</span></template></el-table-column>
+      <el-table-column label="待映射积压" width="110" align="right"><template #default="{row}"><span class="num" :style="{color: row.backlog > 200 ? '#e5484d' : ''}">{{ row.backlog }}</span> 项</template></el-table-column>
+      <el-table-column label="当前深度 → 目标" width="140" align="center"><template #default="{row}"><span class="level-tag" style="margin:0">{{ row.depth }}</span> → <span class="level-tag" :class="{lock: row.depth !== row.target}" style="margin:0">{{ row.target }}</span></template></el-table-column>
+      <el-table-column label="能否提升标准化深度" min-width="260">
+        <template #default="{row}"><el-tag size="small" :type="row.can === 'yes' ? 'success' : row.can === 'done' ? 'info' : 'warning'">{{ row.can === 'yes' ? '具备条件' : row.can === 'done' ? '已达目标深度' : '暂不具备' }}</el-tag> <span class="muted small">{{ row.why }}</span></template>
+      </el-table-column>
+    </el-table>
+    <div class="tbl-foot"><span>映射率门槛为<b>示例参数，待业务方确定</b>；未达标的品类只开放到品名级。失败率 = 字段与分品类规则校验失败行数占比；隔离率 = 进入隔离区的记录占比。</span></div>
+  </div>
+
+  <!-- 处置标签页 -->
+  <div class="card">
+    <el-tabs v-model="tab">
+      <!-- 断传监控 -->
+      <el-tab-pane name="break">
+        <template #label>断传监控 <el-badge :value="137" :max="999" type="danger" style="vertical-align:1px" /></template>
+        <div class="status-line">
+          <span>当前断传 <b>137</b> 家</span>
+          <span>其中已触发名额冻结 <b style="color:#e5484d">52</b> 家</span>
+          <span>未跟进 <b>{{ breakTodo }}</b> 家（示例范围内）</span>
+          <span class="muted">规则：连续 3 天无有效上传预警企业与运营；连续 10 天自动冻结名额，上游可免费替换或顺延</span>
+          <span class="flex1"></span>
+          <a href="pools.html">补偿处理 ›</a>
+        </div>
+        <el-table :data="breaks" size="small" border>
+          <el-table-column label="企业" min-width="220"><template #default="{row}"><div class="ent-name"><b>{{ row.name }}</b><span>{{ row.loc }} · 质量评级 {{ row.q }}</span></div></template></el-table-column>
+          <el-table-column label="断传天数" width="96" align="right"><template #default="{row}"><b class="num" :style="{color: row.days >= 10 ? '#e5484d' : row.days >= 7 ? '#b26a00' : ''}">{{ row.days }}</b> 天</template></el-table-column>
+          <el-table-column prop="last" label="最近有效上传日" width="124" />
+          <el-table-column label="被订阅家数" width="96" align="right"><template #default="{row}"><span class="num">{{ row.subs }}</span> 家</template></el-table-column>
+          <el-table-column label="名额冻结" width="156"><template #default="{row}"><el-tag v-if="row.days >= 10" size="small" type="danger">已触发冻结</el-tag><span v-else class="muted">未触发（还差 {{ 10 - row.days }} 天）</span></template></el-table-column>
+          <el-table-column label="跟进人" width="84"><template #default="{row}">{{ row.owner || '—' }}</template></el-table-column>
+          <el-table-column label="跟进状态" min-width="190"><template #default="{row}"><span class="dot" :class="stDot(row.st)"></span>{{ row.st }}<div v-if="row.reason" class="small muted">{{ row.reason }}</div></template></el-table-column>
+          <el-table-column label="操作" width="80" align="center"><template #default="{row}"><el-button type="primary" size="small" plain @click="openFollow(row)">跟进</el-button></template></el-table-column>
+        </el-table>
+        <div class="tbl-foot"><span>原型展示 {{ breaks.length }} 家示例。断传企业的数据自断传日起不参与聚合；只对下游提示“有钢厂订阅受影响”，不告知订阅钢厂名称。</span></div>
+      </el-tab-pane>
+
+      <!-- 隔离数据处置 -->
+      <el-tab-pane name="quar">
+        <template #label>隔离数据处置 <el-badge :value="312" :max="999" type="warning" style="vertical-align:1px" /></template>
+        <el-alert type="warning" show-icon :closable="false">
+          <template #title>隔离区数据<b>不参与聚合</b>，企业确认“属实”或“更正”后释放。平台人员在此只能看到隔离类型、条数与状态；<b>查看明细需发起明细访问工单</b>，经企业授权后限时查看，全程留痕并对企业可见。</template>
+        </el-alert>
+        <div class="filter-bar">
+          <el-radio-group v-model="qType" size="small">
+            <el-radio-button value="" label="全部类型" />
+            <el-radio-button v-for="t in qTypes" :key="t" :value="t" :label="t" />
+          </el-radio-group>
+        </div>
+        <el-table :data="quarRows" size="small" border>
+          <el-table-column prop="id" label="编号" width="108" />
+          <el-table-column label="企业" min-width="190"><template #default="{row}"><b>{{ row.name }}</b></template></el-table-column>
+          <el-table-column label="隔离类型" width="136"><template #default="{row}"><el-tag size="small" :type="qTag(row.type)">{{ row.type }}</el-tag></template></el-table-column>
+          <el-table-column prop="date" label="业务日期" width="136" />
+          <el-table-column label="条数" width="64" align="right"><template #default="{row}"><span class="num">{{ $fmt(row.n) }}</span></template></el-table-column>
+          <el-table-column prop="rule" label="命中规则" min-width="170" />
+          <el-table-column label="状态" width="112"><template #default="{row}"><span class="dot" :class="row.st === '已释放' ? 'ok' : row.st === '人工核查中' ? 'err' : 'warn'"></span>{{ row.st }}</template></el-table-column>
+          <el-table-column label="操作" width="176" align="center">
+            <template #default="{row}">
+              <template v-if="row.st !== '已释放'">
+                <el-button v-if="row.type === '反刷量命中'" link type="danger" @click="row.st = '人工核查中'; $demo('已转人工核查，并提交分成冻结申请')">转人工核查</el-button>
+                <el-button v-else link type="primary" @click="row.urged = true; $demo('已催办企业确认，通知已发送给企业管理员与数据管理员')">{{ row.urged ? '再次催办' : '催办企业' }}</el-button>
+                <el-button link type="primary" @click="ticket(row)">发起工单</el-button>
+              </template>
+              <span v-else class="muted">企业已处理</span>
+            </template>
+          </el-table-column>
+        </el-table>
+        <div class="tbl-foot"><span>全平台隔离待处置 312 项，原型展示 {{ quars.length }} 项示例。价格字段的隔离只影响价格，该行销量照常入库，见 <a href="price-control.html">价格数据管控</a>；日汇总批次问题见 <a href="grain-monitor.html">上传粒度监控</a>。</span></div>
+      </el-tab-pane>
+
+      <!-- 补传审批 -->
+      <el-tab-pane name="back">
+        <template #label>补传审批 <el-badge :value="backTodo" type="primary" :hidden="!backTodo" style="vertical-align:1px" /></template>
+        <div class="tip-box small mb12">企业可自行补传或更正最近 <b>90</b> 天的数据；超过 90 天补传窗口的需在此审批。审批通过后，受影响业务日期的聚合自动重算。</div>
+        <el-table :data="backs" size="small" border>
+          <el-table-column prop="id" label="申请编号" width="108" />
+          <el-table-column label="企业" min-width="180"><template #default="{row}"><b>{{ row.name }}</b></template></el-table-column>
+          <el-table-column prop="range" label="申请补传的业务日期" width="178" />
+          <el-table-column label="超出窗口" width="96" align="right"><template #header>超出窗口<el-tooltip placement="top" content="补传区间最早一天早于“申请日往前 90 天”的天数"><el-icon style="vertical-align:-2px;margin-left:2px"><QuestionFilled /></el-icon></el-tooltip></template><template #default="{row}"><span class="num">{{ row.over }}</span> 天</template></el-table-column>
+          <el-table-column prop="src" label="来源系统" width="86" />
+          <el-table-column prop="reason" label="申请原因" min-width="180" />
+          <el-table-column prop="time" label="申请时间" width="124" />
+          <el-table-column label="状态" width="78"><template #default="{row}"><el-tag size="small" :type="row.st === '待审批' ? 'warning' : row.st === '已通过' ? 'success' : 'info'">{{ row.st }}</el-tag></template></el-table-column>
+          <el-table-column label="操作" width="72" align="center"><template #default="{row}"><el-button v-if="row.st === '待审批'" type="primary" size="small" plain @click="openBack(row)">审批</el-button><span v-else class="muted">—</span></template></el-table-column>
+        </el-table>
+      </el-tab-pane>
+
+      <!-- 校验规则配置 -->
+      <el-tab-pane name="rules" label="校验规则配置">
+        <div class="filter-bar">
+          <el-radio-group v-model="ruleLayer" size="small">
+            <el-radio-button value="" label="全部" />
+            <el-radio-button v-for="l in layers" :key="l" :value="l" :label="l" />
+          </el-radio-group>
+          <span class="muted small">阈值、启停、严重级别可配置，并可按品类差异化；未单独配置的品名继承大类规则。</span>
+        </div>
+        <el-table :data="ruleRows" size="small" border>
+          <el-table-column label="规则" min-width="210"><template #default="{row}"><b>{{ row.name }}</b><div class="small muted">{{ row.code }}</div></template></el-table-column>
+          <el-table-column prop="layer" label="校验层" width="100" />
+          <el-table-column label="适用范围" width="130"><template #default="{row}">{{ row.byCat ? '按品类差异化' : row.scope }}</template></el-table-column>
+          <el-table-column label="阈值" min-width="260">
+            <template #default="{row}">{{ row.pre }}<b class="num" v-if="row.val !== undefined" style="margin:0 4px">{{ row.val }}</b>{{ row.unit }}<span v-if="row.byCat" class="muted small">（{{ overCount(row) }} 个大类单独设置）</span></template>
+          </el-table-column>
+          <el-table-column label="严重级别" width="130"><template #default="{row}"><el-tag size="small" :type="lvTag(row.lv)">{{ row.lv }}</el-tag></template></el-table-column>
+          <el-table-column label="启用" width="70" align="center"><template #default="{row}"><el-switch v-model="row.on" size="small" @change="v => $demo(row.name + (v ? ' 已启用' : ' 已停用') + '，变更已留痕')" /></template></el-table-column>
+          <el-table-column label="操作" width="70" align="center"><template #default="{row}"><el-button link type="primary" @click="openRule(row)">编辑</el-button></template></el-table-column>
+        </el-table>
+        <div class="tbl-foot"><span>阈值为建议默认值。规格取值范围、品名与材质兼容性在 <a href="master-category.html">全品类主数据工作台</a> 维护；分品名的合理价格区间在 <a href="price-control.html">价格数据管控</a> 维护。</span></div>
+      </el-tab-pane>
+    </el-tabs>
+  </div>
+
+  <!-- 跟进弹窗 -->
+  <el-dialog v-model="followDlg" :title="'断传跟进 · ' + (cur ? cur.name : '')" width="620px">
+    <template v-if="cur">
+      <el-descriptions :column="3" border size="small">
+        <el-descriptions-item label="断传天数">{{ cur.days }} 天</el-descriptions-item>
+        <el-descriptions-item label="被订阅家数">{{ cur.subs }} 家</el-descriptions-item>
+        <el-descriptions-item label="名额冻结">{{ cur.days >= 10 ? '已触发' : '未触发' }}</el-descriptions-item>
+        <el-descriptions-item label="最近接口调用" :span="3">{{ cur.api }}</el-descriptions-item>
+      </el-descriptions>
+      <el-form label-width="96px" class="mt16">
+        <el-form-item label="跟进方式"><el-radio-group v-model="ff.way"><el-radio value="电话">电话</el-radio><el-radio value="站内信">站内信</el-radio><el-radio value="企业微信">企业微信</el-radio><el-radio value="请钢厂协助">请带动入驻的钢厂协助</el-radio></el-radio-group></el-form-item>
+        <el-form-item label="断传原因"><el-select v-model="ff.reason" style="width:100%" placeholder="请选择"><el-option v-for="r in reasons" :key="r" :label="r" :value="r" /></el-select></el-form-item>
+        <el-form-item label="跟进状态"><el-radio-group v-model="ff.st"><el-radio-button value="已联系" label="已联系" /><el-radio-button value="企业处理中" label="企业处理中" /><el-radio-button value="已恢复上传" label="已恢复上传" /><el-radio-button value="企业无意恢复" label="企业无意恢复" /></el-radio-group></el-form-item>
+        <el-form-item label="预计恢复"><el-date-picker v-model="ff.date" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width:180px" /></el-form-item>
+        <el-form-item label="跟进记录"><el-input v-model="ff.note" type="textarea" :rows="2" placeholder="沟通情况" /></el-form-item>
+      </el-form>
+      <el-timeline v-if="cur.hist.length" style="padding-left:98px;margin-top:4px">
+        <el-timeline-item v-for="h in cur.hist" :key="h.time" :timestamp="h.time" placement="top">{{ h.txt }}</el-timeline-item>
+      </el-timeline>
+    </template>
+    <template #footer><el-button @click="followDlg = false">取消</el-button><el-button type="primary" :disabled="!ff.reason" @click="saveFollow">保存跟进</el-button></template>
+  </el-dialog>
+
+  <!-- 补传审批弹窗 -->
+  <el-dialog v-model="backDlg" :title="'补传审批 · ' + (curBack ? curBack.id : '')" width="580px">
+    <template v-if="curBack">
+      <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="企业" :span="2">{{ curBack.name }}</el-descriptions-item>
+        <el-descriptions-item label="业务日期">{{ curBack.range }}</el-descriptions-item>
+        <el-descriptions-item label="超出窗口">{{ curBack.over }} 天</el-descriptions-item>
+        <el-descriptions-item label="申请原因" :span="2">{{ curBack.reason }}</el-descriptions-item>
+        <el-descriptions-item label="涉及业务日期">{{ curBack.daysN }} 天</el-descriptions-item>
+        <el-descriptions-item label="涉及数据池">{{ curBack.pools }} 个</el-descriptions-item>
+      </el-descriptions>
+      <div class="tip-box orange small mt12">通过后：企业获得 7 天的临时补传许可；补传数据经校验入库后，受影响业务日期的聚合<b>自动重算</b>，上游页面按最新结果展示，趋势图标注数据更正点。已生成的导出文件不回收。审批记录留痕并对企业可见。</div>
+      <el-form label-width="80px" class="mt12"><el-form-item label="审批意见"><el-input v-model="backNote" type="textarea" :rows="2" placeholder="驳回须填写原因" /></el-form-item></el-form>
+    </template>
+    <template #footer><el-button @click="backDlg = false">取消</el-button><el-button type="danger" plain :disabled="!backNote" @click="doBack(false)">驳回</el-button><el-button type="primary" @click="doBack(true)">通过</el-button></template>
+  </el-dialog>
+
+  <!-- 规则编辑弹窗 -->
+  <el-dialog v-model="ruleDlg" :title="'编辑校验规则 · ' + (rf.name || '')" width="640px">
+    <el-form label-width="110px">
+      <el-form-item label="规则编码"><span class="code">{{ rf.code }}</span><span class="muted small" style="margin-left:10px">{{ rf.layer }}</span></el-form-item>
+      <el-form-item v-if="rf.val !== undefined" :label="rf.byCat ? '默认阈值' : '阈值'">
+        <span class="muted" style="margin-right:8px">{{ rf.pre }}</span><el-input-number v-model="rf.val" :min="0" :step="rf.step || 1" style="width:140px" /><span class="muted" style="margin-left:8px">{{ rf.unit }}</span>
+      </el-form-item>
+      <el-form-item v-else label="阈值"><span>{{ rf.pre }}{{ rf.unit }}</span><span class="muted small" style="margin-left:8px">该规则无数值阈值</span></el-form-item>
+      <el-form-item label="严重级别">
+        <el-select v-model="rf.lv" style="width:220px"><el-option v-for="l in lvs" :key="l" :label="l" :value="l" /></el-select>
+      </el-form-item>
+      <el-form-item label="启用"><el-switch v-model="rf.on" /></el-form-item>
+      <el-form-item v-if="rf.byCat" label="按品类差异化">
+        <table class="plain-table cat-over">
+          <thead><tr><th>大类</th><th style="width:110px">方式</th><th style="width:210px">阈值</th></tr></thead>
+          <tbody>
+            <tr v-for="c in rf.cats" :key="c.name">
+              <td>{{ c.name }}</td>
+              <td><el-checkbox v-model="c.own">单独设置</el-checkbox></td>
+              <td><el-input-number v-if="c.own" v-model="c.val" :min="0" :step="rf.step || 1" size="small" /><span v-else class="muted">继承默认值 {{ rf.val }}</span> <span class="muted small">{{ rf.unit }}</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </el-form-item>
+    </el-form>
+    <div class="tip-box small">规则变更自下一个业务日期起生效，不回溯已入库数据；变更内容与操作人留痕。</div>
+    <template #footer><el-button @click="ruleDlg = false">取消</el-button><el-button type="primary" @click="saveRule">保存</el-button></template>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const CATS = M.categories.map((c) => c.name);
+  /* 与“全品类主数据工作台”一致的示例值 */
+  const CQ = {
+    建筑钢材: [98.4, 95, 0.6, 0.21, 38, 'L4', 'L5', 'yes', '映射率与积压均满足，单规格字典已评审'],
+    热轧板卷: [97.8, 95, 0.8, 0.28, 64, 'L4', 'L4', 'done', ''],
+    中厚板: [96.5, 95, 1.1, 0.35, 92, 'L4', 'L4', 'done', ''],
+    冷轧及涂镀: [94.6, 92, 1.6, 0.46, 148, 'L3', 'L4', 'yes', '映射率高于门槛，规格段方案已评审'],
+    管材: [92.1, 90, 2.3, 0.62, 236, 'L3', 'L4', 'no', '待映射积压超过 200 项'],
+    型钢: [95.8, 92, 1.4, 0.4, 87, 'L4', 'L4', 'done', ''],
+    优特钢: [89.4, 88, 3.1, 0.88, 342, 'L3', 'L3', 'done', '积压偏高，优先补充牌号对照'],
+    不锈钢: [87.2, 88, 3.8, 1.05, 239, 'L2', 'L3', 'no', '映射率低于门槛，只开放到品名级'],
+  };
+  const B = (name, loc, q, days, subs, owner, st, reason) => ({ name, loc, q, days, subs, owner, st, reason: reason || '', last: STP.addDays('2026-11-23', -days), api: days >= 10 ? '近 ' + days + ' 天无成功调用；最后一次返回“密钥无效”' : '近 ' + days + ' 天无上传调用；字典查询接口仍有调用', hist: owner ? [{ time: STP.addDays('2026-11-24', -Math.min(days - 2, 3)) + ' 10:20', txt: owner + '：' + (reason || '已电话联系企业数据管理员') }] : [] });
+  const breaks = [
+    B('合肥宝源钢铁贸易有限公司', '安徽 · 合肥', 'B', 16, 6, '林若彤', '企业处理中', 'ERP 升级，接口待服务商重新对接'),
+    B('徐州鑫盛钢铁贸易有限公司', '江苏 · 徐州', 'B', 12, 4, '孙雅婷', '已联系', '密钥过期，企业接口对接员已离职'),
+    B('临沂万隆物资有限公司', '山东 · 临沂', 'C', 10, 3, '', '未跟进'),
+    B('石家庄协力金属材料有限公司', '河北 · 石家庄', 'B', 9, 11, '孙雅婷', '企业处理中', '服务器迁移，预计 11-26 恢复'),
+    B('福州荣昌物贸有限公司', '福建 · 福州', 'A', 7, 18, '孙雅婷', '已联系', '人员变动，新对接员培训中'),
+    B('东莞泰和钢铁有限公司', '广东 · 东莞', 'B', 6, 5, '', '未跟进'),
+    B('洛阳志诚实业有限公司', '河南 · 洛阳', 'C', 5, 2, '林若彤', '企业无意恢复', '企业表示将办理暂停'),
+    B('成都双赢供应链管理有限公司', '四川 · 成都', 'A', 4, 9, '', '未跟进'),
+    B('绍兴凯达钢铁贸易有限公司', '浙江 · 绍兴', 'B', 3, 7, '', '未跟进'),
+    B('大连明辉物资有限公司', '辽宁 · 大连', 'B', 3, 1, '孙雅婷', '已恢复上传', '网络白名单变更，已于今日恢复'),
+  ];
+  const QR = (id, name, type, date, n, rule, st) => ({ id, name, type, date, n, rule, st, urged: false });
+  const quars = [
+    QR('QR-1123-208', '南京汇通钢铁贸易有限公司', '销量突变', '2026-11-23', 46, '当日销量超过自身近 30 日均值的阈值倍数', '待企业确认'),
+    QR('QR-1123-207', '杭州鼎力物资有限公司', '库存突变', '2026-11-23', 18, '库存快照相对前一日变动超过阈值比例', '待企业确认'),
+    QR('QR-1123-201', '济南安信金属材料有限公司', '库存快照缺失', '2026-11-22 至 11-23', 2, '连续 2 天未上传库存快照', '待企业确认'),
+    QR('QR-1123-196', '广州盛达钢铁有限公司', '重复数据', '2026-11-21 至 11-23', 312, '同一单据 24 小时内反复修改超过阈值次数', '待企业确认'),
+    QR('QR-1123-188', '苏州同创实业有限公司', '日汇总批次不完整', '2026-11-23', 1, '缺末片标记，整批不生效，沿用上一个完整批次', '待企业确认'),
+    QR('QR-1122-173', '郑州兴盛供应链管理有限公司', '反刷量命中', '2026-11-01 至 11-22', 5820, '整数吨位行占比异常；与申报规模档严重不符', '待核查'),
+    QR('QR-1122-169', '天津东方物贸有限公司', '反刷量命中', '2026-11-10 至 11-22', 2140, '与同一实际控制人的另一主体上传数据高度重复', '人工核查中'),
+    QR('QR-1122-161', '武汉中泰钢铁有限公司', '销量突变', '2026-11-22', 31, '当日销量超过自身近 30 日均值的阈值倍数', '已释放'),
+    QR('QR-1121-150', '青岛海纳金属材料有限公司', '库存突变', '2026-11-21', 12, '库存快照相对前一日变动超过阈值比例', '待企业确认'),
+    QR('QR-1121-144', '宁波锦程钢铁贸易有限公司', '重复数据', '2026-11-20', 96, '同一业务主键重复上传且内容不一致', '已释放'),
+  ];
+  const BK = (id, name, range, over, src, reason, time, st, daysN, pools) => ({ id, name, range, over, src, reason, time, st, daysN, pools });
+  const backs = [
+    BK('BF-1124-006', '常州百川钢铁贸易有限公司', '2026-06-01 至 2026-06-30', 86, 'SRC-ERP', '6 月更换 ERP 期间漏传，现已从旧系统导出', '2026-11-24 09:40', '待审批', 30, 14),
+    BK('BF-1123-005', '佛山启航物资有限公司', '2026-07-15 至 2026-08-10', 41, 'SRC-ERP', '分公司仓库数据当时未纳入上传范围，现申请补齐', '2026-11-23 16:12', '待审批', 27, 21),
+    BK('BF-1122-004', '唐山国联金属材料有限公司', '2026-08-01 至 2026-08-20', 23, 'SRC-FGS', '日汇总批次维度有误，需整批重传更正', '2026-11-22 11:30', '待审批', 20, 9),
+    BK('BF-1120-003', '上海长风钢铁有限公司', '2026-05-01 至 2026-05-31', 113, 'SRC-ERP', '5 月数据当时因品名映射失败未生效，更正映射后申请重传，用于同比口径', '2026-11-20 14:05', '已通过', 31, 26),
+    BK('BF-1118-002', '西安盛达实业有限公司', '2025-11-01 至 2025-12-31', 292, 'SRC-ERP', '申请补传一年前数据，无法提供来源凭证', '2026-11-18 10:22', '已驳回', 61, 3),
+  ];
+  const R = (code, name, layer, scope, pre, val, unit, lv, o) => Object.assign({ code, name, layer, scope, pre, val, unit, lv, on: true, byCat: false }, o || {});
+  const catOver = (def, own) => CATS.map((n) => ({ name: n, own: own[n] !== undefined, val: own[n] !== undefined ? own[n] : def }));
+  const rules = [
+    R('DQ-F-01', '单行吨位范围', '字段校验', '', '吨位大于 0 且不超过', 500, '吨', '该行失败', { byCat: true, step: 10, cats: catOver(500, { 热轧板卷: 800, 中厚板: 600, 冷轧及涂镀: 400, 管材: 300, 型钢: 300, 优特钢: 200, 不锈钢: 120 }) }),
+    R('DQ-F-02', '业务日期合理性', '字段校验', '全部', '不晚于当前、不早于补传窗口', 90, '天', '该行失败'),
+    R('DQ-M-01', '品名与材质兼容性', '映射校验', '全部', '按主数据兼容性规则', undefined, '', '该行失败'),
+    R('DQ-M-02', '自动映射生效置信度', '映射校验', '', '不低于', 95, '%，低于则待确认', '进入待映射队列', { byCat: true, cats: catOver(95, { 优特钢: 97, 不锈钢: 97 }) }),
+    R('DQ-B-01', '销量突变', '业务校验', '', '超过自身近 30 日均值的', 5, '倍', '隔离待确认', { byCat: true, cats: catOver(5, { 冷轧及涂镀: 8, 管材: 8, 优特钢: 8, 不锈钢: 8 }) }),
+    R('DQ-B-02', '库存突变', '业务校验', '全部', '库存快照相对前一日变动超过', 60, '%', '隔离待确认', { step: 5 }),
+    R('DQ-B-03', '库存快照缺失', '业务校验', '全部', '连续缺失达到', 2, '天', '隔离待确认'),
+    R('DQ-B-04', '重复数据与反复修改', '业务校验', '全部', '同一单据 24 小时内修改超过', 5, '次', '隔离待确认'),
+    R('DQ-C-01', '控制总数比对', '一致性校验', '全部', '条数或吨位差异超过', 0.5, '%', '差异提示', { step: 0.1 }),
+    R('DQ-S-01', '日汇总批内维度唯一', '日汇总校验', '日汇总模式', '批内维度组合不得重复', undefined, '', '整批不生效'),
+    R('DQ-S-02', '日汇总分片完整', '日汇总校验', '日汇总模式', '缺末片标记即判定批次不完整', undefined, '', '整批不生效'),
+    R('DQ-A-01', '反刷量：整数吨位占比', '业务校验', '全部', '整数吨位行占比超过', 80, '%', '人工核查', { step: 5 }),
+    R('DQ-A-02', '反刷量：与规模档严重不符', '业务校验', '全部', '偏离申报规模档上限超过', 3, '倍', '人工核查'),
+    R('DQ-T-01', '断传预警与名额冻结', '监控', '全部', '连续无有效上传 3 天预警，达到', 10, '天冻结名额', '通知并冻结'),
+  ];
+
+  STP.mount({
+    data() {
+      return {
+        dataDate: M.DATA_DATE, tab: 'break',
+        optional: [{ t: '流向地', v: 61.5 }, { t: '客户类型', v: 54.2 }, { t: '下游行业', v: 38.7 }],
+        grades: [
+          { k: 'A', t: '优', d: '评分不低于 85，占 41.0%', n: 7340, c: '#18a058' },
+          { k: 'B', t: '良', d: '评分 70–84，占 42.0%', n: 7520, c: '#409eff' },
+          { k: 'C', t: '合格', d: '评分低于 70，占 17.0%；重点跟进', n: 3042, c: '#f0a020' },
+        ],
+        catRows: CATS.map((n) => { const v = CQ[n]; return { name: n, map: v[0], th: v[1], fail: v[2], qr: v[3], backlog: v[4], depth: v[5], target: v[6], can: v[7], why: v[8] }; }),
+        breaks, followDlg: false, cur: null, ff: { way: '电话', reason: '', st: '已联系', date: '', note: '' },
+        reasons: ['ERP 升级或更换', '密钥过期或被停用', '接口对接人员变动', '网络或白名单变更', '企业主动停传', '原因待查'],
+        quars, qType: '', qTypes: ['销量突变', '库存突变', '库存快照缺失', '重复数据', '日汇总批次不完整', '反刷量命中'],
+        backs, backDlg: false, curBack: null, backNote: '',
+        rules, ruleLayer: '', layers: ['字段校验', '映射校验', '业务校验', '一致性校验', '日汇总校验', '监控'],
+        lvs: ['该行失败', '进入待映射队列', '隔离待确认', '差异提示', '整批不生效', '人工核查', '通知并冻结'],
+        ruleDlg: false, rf: {}, curRule: null,
+      };
+    },
+    computed: {
+      breakTodo() { return this.breaks.filter((b) => b.st === '未跟进').length; },
+      backTodo() { return this.backs.filter((b) => b.st === '待审批').length; },
+      quarRows() { return this.quars.filter((q) => !this.qType || q.type === this.qType); },
+      ruleRows() { return this.rules.filter((r) => !this.ruleLayer || r.layer === this.ruleLayer); },
+      trendOption() {
+        const r = M.rngOf(1124);
+        const x = STP.dayList(M.DATA_DATE, 30).map((d) => d.slice(5));
+        const mk = (base, amp, trend) => x.map((_, i) => +(base - trend * (29 - i) / 29 + (r() - 0.5) * amp).toFixed(2));
+        const o = STP.chart.line({
+          x, yName: '比率（%）', y2: '可疑率（%）',
+          series: [
+            { name: '上传及时率', data: mk(94.8, 1.2, 0.6), unit: '%' },
+            { name: '标准映射率', data: mk(96.3, 0.3, 1.1), unit: '%' },
+            { name: '校验通过率', data: mk(98.7, 0.3, 0.2), unit: '%' },
+            { name: '可疑率', data: mk(0.42, 0.12, -0.05), unit: '%', yAxisIndex: 1, color: '#ff7a45', lineStyle: { width: 1.5, type: 'dashed' } },
+          ],
+        });
+        o.grid.top = 58; o.yAxis[0].min = 90; o.yAxis[0].max = 100; o.yAxis[1].min = 0; o.yAxis[1].max = 1; o.yAxis[1].scale = false;
+        return o;
+      },
+      gradeOption() {
+        const o = STP.chart.pie({ data: this.grades.map((g) => ({ name: g.k + ' 级', value: g.n, itemStyle: { color: g.c } })), unit: '家', name: '质量评级', center: ['50%', '50%'], radius: ['52%', '82%'] });
+        o.legend.show = false;
+        return o;
+      },
+    },
+    methods: {
+      stDot(s) { return s === '未跟进' ? 'err' : s === '已恢复上传' ? 'ok' : s === '企业无意恢复' ? '' : 'warn'; },
+      qTag(t) { return { 销量突变: 'warning', 库存突变: 'warning', 库存快照缺失: 'info', 重复数据: 'primary', 日汇总批次不完整: 'info', 反刷量命中: 'danger' }[t]; },
+      lvTag(l) { return l === '该行失败' || l === '整批不生效' ? 'danger' : l === '隔离待确认' || l === '人工核查' || l === '通知并冻结' ? 'warning' : 'info'; },
+      overCount(r) { return r.cats.filter((c) => c.own).length; },
+      openFollow(row) { this.cur = row; this.ff = { way: '电话', reason: this.reasons.find((x) => row.reason && row.reason.indexOf(x.slice(0, 2)) >= 0) || '', st: row.st === '未跟进' ? '已联系' : row.st, date: '', note: '' }; this.followDlg = true; },
+      saveFollow() {
+        const c = this.cur, f = this.ff;
+        c.owner = '林若彤'; c.st = f.st; c.reason = f.reason + (f.date ? '，预计 ' + f.date.slice(5) + ' 恢复' : '');
+        c.hist.unshift({ time: '2026-11-24 14:20', txt: '林若彤（' + f.way + '）：' + f.reason + (f.note ? '。' + f.note : '') });
+        this.followDlg = false;
+        this.$demo('跟进记录已保存');
+      },
+      ticket(row) {
+        ElementPlus.ElMessageBox.confirm('将为「' + row.name + '」的隔离数据（' + row.id + '）发起明细访问工单。工单须经企业授权后限时查看，访问全程留痕，并在企业侧“数据使用透明账本”中可见。', '发起明细访问工单', { confirmButtonText: '前往审计日志发起', cancelButtonText: '取消', type: 'warning' })
+          .then(() => { this.$go('audit.html'); }).catch(() => {});
+      },
+      openBack(row) { this.curBack = row; this.backNote = ''; this.backDlg = true; },
+      doBack(pass) { this.curBack.st = pass ? '已通过' : '已驳回'; this.backDlg = false; this.$demo(pass ? '已通过，企业获得 7 天临时补传许可' : '已驳回并通知企业'); },
+      openRule(row) { this.curRule = row; this.rf = JSON.parse(JSON.stringify(row)); if (row.val === undefined) this.rf.val = undefined; this.ruleDlg = true; },
+      saveRule() {
+        const r = this.curRule, f = this.rf;
+        r.val = f.val; r.lv = f.lv; r.on = f.on; if (f.byCat) r.cats = f.cats.map((c) => ({ name: c.name, own: c.own, val: c.own ? c.val : f.val }));
+        this.ruleDlg = false;
+        this.$demo('规则已保存，自下一个业务日期起生效，变更已留痕');
+      },
+    },
+  });
+})();
+</script>
+</body>
+</html>

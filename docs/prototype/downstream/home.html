@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>工作台 · 下游钢贸端 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.trust { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; background: #fff; border: 1px solid var(--stp-border); border-radius: 6px; }
+.trust .ic { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+.trust b { display: block; font-size: 14px; margin-bottom: 2px; }
+.trust span { font-size: 12px; color: var(--stp-sub); line-height: 1.6; }
+.step-list li { align-items: flex-start; cursor: pointer; }
+.step-list li:hover .st { color: var(--el-color-primary); }
+.step-list .body { flex: 1; min-width: 0; }
+.step-list .st { font-weight: 500; }
+.step-list .sub { color: var(--stp-sub); font-size: 12px; margin-top: 2px; line-height: 1.5; }
+.step-list .op { flex-shrink: 0; text-align: right; font-size: 12px; }
+.todo-list { display: flex; flex-direction: column; gap: 8px; }
+.todo-item .n { text-align: center; }
+.todo-item .n small { font-size: 12px; font-weight: 400; color: var(--stp-sub); margin-left: 2px; }
+.todo-item .go { margin-left: auto; color: var(--el-color-primary); font-size: 12px; white-space: nowrap; }
+.param { border: 1px solid var(--stp-border); border-radius: 6px; padding: 10px 12px; background: #fafbfc; }
+.param .k { font-size: 12px; color: var(--stp-sub); }
+.param .v { font-size: 18px; font-weight: 600; margin-top: 4px; }
+.param .v small { font-size: 12px; font-weight: 400; color: var(--stp-sub); margin-left: 3px; }
+.entry { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--stp-border); border-radius: 6px; color: inherit; text-decoration: none !important; background: #fff; }
+.entry:hover { border-color: #a8d2ff; }
+.entry .el-icon { font-size: 18px; color: var(--el-color-primary); }
+.entry b { display: block; font-size: 13px; font-weight: 500; }
+.entry span { font-size: 12px; color: var(--stp-sub); }
+.entry .arrow { margin-left: auto; color: #b0b7c3; font-size: 14px; }
+.stat .big-a { display: inline-flex; width: 40px; height: 40px; border-radius: 8px; background: #e8f7ef; color: #18a058; align-items: center; justify-content: center; font-size: 24px; font-weight: 700; margin-right: 10px; }
+.demo-param { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 11px; line-height: 18px; background: #fff8eb; color: #9a6400; border: 1px solid #f3dfb8; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="downstream" active="home" title="工作台"
+  desc="这里汇总本企业的上传情况、被订阅情况与待处理事项。上传什么由你决定，传了什么随时可查，随时可以暂停或退出。">
+  <template #actions>
+    <el-button @click="$go('daily-summary.html')"><el-icon><Calendar /></el-icon>每日上传汇总</el-button>
+    <el-button type="primary" @click="$go('data-check.html')"><el-icon><Search /></el-icon>已上传数据自查</el-button>
+  </template>
+
+  <div class="status-line">
+    <span><span class="dot ok"></span>上传状态 <b>正常</b></span>
+    <span>最新数据日期 <b>{{ dataDate }}</b>（T+1）</span>
+    <span>上架方式 <b>实名上架</b>　<a href="visibility.html">设置</a></span>
+    <span>已接入 <b>14</b> 个月</span>
+    <span>《数据授权协议》已签署</span>
+    <span style="margin-left:auto" class="muted small">以下销量、库存均为本企业自己上传的数据，仅本企业可见</span>
+  </div>
+
+  <div class="grid c3">
+    <div class="trust"><div class="ic" style="background:#eef4fb;color:#2b6fd6"><el-icon><Filter /></el-icon></div><div><b>可控：上传什么由你定</b><span>上传条件规则、上传粒度、是否上传价格都由本企业设置；不符合规则的数据不落盘。</span></div></div>
+    <div class="trust"><div class="ic" style="background:#e8f7ef;color:#18a058"><el-icon><View /></el-icon></div><div><b>可见：传了什么、谁在用随时可查</b><span>每日汇总、明细自查、被订阅家数、平台人员访问记录全部对本企业公开。</span></div></div>
+    <div class="trust"><div class="ic" style="background:#fff3e6;color:#d46b08"><el-icon><SwitchButton /></el-icon></div><div><b>可退：随时暂停或退出</b><span>可一键暂停上传；退出后停止对外提供，并按协议删除明细数据。</span></div></div>
+  </div>
+
+  <div class="grid c-2-1">
+    <div>
+      <div class="card">
+        <div class="card-title"><span>昨日上传摘要<small>业务日期 {{ dataDate }} · 两个来源系统合计</small></span><span class="right"><a href="daily-summary.html">查看当日汇总 ›</a></span></div>
+        <div class="grid c3" style="margin-bottom:0">
+          <stat-card label="入库销量" :value="1846" unit="吨" :mom="0.9" mom-label="较前一工作日" icon="Sell" tip="销售出库 − 销售退货，按结算重量"></stat-card>
+          <stat-card label="日末库存" :value="28630" unit="吨" :mom="0" mom-label="较前一日" icon="Box" tip="日末账面实物库存快照"></stat-card>
+          <stat-card label="入库条数" :value="299" unit="条" icon="Tickets" tip="行级模式为单据行数，日汇总模式为汇总记录数"><span>行级 258 行 · 日汇总 41 条</span></stat-card>
+          <stat-card label="规则过滤" :value="31" unit="条" icon="Filter" tip="不符合本企业上传条件规则的数据，平台不落盘，只记录条数"><span>不落盘，只记条数</span></stat-card>
+          <div class="stat">
+            <div class="label">校验失败</div>
+            <div class="value num" style="color:#e5484d">3<span class="unit">条</span></div>
+            <div class="foot"><a href="data-check.html">查看失败明细 ›</a></div>
+            <div class="ico" style="background:#fff0f0;color:#e5484d"><el-icon><CircleClose /></el-icon></div>
+          </div>
+          <div class="stat">
+            <div class="label">待映射物料</div>
+            <div class="value num" style="color:#d48806">12<span class="unit">个</span></div>
+            <div class="foot"><a href="data-check.html">去处理映射 ›</a></div>
+            <div class="ico" style="background:#fff8eb;color:#d48806"><el-icon><Connection /></el-icon></div>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:0">
+        <div class="card-title"><span>近 30 日本企业上传销量与库存<small>{{ trendFrom }} 至 {{ dataDate }}</small></span><span class="right muted small">周末销量走低属正常波动</span></div>
+        <ve-chart :option="trend" height="250px"></ve-chart>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span>入驻引导</span><span class="right"><el-button size="small" @click="openHand('密钥、联调')"><el-icon><UserFilled /></el-icon>转交技术步骤</el-button></span></div>
+      <div class="row" style="gap:12px;flex-wrap:nowrap">
+        <el-progress :percentage="88" :stroke-width="10" :show-text="false" style="flex:1"></el-progress>
+        <span class="small nowrap">已完成 <b>7</b> / 8 步</span>
+      </div>
+      <ul class="step-list mt8">
+        <li v-for="(s, i) in steps" :key="s.t" :class="s.state" @click="goStep(s)">
+          <span class="idx"><el-icon v-if="s.state==='done'"><Check /></el-icon><template v-else>{{ i + 1 }}</template></span>
+          <div class="body">
+            <div class="st">{{ s.t }}<span v-if="s.tech" class="level-tag">技术步骤</span></div>
+            <div class="sub">{{ s.key==='settings' ? settingsSub : s.sub }}</div>
+          </div>
+          <div class="op">
+            <el-tag v-if="s.state==='doing'" type="warning" size="small" effect="light">进行中</el-tag>
+            <span v-else class="muted">{{ s.date }}</span>
+            <div v-if="s.tech" class="mt8"><a href="javascript:;" @click.stop="openHand(s.t)">转交给接口对接员</a></div>
+          </div>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="grid c3">
+    <div class="stat">
+      <div class="label">当前被订阅的钢厂家数<el-tooltip placement="top" content="按已确认规则，下游侧只显示订阅的钢厂家数，不显示钢厂名称，也不按钢厂拆分"><el-icon><QuestionFilled /></el-icon></el-tooltip></div>
+      <div class="value num">23<span class="unit">家</span></div>
+      <div class="foot"><span>较上月 <b class="up">+2</b> 家</span><span><el-icon style="vertical-align:-2px"><Lock /></el-icon> 只显示家数，不显示钢厂名称</span></div>
+      <div class="foot" style="margin-top:6px"><a href="ledger.html">查看数据使用透明账本 ›</a></div>
+      <div class="ico"><el-icon><OfficeBuilding /></el-icon></div>
+    </div>
+    <div class="stat">
+      <div class="label">本月预计收益（2026-11）<span class="demo-param">示例参数，待业务方确定</span></div>
+      <div class="value num">2,125<span class="unit">元</span></div>
+      <div class="foot"><span>名额天数 690</span><span>质量系数 1.10</span><span>丰富度系数 1.05</span></div>
+      <div class="foot" style="margin-top:6px"><span>待结算 <b>4,215</b> 元</span><span>累计已结算 <b>18,640</b> 元</span><a href="revenue.html">我的收益 ›</a></div>
+      <div class="ico" style="background:#fff8eb;color:#d48806"><el-icon><Coin /></el-icon></div>
+    </div>
+    <div class="stat">
+      <div class="label">数据质量评级<el-tooltip placement="top" content="由及时率、连续性、映射率、校验通过率、可疑率、选填字段填报率构成。价格为自愿上传，不计入质量评分"><el-icon><QuestionFilled /></el-icon></el-tooltip></div>
+      <div class="value num" style="display:flex;align-items:center"><span class="big-a">A</span>92<span class="unit">分</span></div>
+      <div class="foot"><span>及时率 <b>98.6%</b></span><span>映射率 <b>96.5%</b></span><span>校验通过率 <b>99.5%</b></span><span>选填字段填报率 <b>78%</b></span></div>
+      <div class="foot" style="margin-top:6px"><span>评级展示在企业名录中，并影响收益分成的质量系数</span></div>
+    </div>
+  </div>
+
+  <div class="grid c2">
+    <div class="card">
+      <div class="card-title"><span>待办与告警<small>共 {{ todos.length }} 项</small></span></div>
+      <div class="todo-list">
+        <a class="todo-item" v-for="t in todos" :key="t.t" :href="t.href">
+          <span class="n num" :style="{color: t.color}">{{ t.n }}<small v-if="t.u">{{ t.u }}</small></span>
+          <span class="t">{{ t.t }}<span>{{ t.s }}</span></span>
+          <el-tag :type="t.tag" size="small" effect="plain" style="margin-left:auto">{{ t.lv }}</el-tag>
+          <span class="go" style="margin-left:0">{{ t.go }} ›</span>
+        </a>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="card-title"><span>当前上传设置</span><span class="right"><a href="upload-settings.html">去上传设置 ›</a></span></div>
+        <table class="plain-table">
+          <thead><tr><th>来源系统</th><th>上传粒度</th><th>生效业务日期</th><th class="r">昨日入库</th></tr></thead>
+          <tbody>
+            <tr><td><span class="code">SRC-HQ</span> 总部 ERP</td><td><el-tag size="small" effect="plain">行级模式</el-tag></td><td>2025-09-26 起</td><td class="r num">258 行</td></tr>
+            <tr><td><span class="code">SRC-WX</span> 无锡分公司进销存</td><td><el-tag size="small" type="success" effect="plain">日汇总模式</el-tag></td><td>2026-10-01 起</td><td class="r num">41 条汇总记录</td></tr>
+          </tbody>
+        </table>
+        <dl class="kv mt12">
+          <dt>价格与金额上传</dt>
+          <dd>
+            <el-tag v-if="$state.dnPrice==='on'" type="success" size="small">已开启</el-tag>
+            <el-tag v-else type="info" size="small">未开启（默认）</el-tag>
+            <span class="muted small" style="margin-left:8px">{{ $state.dnPrice==='on' ? '范围：建筑钢材、热轧板卷 · 东岳、金江 · 全部仓库' : '接口收到价格字段一律丢弃，不落盘' }}</span>
+          </dd>
+          <dt>上传条件规则</dt>
+          <dd>v7 生效中（2026-11-10 00:00 起）　<a href="upload-rules.html">查看规则</a></dd>
+        </dl>
+        <div class="small muted mt8">上传粒度不对上游展示，也不是上游的维度或筛选条件。</div>
+      </div>
+      <div class="card" style="margin-bottom:0">
+        <div class="card-title"><span>行业对标数据<small>上传企业的免费权益</small></span><span class="right"><el-button size="small" type="primary" plain @click="$go('benchmark.html')">查看行业对标<el-icon class="el-icon--right"><ArrowRight /></el-icon></el-button></span></div>
+        <div class="tip-box green small">对比本企业销量走势、库存可销天数与所在地区、品类的聚合水平。对标群体同样须满足最小贡献企业数 k = {{ $PV.k }}，你看到的同行数据也只有聚合值。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span>数据安全中心<small>披露规则公示 · 上游视角预览 · 透明账本 · 暂停与退出</small></span><span class="right"><a href="ledger.html">进入数据安全中心 ›</a></span></div>
+    <div class="grid c-3-2" style="margin-bottom:0">
+      <div>
+        <div class="small muted mb8">当前生效的披露规则（参数调整前会通知全部下游企业）<span class="demo-param" style="margin-left:6px">示例参数，待业务方确定</span></div>
+        <div class="grid c4" style="margin-bottom:10px;gap:10px">
+          <div class="param"><div class="k">最小数据池规模</div><div class="v num">{{ $PV.nMin }}<small>家</small></div></div>
+          <div class="param"><div class="k">最小贡献企业数 k</div><div class="v num">{{ $PV.k }}<small>家</small></div></div>
+          <div class="param"><div class="k">优势度：最大一家占比</div><div class="v num">≤ {{ $PV.dom1 }}%</div></div>
+          <div class="param"><div class="k">优势度：前两家占比</div><div class="v num">≤ {{ $PV.dom2 }}%</div></div>
+        </div>
+        <div class="tip-box blue small">钢厂的数据池少于 {{ $PV.nMin }} 家时不提供任何聚合数值；任一统计单元格的贡献企业少于 {{ $PV.k }} 家，或单家占比超过 {{ $PV.dom1 }}%、前两家合计超过 {{ $PV.dom2 }}% 时屏蔽。钢厂任何时候都看不到你单家的销量、库存、价格，也看不到你每天是否上传。<a href="ledger.html">查看完整公示 ›</a></div>
+      </div>
+      <div class="grid c2" style="margin-bottom:0;gap:10px;align-content:start">
+        <a class="entry" href="ledger.html"><el-icon><View /></el-icon><div><b>上游视角预览</b><span>看看钢厂能看到什么</span></div><el-icon class="arrow"><ArrowRight /></el-icon></a>
+        <a class="entry" href="ledger.html"><el-icon><Notebook /></el-icon><div><b>数据使用透明账本</b><span>被订阅家数与变化</span></div><el-icon class="arrow"><ArrowRight /></el-icon></a>
+        <a class="entry" href="visibility.html"><el-icon><Hide /></el-icon><div><b>名称可见性设置</b><span>实名、匿名或指定钢厂可见</span></div><el-icon class="arrow"><ArrowRight /></el-icon></a>
+        <a class="entry" href="pause-exit.html"><el-icon><SwitchButton /></el-icon><div><b>暂停与退出</b><span>一键暂停、退出并撤回数据</span></div><el-icon class="arrow"><ArrowRight /></el-icon></a>
+      </div>
+    </div>
+  </div>
+
+  <el-dialog v-model="handDlg" title="转交给接口对接员" width="540px">
+    <el-form label-width="96px">
+      <el-form-item label="转交步骤">
+        <el-checkbox-group v-model="hand.steps">
+          <el-checkbox value="密钥">密钥</el-checkbox><el-checkbox value="联调">联调</el-checkbox><el-checkbox value="映射">映射</el-checkbox>
+        </el-checkbox-group>
+      </el-form-item>
+      <el-form-item label="接口对接员">
+        <el-select v-model="hand.member" style="width:100%">
+          <el-option v-for="m in members" :key="m.id" :label="m.name + '（' + m.dept + '）'" :value="m.id" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="通知方式"><el-checkbox-group v-model="hand.notify"><el-checkbox value="站内信">站内信</el-checkbox><el-checkbox value="短信">短信</el-checkbox><el-checkbox value="邮件">邮件</el-checkbox></el-checkbox-group></el-form-item>
+      <el-form-item label="留言"><el-input v-model="hand.note" type="textarea" :rows="2" placeholder="可填写对接要求或截止时间" /></el-form-item>
+    </el-form>
+    <div class="tip-box blue small">接口对接员可管理应用密钥、IP 白名单、沙箱调试并查看接口日志，<b>默认不可查看业务明细</b>（销量、库存、价格）。“映射”步骤只开放物料与仓库的名称对应关系，不含数量。</div>
+    <template #footer><el-button @click="handDlg=false">取消</el-button><el-button type="primary" :disabled="!hand.steps.length" @click="doHand">确认转交</el-button></template>
+  </el-dialog>
+
+  <el-dialog v-model="infoDlg" :title="info.title" width="560px">
+    <el-descriptions :column="1" border size="small">
+      <el-descriptions-item v-for="r in info.rows" :key="r[0]" :label="r[0]">{{ r[1] }}</el-descriptions-item>
+    </el-descriptions>
+    <div class="tip-box small mt12">{{ info.tip }}<template v-if="info.link">　<a :href="info.link">{{ info.linkText }} ›</a></template></div>
+    <template #footer><el-button type="primary" @click="infoDlg=false">知道了</el-button></template>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const sales = M.dailySeries(30, 1790, 321);
+  sales[sales.length - 1].v = 1846;
+  const stock = M.stockSeries(30, 28630, 77, 0.0006);
+  const INFO = {
+    cert: { title: '企业认证', rows: [['企业名称', '苏州恒运钢铁贸易有限公司'], ['认证状态', '已认证（复用货袋子平台企业认证）'], ['认证完成时间', '2025-09-18'], ['企业管理员', '陈海峰']], tip: '企业认证复用货袋子平台现有能力，本板块不重复采集认证材料。' },
+    agree: { title: '《数据授权协议》', rows: [['签署状态', '已签署（在线签署）'], ['签署时间', '2025-09-19 10:26'], ['数据权属', '上传数据归本企业所有，平台仅在授权范围内使用'], ['使用范围', '仅以聚合形式向已订阅的钢厂披露，不提供单家企业数据'], ['撤回权利', '可随时暂停上传或申请退出，退出后按协议删除明细数据']], tip: '协议文本与撤回入口集中放在数据安全中心。', link: 'pause-exit.html', linkText: '暂停与退出' },
+  };
+  STP.mount({
+    data() {
+      return {
+        dataDate: M.DATA_DATE,
+        trendFrom: STP.addDays(M.DATA_DATE, -29),
+        handDlg: false, infoDlg: false, info: INFO.cert,
+        hand: { steps: ['密钥', '联调'], member: 'u2', notify: ['站内信', '短信'], note: '' },
+        members: [{ id: 'u2', name: '周凯', dept: '信息部 · 接口对接员' }, { id: 'u3', name: '沈立新', dept: '无锡分公司 · 接口对接员' }, { id: 'u9', name: '邀请新成员', dept: '发送邀请链接' }],
+        steps: [
+          { key: 'cert', t: '企业认证', sub: '复用货袋子平台企业认证', state: 'done', date: '2025-09-18', dlg: 'cert' },
+          { key: 'agree', t: '签署《数据授权协议》', sub: '明确数据权属、使用范围、聚合披露规则与撤回权利', state: 'done', date: '2025-09-19', dlg: 'agree' },
+          { key: 'settings', t: '粒度与价格设置', sub: '', state: 'done', date: '2025-09-19', href: 'upload-settings.html' },
+          { key: 'key', t: '创建应用与密钥', sub: '2 个应用，密钥将于 2027-02-22 到期', state: 'done', date: '2025-09-22', href: 'api-access.html', tech: true },
+          { key: 'test', t: '沙箱联调', sub: 'SRC-HQ 的“上传设置查询”尚未联调，不影响上传', state: 'done', date: '2025-09-25', href: 'api-access.html', tech: true },
+          { key: 'rule', t: '设置上传条件规则', sub: '当前生效 v7：仅建筑钢材、热轧板卷，3 个仓库', state: 'done', date: '2025-09-25', href: 'upload-rules.html' },
+          { key: 'map', t: '物料与仓库映射', sub: '12 个物料待映射，映射前这些数据不参与聚合', state: 'doing', date: '', href: 'data-check.html' },
+          { key: 'first', t: '首次上传', sub: '首个业务日期 2025-09-26，此后每日上传', state: 'done', date: '2025-09-26', href: 'daily-summary.html' },
+        ],
+        todos: [
+          { n: 12, u: '个', color: '#d48806', t: '物料待映射', s: '涉及昨日 12 条记录，映射完成前不参与聚合', lv: '待办', tag: 'warning', go: '去映射', href: 'data-check.html' },
+          { n: 3, u: '条', color: '#e5484d', t: '昨日校验失败', s: 'SRC-HQ：吨位超出单行上限 2 条、业务日期晚于当前 1 条', lv: '待办', tag: 'danger', go: '看明细', href: 'data-check.html' },
+          { n: 1, u: '条', color: '#e5484d', t: 'SRC-WX 对账差异', s: '2026-11-23 申报 46 条，平台接收 45 条，吨位相差 3.220 吨', lv: '告警', tag: 'danger', go: '去对账', href: 'daily-summary.html' },
+          { n: 90, u: '天', color: '#409eff', t: '应用密钥即将到期', s: '总部 ERP 上传应用的密钥将于 2027-02-22 到期，建议提前轮换', lv: '提醒', tag: 'primary', go: '去轮换', href: 'api-access.html' },
+          { n: 'v7', u: '', color: '#18a058', t: '上传条件规则 v7 已生效', s: '2026-11-10 00:00 起生效：新增“排除单笔吨位大于 500 吨”', lv: '通知', tag: 'success', go: '查看', href: 'upload-rules.html' },
+          { n: 1, u: '项', color: '#409eff', t: '联调项未完成', s: 'SRC-HQ 尚未联调“上传设置查询”，切换粒度或开启价格上传前建议补齐', lv: '提醒', tag: 'primary', go: '去联调', href: 'api-access.html' },
+        ],
+      };
+    },
+    computed: {
+      settingsSub() { return 'SRC-HQ 行级 · SRC-WX 日汇总 · 价格上传' + (this.$state.dnPrice === 'on' ? '已开启' : '未开启（默认）'); },
+      trend() {
+        const o = STP.chart.line({
+          x: sales.map((d) => d.label), yName: '销量（吨）', y2: '库存（吨）',
+          series: [
+            { name: '入库销量', type: 'bar', data: sales.map((d) => d.v), unit: '吨', barMaxWidth: 14, itemStyle: { borderRadius: [3, 3, 0, 0] } },
+            { name: '日末库存', data: stock, yAxisIndex: 1, unit: '吨', color: '#ff7a45' },
+          ],
+        });
+        o.yAxis[0].scale = false;
+        o.legend.right = undefined; o.legend.left = 'center';
+        return o;
+      },
+    },
+    methods: {
+      goStep(s) {
+        if (s.dlg) { this.info = INFO[s.dlg]; this.infoDlg = true; } else this.$go(s.href);
+      },
+      openHand(t) {
+        this.hand.steps = t.indexOf('映射') >= 0 ? ['映射'] : t.indexOf('联调') >= 0 && t.indexOf('密钥') < 0 ? ['联调'] : t.indexOf('、') >= 0 ? ['密钥', '联调'] : ['密钥'];
+        this.handDlg = true;
+      },
+      doHand() {
+        const m = this.members.find((x) => x.id === this.hand.member);
+        this.handDlg = false;
+        this.$demo('已将“' + this.hand.steps.join('、') + '”转交给 ' + m.name + '，并已发送通知');
+      },
+    },
+  });
+})();
+</script>
+</body>
+</html>

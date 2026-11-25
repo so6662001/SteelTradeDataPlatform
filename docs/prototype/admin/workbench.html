@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>运营工作台 · 平台运营后台 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.todo-group { font-size: 12px; color: var(--stp-sub); font-weight: 600; letter-spacing: .5px; margin: 14px 0 8px; }
+.todo-group:first-of-type { margin-top: 0; }
+.todo-item .n.hot { color: #e5484d; }
+.todo-item .n.warm { color: #d98200; }
+.todo-item .go { margin-left: auto; color: #b0b9c6; }
+.pub-steps { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0; }
+.pub-step { position: relative; padding: 0 10px 0 0; }
+.pub-step .bar { height: 4px; border-radius: 2px; background: #18a058; margin: 8px 0 8px; }
+.pub-step .tm { font-size: 12px; color: var(--stp-sub); }
+.pub-step b { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 4px; }
+.pub-step b .el-icon { color: #18a058; }
+.pub-step p { margin: 4px 0 0; font-size: 12px; color: var(--stp-sub); line-height: 1.6; }
+.ann-item { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px dashed var(--stp-border); font-size: 13px; align-items: flex-start; }
+.ann-item:last-child { border-bottom: none; }
+.ann-item .bd { flex: 1; min-width: 0; line-height: 1.6; }
+.ann-item .bd span { display: block; color: var(--stp-sub); font-size: 12px; }
+.rate-bar { display: inline-block; width: 90px; height: 8px; border-radius: 4px; background: #eef1f5; vertical-align: middle; margin-right: 8px; overflow: hidden; }
+.rate-bar i { display: block; height: 100%; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="admin" active="workbench" title="运营工作台"
+  desc="聚合平台规模、今日 T+1 发布状态与各模块待办。平台人员默认不可查看下游企业上传明细，工作台只展示状态、计数与质量指标。">
+  <template #actions>
+    <span class="muted small">今天 {{ today }}（周二）　最新数据日期 {{ dataDate }}</span>
+    <el-button @click="$demo('已刷新，各模块待办计数为最新')"><el-icon><Refresh /></el-icon>刷新</el-button>
+    <el-button type="primary" @click="annDlg = true"><el-icon><Promotion /></el-icon>发布公告</el-button>
+  </template>
+
+  <!-- 平台规模 -->
+  <div class="grid c6">
+    <stat-card label="下游入驻企业" :value="21386" unit="家" icon="OfficeBuilding" tip="已完成板块准入并签署数据授权协议的下游钢贸企业"><span>已上架 <b>17,902</b></span><span>本月新增 <b class="up">+412</b></span></stat-card>
+    <stat-card label="近 30 日稳定上传" :value="15240" unit="家" icon="Upload" tip="近 30 日有效上传天数不少于 20 天的企业"><span>占入驻 <b>71.3%</b></span><span>较上月 <b class="up">+386</b></span></stat-card>
+    <div class="stat">
+      <div class="label">上游付费 / 入驻<el-tooltip content="按购买主体统计，同一集团的关联企业归并为一个购买主体" placement="top"><el-icon><QuestionFilled /></el-icon></el-tooltip></div>
+      <div class="value num">438<span class="unit">/ 512 家</span></div>
+      <div class="foot"><span>付费率 <b>85.5%</b></span><span>30 日内到期 <b style="color:#d98200">17</b></span></div>
+      <div class="ico"><el-icon><Coin /></el-icon></div>
+    </div>
+    <stat-card label="在订名额" :value="86400" unit="个" icon="Tickets" tip="生效中订阅的名额总数；1 个名额 = 1 家下游企业 × 1 个计费周期"><span>已分配 <b>81,960</b></span><span>冻结 <b>1,128</b></span></stat-card>
+    <stat-card label="昨日入库明细" :value="1912" unit="万行" icon="DataLine" tip="2026-11-23 业务日期入库的销售与库存记录，含行级明细与日汇总记录"><span>行级 <b>1,688</b> 万</span><span>日汇总 <b>224</b> 万</span></stat-card>
+    <stat-card label="标准品类映射率" :value="96.3" :d="1" unit="%" icon="Files" tip="能映射到平台标准品名的入库行数占比；未映射数据进入待映射队列，不参与聚合"><span>较上周 <b class="up">+0.4%</b></span><span>积压 <b>1,246</b> 项</span></stat-card>
+  </div>
+
+  <!-- 今日 T+1 发布任务 -->
+  <div class="card">
+    <div class="card-title">
+      <span>今日 T+1 发布任务<small>数据日期 {{ dataDate }}，承诺每日 8:00 前发布</small></span>
+      <span class="right">
+        <el-tag type="success" effect="dark"><el-icon style="vertical-align:-2px"><CircleCheck /></el-icon> 07:42 发布完成，早于 8:00 承诺 18 分钟</el-tag>
+        <el-button size="small" @click="pubDlg = true">近 7 日发布记录</el-button>
+      </span>
+    </div>
+    <div class="pub-steps">
+      <div class="pub-step" v-for="s in pubSteps" :key="s.t">
+        <div class="tm num">{{ s.time }}</div>
+        <div class="bar"></div>
+        <b><el-icon><CircleCheck /></el-icon>{{ s.t }}</b>
+        <p>{{ s.d }}</p>
+      </div>
+    </div>
+    <div class="tip-box small mt12">两种上传粒度（行级、日汇总）的数据在企业日粒度事实层合并后再做披露判定；隔离区与待映射数据不参与本次发布。今日发布后回归抽检的 48 条防反推用例全部通过。</div>
+  </div>
+
+  <!-- 待办 -->
+  <div class="card">
+    <div class="card-title"><span>待办事项<small>共 {{ todoTotal }} 类待办，点击进入对应页面处理</small></span><span class="right muted small"><span class="dot err"></span>需当日处理　<span class="dot warn"></span>有时限　<span class="dot"></span>常规</span></div>
+    <template v-for="g in todos" :key="g.group">
+      <div class="todo-group">{{ g.group }}</div>
+      <div class="grid c4" style="margin-bottom:0">
+        <a class="todo-item" v-for="t in g.items" :key="t.t" :href="t.href">
+          <div class="n num" :class="t.lv">{{ $fmt(t.n) }}</div>
+          <div class="t">{{ t.t }}<span>{{ t.d }}</span></div>
+          <el-icon class="go"><ArrowRight /></el-icon>
+        </a>
+      </div>
+    </template>
+  </div>
+
+  <!-- 趋势 -->
+  <div class="grid c-3-2">
+    <div class="card">
+      <div class="card-title"><span>接入与活跃趋势<small>供给侧，近 12 个月</small></span></div>
+      <ve-chart :option="supplyOption" height="290px"></ve-chart>
+    </div>
+    <div class="card">
+      <div class="card-title"><span>付费上游与在订名额<small>需求侧，近 12 个月</small></span></div>
+      <ve-chart :option="demandOption" height="290px"></ve-chart>
+    </div>
+  </div>
+
+  <!-- 供需匹配 -->
+  <div class="card">
+    <div class="card-title">
+      <span>供需匹配<small>哪些地区 × 品类样本不足，导致上游查询屏蔽率高（近 30 日）</small></span>
+      <span class="right">
+        <el-radio-group v-model="matchView" size="small"><el-radio-button value="high" label="屏蔽率偏高" /><el-radio-button value="all" label="全部示例" /></el-radio-group>
+        <el-button size="small" @click="$demo('供需匹配清单已导出（仅含计数与比率）')"><el-icon><Download /></el-icon>导出</el-button>
+      </span>
+    </div>
+    <el-table :data="matchRows" size="small" border>
+      <el-table-column label="地区 · 品类" min-width="170"><template #default="{row}"><b>{{ row.region }} · {{ row.cat }}</b></template></el-table-column>
+      <el-table-column label="关注的上游数" align="right" width="116"><template #default="{row}"><span class="num">{{ row.up }}</span> 家</template></el-table-column>
+      <el-table-column label="已上架下游企业数" align="right" width="136"><template #default="{row}"><span class="num">{{ $fmt(row.dn) }}</span> 家</template></el-table-column>
+      <el-table-column label="稳定上传占比" align="right" width="110"><template #default="{row}"><span class="num">{{ row.act }}%</span></template></el-table-column>
+      <el-table-column label="屏蔽率" width="190">
+        <template #default="{row}"><span class="rate-bar"><i :style="{width: row.mask + '%', background: row.mask >= 60 ? '#e5484d' : row.mask >= 40 ? '#f0a020' : '#18a058'}"></i></span><b class="num" :style="{color: row.mask >= 60 ? '#e5484d' : row.mask >= 40 ? '#b26a00' : '#18a058'}">{{ row.mask }}%</b></template>
+      </el-table-column>
+      <el-table-column label="建议动作" min-width="280"><template #default="{row}">{{ row.act2 }}</template></el-table-column>
+      <el-table-column label="操作" width="150" align="center">
+        <template #default="{row}">
+          <el-button v-if="row.mask >= 40 && !row.task" link type="primary" @click="invite(row)">创建邀约任务</el-button>
+          <el-tag v-else-if="row.task" type="success" size="small">邀约任务已创建</el-tag>
+          <span v-else class="muted">无需处理</span>
+        </template>
+      </el-table-column>
+    </el-table>
+    <div class="tbl-foot">
+      <span>屏蔽率 = 上游在该地区 × 品类下查询命中的单元格中，被屏蔽的单元格占比。此处只统计计数与比率，不涉及任何单家企业的销量、库存、价格。</span>
+      <span>披露粒度可在 <a href="master-category.html">全品类主数据工作台</a> 按品类调整</span>
+    </div>
+  </div>
+
+  <!-- 公告与通知 -->
+  <div class="grid c2">
+    <div class="card">
+      <div class="card-title"><span>平台公告<small>面向上游、下游企业发布</small></span><span class="right"><el-button size="small" type="primary" plain @click="annDlg = true"><el-icon><Plus /></el-icon>发布公告</el-button></span></div>
+      <div class="ann-item" v-for="a in anns" :key="a.title">
+        <el-tag size="small" :type="a.to === '上游' ? 'primary' : a.to === '下游' ? 'success' : 'warning'">{{ a.to }}</el-tag>
+        <div class="bd">{{ a.title }}<span>{{ a.time }} · {{ a.by }} · {{ a.status }}</span></div>
+        <el-button link type="primary" @click="$info('原型演示：查看公告全文与送达统计')">查看</el-button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span>通知<small>系统与流程通知</small></span><span class="right"><el-button size="small" link type="primary" @click="readAll">全部标为已读</el-button></span></div>
+      <div class="ann-item" v-for="n in notices" :key="n.title">
+        <span class="dot" :class="n.read ? '' : n.lv" style="margin-top:7px"></span>
+        <div class="bd" :class="{muted: n.read}">{{ n.title }}<span>{{ n.time }} · {{ n.src }}</span></div>
+        <a :href="n.href">去处理</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- 发布公告 -->
+  <el-dialog v-model="annDlg" title="发布平台公告" width="560px">
+    <el-form label-width="96px">
+      <el-form-item label="公告对象">
+        <el-radio-group v-model="ann.to"><el-radio value="全部">全部企业</el-radio><el-radio value="上游">上游钢厂</el-radio><el-radio value="下游">下游钢贸</el-radio></el-radio-group>
+      </el-form-item>
+      <el-form-item label="公告类型">
+        <el-select v-model="ann.type" style="width:100%"><el-option v-for="t in ['规则与参数变更','功能上线','维护与发布延迟','主数据变更','结算通知']" :key="t" :label="t" :value="t" /></el-select>
+      </el-form-item>
+      <el-form-item label="标题"><el-input v-model="ann.title" maxlength="40" show-word-limit placeholder="请输入公告标题" /></el-form-item>
+      <el-form-item label="正文"><el-input v-model="ann.body" type="textarea" :rows="4" placeholder="请输入公告正文" /></el-form-item>
+      <el-form-item label="送达方式"><el-checkbox-group v-model="ann.ch"><el-checkbox value="站内信">站内信</el-checkbox><el-checkbox value="短信">短信</el-checkbox><el-checkbox value="邮件">邮件</el-checkbox></el-checkbox-group></el-form-item>
+    </el-form>
+    <div class="tip-box orange small">防反推参数、披露粒度等规则变更的公告，须在变更生效前发布，并同步到下游“数据安全中心”的披露规则公示。</div>
+    <template #footer><el-button @click="annDlg = false">取消</el-button><el-button type="primary" :disabled="!ann.title" @click="publish">发布</el-button></template>
+  </el-dialog>
+
+  <!-- 近 7 日发布记录 -->
+  <el-dialog v-model="pubDlg" title="近 7 日 T+1 发布记录" width="640px">
+    <el-table :data="pubHistory" size="small" border>
+      <el-table-column prop="date" label="数据日期" width="120" />
+      <el-table-column prop="rows" label="入库明细（万行）" align="right" width="140" />
+      <el-table-column prop="done" label="发布完成时间" width="120" />
+      <el-table-column label="是否准时" width="110"><template #default="{row}"><el-tag size="small" :type="row.ok ? 'success' : 'danger'">{{ row.ok ? '8:00 前完成' : '延迟' }}</el-tag></template></el-table-column>
+      <el-table-column prop="note" label="备注" min-width="140" />
+    </el-table>
+    <div class="small muted mt12">近 30 日准时发布率 96.7%（29 / 30），延迟 1 次。</div>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const months = ['2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11'];
+  const joined = [14820, 15460, 15830, 16540, 17260, 17930, 18610, 19240, 19820, 20410, 20974, 21386];
+  const stable = [9860, 10240, 10110, 11020, 11680, 12240, 12790, 13310, 13820, 14350, 14854, 15240];
+  const paid = [286, 298, 305, 322, 341, 356, 372, 389, 402, 417, 429, 438];
+  const quota = [52800, 55200, 56900, 60400, 64800, 68200, 71900, 75600, 78800, 82100, 84700, 86400];
+
+  /* 图例与右侧坐标轴名称错开；柱状图所在的右轴从 0 起 */
+  const fixAxis = (o) => { o.grid.top = 58; o.yAxis[1].scale = false; o.yAxis[1].min = 0; return o; };
+
+  STP.mount({
+    data() {
+      return {
+        today: M.TODAY, dataDate: M.DATA_DATE, annDlg: false, pubDlg: false, matchView: 'high',
+        ann: { to: '全部', type: '规则与参数变更', title: '', body: '', ch: ['站内信'] },
+        pubSteps: [
+          { time: '00:00 – 02:10', t: '接收截止与补传合并', d: '入库 1,912 万行，含 90 天窗口内的补传与更正' },
+          { time: '02:10 – 04:05', t: '校验、映射与隔离', d: '校验通过率 98.7%，新增隔离 312 项' },
+          { time: '04:05 – 05:20', t: '企业日粒度事实层合并', d: '行级与日汇总数据归一，粒度防重通过' },
+          { time: '05:20 – 07:05', t: '聚合计算与披露判定', d: '按各数据池成员版本计算，438 个数据池' },
+          { time: '07:05 – 07:36', t: '一致性校验与用例抽检', d: '页面与导出口径一致，48 条用例通过' },
+          { time: '07:42', t: '发布完成', d: '上游看板、查询、导出与下游对标同步可用' },
+        ],
+        todos: [
+          { group: '企业与主数据', items: [
+            { n: 18, t: '待审核企业', d: '准入、身份认定、画像、上架', href: 'enterprises.html', lv: 'warm' },
+            { n: 1246, t: '待确认映射与品类积压', d: '各品类待映射队列合计', href: 'master-category.html', lv: '' },
+          ] },
+          { group: '数据治理', items: [
+            { n: 137, t: '断传企业', d: '其中 52 家已触发名额冻结', href: 'quality.html', lv: 'hot' },
+            { n: 312, t: '可疑与隔离数据', d: '隔离区数据不参与聚合', href: 'quality.html', lv: 'warm' },
+            { n: 7, t: '价格隔离待处置', d: '按批处置；只隔离价格字段，销量照常入库', href: 'price-control.html', lv: '' },
+            { n: 41, t: '粒度冲突拒收', d: '近 7 日被拒收批次', href: 'grain-monitor.html', lv: '' },
+          ] },
+          { group: '交易与结算', items: [
+            { n: 6, t: '对公转账待核销', d: '最早一笔已等待 2 个工作日', href: 'billing.html', lv: 'hot' },
+            { n: 214, t: '待审核结算单', d: '2026-10 结算期', href: 'settlement.html', lv: 'warm' },
+            { n: 2, t: '待付款批次', d: '审核通过，待财务付款', href: 'settlement.html', lv: 'warm' },
+            { n: 9, t: '分成异议与冻结', d: '异议 5，冻结待核查 4', href: 'settlement.html', lv: '' },
+          ] },
+          { group: '安全审计与关键配置', items: [
+            { n: 3, t: '异常查询告警', d: '待处置 2，终止服务待复核 1', href: 'audit.html', lv: 'hot' },
+            { n: 4, t: '待复核的关键配置变更', d: '防反推参数 1、披露粒度 1、分成规则 1、定价 1', href: 'privacy-params.html', lv: 'warm' },
+            { n: 3, t: '明细访问工单', d: '待企业授权 2，授权中 1', href: 'audit.html', lv: '' },
+          ] },
+        ],
+        matchAll: [
+          { region: '甘肃', cat: '不锈钢', up: 12, dn: 4, act: 50, mask: 92, act2: '已上架不足 5 家，样本过少。该品类披露粒度已设为省、旬；建议联合钢厂带动经销商入驻', task: false },
+          { region: '重庆', cat: '优特钢', up: 16, dn: 7, act: 57, mask: 84, act2: '建议定向邀约重庆主城、永川的优特钢贸易商；保持省、旬粒度', task: false },
+          { region: '江西', cat: '管材', up: 21, dn: 9, act: 67, mask: 71, act2: '建议定向邀约南昌、新余企业；购买前预估中提示屏蔽率', task: false },
+          { region: '辽宁', cat: '冷轧及涂镀', up: 19, dn: 14, act: 64, mask: 66, act2: '建议定向邀约沈阳、大连、鞍山的冷轧及涂镀贸易商', task: false },
+          { region: '陕西', cat: '型钢', up: 27, dn: 17, act: 65, mask: 58, act2: '建议定向邀约西安、宝鸡企业，并提升稳定上传占比', task: false },
+          { region: '湖南', cat: '中厚板', up: 38, dn: 19, act: 58, mask: 52, act2: '建议定向邀约（长沙、株洲、衡阳），并跟进已入驻未稳定上传的企业', task: false },
+          { region: '广东', cat: '管材', up: 33, dn: 142, act: 72, mask: 41, act2: '企业数足够但集中度高，建议补充佛山、东莞的中小企业样本', task: false },
+          { region: '浙江', cat: '冷轧及涂镀', up: 41, dn: 268, act: 76, mask: 18, act2: '正常', task: false },
+          { region: '江苏', cat: '建筑钢材', up: 212, dn: 1486, act: 81, mask: 6, act2: '正常', task: false },
+        ],
+        anns: [
+          { to: '全部', title: '关于 2026-12-01 数据池周期变更生效安排的公告', time: '2026-11-23 16:30', by: '林若彤', status: '已发布，送达 21,898 家' },
+          { to: '上游', title: '不锈钢、优特钢品类披露粒度说明（地区到省、时间到旬）', time: '2026-11-18 09:12', by: '赵启明', status: '已发布，送达 512 家' },
+          { to: '下游', title: '日汇总模式接口新增末片标记校验的提醒', time: '2026-11-12 14:40', by: '孙雅婷', status: '已发布，送达 7,266 家' },
+          { to: '下游', title: '2026 年 10 月分成结算单已生成，请于 11 月 30 日前确认', time: '2026-11-05 10:00', by: '何志远', status: '已发布，送达 4,186 家' },
+        ],
+        notices: [
+          { title: '披露粒度变更 MDC-1124-002 待复核：管材最细地区由地级市调整到省', time: '今天 09:26', src: '关键配置', lv: 'err', href: 'master-category.html', read: false },
+          { title: '异常查询告警 AL-20261123-0007：1 个购买主体 10 分钟内提交 46 次仅相差一个筛选项的查询', time: '昨天 20:19', src: '审计与风控', lv: 'err', href: 'audit.html', read: false },
+          { title: '2026-12-01 生效批次预校验：3 个购买主体替换比例超过 20%', time: '今天 08:05', src: '数据池管理', lv: 'warn', href: 'pools.html', read: false },
+          { title: '不锈钢大类待映射积压连续 3 日上升，当前 239 项', time: '昨天 18:20', src: '主数据', lv: 'warn', href: 'master-category.html', read: false },
+          { title: '明细访问工单 WO-20261124-001 已获企业授权，有效期 4 小时', time: '今天 11:30', src: '审计与风控', lv: 'info', href: 'audit.html', read: true },
+        ],
+        pubHistory: [
+          { date: '2026-11-23', rows: '1,912', done: '07:42', ok: true, note: '—' },
+          { date: '2026-11-22', rows: '1,236', done: '07:18', ok: true, note: '周日，入库量较低' },
+          { date: '2026-11-21', rows: '1,498', done: '07:25', ok: true, note: '—' },
+          { date: '2026-11-20', rows: '1,946', done: '07:48', ok: true, note: '—' },
+          { date: '2026-11-19', rows: '1,921', done: '07:39', ok: true, note: '—' },
+          { date: '2026-11-18', rows: '1,903', done: '08:21', ok: false, note: '聚合计算节点扩容，延迟 21 分钟，已公告' },
+          { date: '2026-11-17', rows: '1,889', done: '07:44', ok: true, note: '—' },
+        ],
+      };
+    },
+    computed: {
+      todoTotal() { return this.todos.reduce((a, g) => a + g.items.length, 0); },
+      matchRows() { return this.matchView === 'high' ? this.matchAll.filter((r) => r.mask >= 40) : this.matchAll; },
+      supplyOption() {
+        const add = joined.map((v, i) => (i === 0 ? 590 : v - joined[i - 1]));
+        return fixAxis(STP.chart.line({
+          x: months, yName: '企业数（家）', y2: '当月新增（家）',
+          series: [
+            { name: '累计入驻下游', data: joined, unit: '家' },
+            { name: '近 30 日稳定上传', data: stable, unit: '家', color: '#36cfc9' },
+            { name: '当月新增入驻', type: 'bar', data: add, yAxisIndex: 1, unit: '家', color: '#d5e4f5', barMaxWidth: 18 },
+          ],
+        }));
+      },
+      demandOption() {
+        return fixAxis(STP.chart.line({
+          x: months, yName: '付费上游（家）', y2: '在订名额（个）',
+          series: [
+            { name: '在订名额', type: 'bar', data: quota, yAxisIndex: 1, unit: '个', color: '#ffe2a8', barMaxWidth: 18 },
+            { name: '付费上游', data: paid, unit: '家', color: '#f0a020' },
+          ],
+        }));
+      },
+    },
+    methods: {
+      invite(row) { row.task = true; this.$demo('已创建定向邀约任务：' + row.region + ' · ' + row.cat + '，指派给运营 林若彤'); },
+      readAll() { this.notices.forEach((n) => { n.read = true; }); this.$demo('已全部标为已读'); },
+      publish() {
+        this.anns.unshift({ to: this.ann.to, title: this.ann.title, time: '2026-11-24 14:10', by: '林若彤', status: '已发布，送达中' });
+        this.annDlg = false; this.ann.title = ''; this.ann.body = '';
+        this.$demo('公告已发布');
+      },
+    },
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>每日上传汇总 · 下游钢贸端 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.ds-top { display: grid; grid-template-columns: 456px minmax(0, 1fr); gap: 14px; margin-bottom: 14px; align-items: stretch; }
+.ds-top > .card { margin-bottom: 0; }
+.calendar-grid .day { min-height: 60px; padding: 5px 6px 4px; white-space: nowrap; overflow: hidden; }
+.calendar-grid .day em { display: block; font-style: normal; font-size: 11px; line-height: 15px; }
+.calendar-grid .day.part em { color: #b26a00; }
+.calendar-grid .day.miss em { color: #c9383d; }
+.calendar-grid .day.today { border-style: dashed; color: #8a94a3; cursor: default; }
+.cal-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--stp-sub); margin-top: 10px; }
+.cal-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; border: 1px solid transparent; }
+.cal-legend .ok { background: #f0faf4; border-color: #cfe9da; } .cal-legend .part { background: #fff8eb; border-color: #f3dfb8; }
+.cal-legend .miss { background: #fff3f3; border-color: #f3c9ca; } .cal-legend .future { background: #fff; border-color: #e6e9ef; }
+.mini { border: 1px solid var(--stp-border); border-radius: 6px; padding: 10px 12px; background: #fff; position: relative; }
+.mini .k { font-size: 12px; color: var(--stp-sub); display: flex; align-items: center; gap: 4px; }
+.mini .v { font-size: 22px; font-weight: 600; margin-top: 4px; line-height: 1.2; }
+.mini .v small { font-size: 12px; font-weight: 400; color: var(--stp-sub); margin: 0 6px 0 3px; }
+.mini .f { font-size: 12px; color: var(--stp-sub); margin-top: 4px; line-height: 1.5; }
+.eq { font-size: 12.5px; line-height: 1.9; }
+.eq b { font-variant-numeric: tabular-nums; }
+.src-table td, .src-table th { padding: 6px 8px; font-size: 12.5px; }
+.recon { border: 1px solid var(--stp-border); border-radius: 6px; padding: 12px 14px; }
+.recon.bad { border-color: #f3c9ca; background: #fffafa; }
+.recon h4 { margin: 0 0 8px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.recon h4 .res { margin-left: auto; }
+.diff { color: #e5484d; font-weight: 600; }
+.el-descriptions__label { white-space: nowrap; }
+.demo-param { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 11px; line-height: 18px; background: #fff8eb; color: #9a6400; border: 1px solid #f3dfb8; font-weight: 400; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="downstream" active="daily-summary" title="每日上传汇总"
+  desc="按业务日期核对本企业每天传了什么：批次、条数、吨位，多少被规则过滤、多少校验失败，以及与 ERP 申报总数的对账结果。以下都是本企业自己上传的数据，仅本企业可见。">
+  <template #actions>
+    <el-tooltip placement="bottom" content="原型演示用：模拟本企业在“上传设置”中的价格上传开关（默认关闭）。关闭时本页不出现任何价格、金额内容。">
+      <span class="proto-switch">原型状态 · 价格上传
+        <el-switch :model-value="price" size="small" @change="v => $setState('dnPrice', v ? 'on' : 'off')" />
+        <b :style="{color: price ? '#18a058' : '#8a94a3'}">{{ price ? '已开启' : '未开启' }}</b>
+      </span>
+    </el-tooltip>
+    <el-button @click="reportDlg = true"><el-icon><Document /></el-icon>月度报告</el-button>
+    <el-button type="primary" @click="pushDlg = true"><el-icon><Bell /></el-icon>每日推送设置</el-button>
+  </template>
+
+  <div class="status-line">
+    <b>当前上传粒度</b>
+    <span><span class="code">SRC-HQ</span> 总部 ERP <el-tag size="small" effect="plain">行级模式</el-tag></span>
+    <span><span class="code">SRC-WX</span> 无锡分公司进销存 <el-tag size="small" type="success" effect="plain">日汇总模式</el-tag> <span class="muted small">自 2026-10-01 起</span></span>
+    <span class="muted small">行级的“条数”是单据行数；日汇总的“条数”是汇总记录数，另展示所含单据行数</span>
+    <a href="upload-settings.html" style="margin-left:auto">上传设置 ›</a>
+  </div>
+
+  <div class="ds-top">
+    <!-- 日历 -->
+    <div class="card">
+      <div class="card-title">
+        <span>2026 年 11 月<small>点击日期查看当日汇总</small></span>
+        <span class="right">
+          <el-button size="small" text @click="$info('原型仅提供 2026 年 11 月的示例数据')"><el-icon><ArrowLeft /></el-icon>10 月</el-button>
+          <el-button size="small" text disabled>12 月<el-icon><ArrowRight /></el-icon></el-button>
+        </span>
+      </div>
+      <div class="calendar-grid">
+        <div class="wk" v-for="w in ['一','二','三','四','五','六','日']" :key="w">{{ w }}</div>
+        <div v-for="(c, i) in cells" :key="i" class="day" :class="[c.cls, {sel: c.date && c.date===sel}]" @click="pick(c)">
+          <template v-if="c.d">
+            <b>{{ c.d }}</b>
+            <span class="num">{{ c.text }}</span>
+            <em v-if="c.flag">{{ c.flag }}</em>
+          </template>
+        </div>
+      </div>
+      <div class="cal-legend">
+        <span><i class="ok"></i>正常 {{ month.ok }} 天</span>
+        <span><i class="part"></i>部分失败 {{ month.part }} 天</span>
+        <span><i class="miss"></i>未上传 {{ month.miss }} 天</span>
+        <span><i class="future"></i>未来日期</span>
+      </div>
+      <div class="tip-box small mt12">
+        格内数字为当日入库销量（吨）；11-15 为补传后的数量。<b>正常</b>：全部批次处理完成，失败率不超过告警阈值且对账一致；<b>部分失败</b>：失败率超过阈值或对账有差异；<b>未上传</b>：截至次日 08:00 未收到任何批次。
+      </div>
+      <div class="row between mt12">
+        <span class="small muted">本月截至 {{ dataDate }}：有效上传 <b style="color:#1f2d3d">{{ month.valid }}</b> 天（按时 {{ month.valid - month.miss }} 天，补传 {{ month.miss }} 天）</span>
+        <a href="javascript:;" @click="reportDlg = true">月度报告 ›</a>
+      </div>
+    </div>
+
+    <!-- 当日摘要 -->
+    <div class="card">
+      <div class="card-title">
+        <span>{{ sel }}（周{{ day.wk }}）上传摘要
+          <el-tag v-if="day.status==='ok'" type="success" size="small" effect="light" style="margin-left:8px">正常</el-tag>
+          <el-tag v-else-if="day.status==='part'" type="warning" size="small" effect="light" style="margin-left:8px">部分失败</el-tag>
+          <el-tag v-else type="danger" size="small" effect="light" style="margin-left:8px">未按时上传 · 已补传</el-tag>
+        </span>
+        <span class="right">
+          <el-button size="small" @click="toCheck('')">查看当日明细</el-button>
+          <el-button size="small" type="danger" plain :disabled="!day.fail" @click="toCheck('校验失败')"><el-icon><Warning /></el-icon>查看失败明细</el-button>
+        </span>
+      </div>
+
+      <el-alert v-if="day.alert" :type="day.status==='miss' ? 'error' : 'warning'" show-icon :closable="false" style="margin-bottom:12px">
+        <template #title>{{ day.alert }}</template>
+      </el-alert>
+
+      <div class="grid c3" style="gap:10px;margin-bottom:10px">
+        <div class="mini">
+          <div class="k">上传批次数</div>
+          <div class="v num">{{ day.batches }}<small>个</small></div>
+          <div class="f">销售 {{ day.saleBatches }} 个 · 库存快照 {{ day.invBatches }} 个</div>
+        </div>
+        <div class="mini">
+          <div class="k">接收条数<el-tooltip placement="top" content="平台入口收到的销售数据条数。行级模式为单据行数，日汇总模式为汇总记录数"><el-icon><QuestionFilled /></el-icon></el-tooltip></div>
+          <div class="v num">{{ $fmt(day.recv) }}<small>条</small></div>
+          <div class="f">行级 {{ day.hq.recv }} 行 · 日汇总 {{ day.wx.recv }} 条（含 {{ day.wx.lines }} 行单据）</div>
+        </div>
+        <div class="mini" style="background:#f7fbff;border-color:#cfe2f8">
+          <div class="k">入库条数与吨位</div>
+          <div class="v num">{{ $fmt(day.in) }}<small>条</small>{{ $fmt(day.sales) }}<small>吨</small></div>
+          <div class="f">行级 {{ day.hq.in }} 行 · 日汇总 {{ day.wx.in }} 条（含 {{ day.wx.inLines }} 行单据）</div>
+        </div>
+        <div class="mini">
+          <div class="k">规则过滤条数<el-tooltip placement="top" content="不符合本企业上传条件规则的数据，在平台入口被二次过滤。被过滤的数据不落盘，平台只记录条数，没有吨位和内容"><el-icon><QuestionFilled /></el-icon></el-tooltip></div>
+          <div class="v num">{{ day.filt }}<small>条</small></div>
+          <div class="f">不落盘，只记录条数　<a href="upload-rules.html">查看规则</a></div>
+        </div>
+        <div class="mini">
+          <div class="k">校验失败条数</div>
+          <div class="v num" :style="{color: day.fail ? '#e5484d' : ''}">{{ day.fail }}<small>条</small></div>
+          <div class="f"><template v-if="day.fail">失败率 {{ day.failRate }}%　<a href="javascript:;" @click="toCheck('校验失败')">查看失败明细 ›</a></template><template v-else>全部通过字段校验</template></div>
+        </div>
+        <div class="mini">
+          <div class="k">待映射条数<el-tooltip placement="top" content="品名、材质、钢厂或仓库暂时无法对应到平台标准值的数据。待映射数据不参与聚合，映射完成后自动回补"><el-icon><QuestionFilled /></el-icon></el-tooltip></div>
+          <div class="v num" :style="{color: day.pend ? '#d48806' : ''}">{{ day.pend }}<small>条</small></div>
+          <div class="f"><template v-if="day.pend">映射后自动回补　<a href="javascript:;" @click="toCheck('待映射')">去处理 ›</a></template><template v-else>无待映射数据</template></div>
+        </div>
+      </div>
+
+      <div class="tip-box blue eq">
+        销售数据：接收 <b>{{ day.recv }}</b> = 入库 <b>{{ day.in }}</b> + 规则过滤 <b>{{ day.filt }}</b> + 校验失败 <b>{{ day.fail }}</b> + 待映射 <b>{{ day.pend }}</b> + 隔离待确认 <b>{{ day.quar }}</b><template v-if="day.voided"> + 企业已作废 <b>{{ day.voided }}</b></template>。只有“入库”的数据参与聚合。<br>
+        库存快照：{{ day.invBatches }} 个批次，入库 <b>{{ $fmt(day.hq.inv + day.wx.inv) }}</b> 条，日末库存 <b>{{ $fmt(day.stock) }}</b> 吨。
+      </div>
+
+      <template v-if="price">
+        <div class="small muted mt12 mb8">价格与金额<span class="level-tag">仅有“查看价格与金额”权限的成员可见</span></div>
+        <div class="grid c3" style="gap:10px;margin-bottom:0">
+          <div class="mini">
+            <div class="k">带价格的条数占比</div>
+            <div class="v num">{{ day.priceRatio }}<small>%</small></div>
+            <div class="f">入库 {{ day.in }} 条中 {{ day.priced }} 条带价格；范围外的价格字段不接收<template v-if="day.d === 23">；另有 1 条价格字段隔离待确认</template></div>
+          </div>
+          <div class="mini">
+            <div class="k">金额合计</div>
+            <div class="v num">{{ $fmt(day.amount) }}<small>元</small></div>
+            <div class="f">带价格销量 {{ $fmt(day.pricedTon) }} 吨 · 含税</div>
+          </div>
+          <div class="mini">
+            <div class="k">当日均价<el-tooltip placement="top" content="金额合计 ÷ 带价格的销量。按本企业默认口径：含税、仓库自提、非暂估"><el-icon><QuestionFilled /></el-icon></el-tooltip></div>
+            <div class="v num">{{ $fmt(day.avg) }}<small>元/吨</small></div>
+            <div class="f">含税 · 仓库自提 · 非暂估</div>
+          </div>
+        </div>
+      </template>
+
+      <table class="plain-table src-table mt12">
+        <thead><tr><th>来源系统</th><th class="r">批次</th><th class="r">接收</th><th class="r">入库</th><th class="r">入库销量(吨)</th><th class="r">规则过滤</th><th class="r">校验失败</th><th class="r">待映射</th><th class="r">隔离</th><th class="r">日末库存(吨)</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="code">SRC-HQ</span> 行级</td><td class="r num">{{ day.hq.saleB + 1 }}</td><td class="r num">{{ day.hq.recv }} 行</td><td class="r num">{{ day.hq.in }} 行</td><td class="r num">{{ $fmt(day.hq.t) }}</td>
+            <td class="r num">{{ day.hq.filt }}</td><td class="r num">{{ day.hq.fail }}</td><td class="r num">{{ day.hq.pend }}</td><td class="r num">{{ day.hq.quar }}</td><td class="r num">{{ $fmt(day.hq.stock) }}</td>
+          </tr>
+          <tr>
+            <td><span class="code">SRC-WX</span> 日汇总</td><td class="r num">2</td><td class="r num">{{ day.wx.recv }} 条</td><td class="r num">{{ day.wx.in }} 条</td><td class="r num">{{ $fmt(day.wx.t) }}</td>
+            <td class="r num">{{ day.wx.filt }}</td><td class="r num">{{ day.wx.fail }}</td><td class="r num">{{ day.wx.pend }}</td><td class="r num">{{ day.wx.quar }}</td><td class="r num">{{ $fmt(day.wx.stock) }}</td>
+          </tr>
+          <tr class="total">
+            <td>合计</td><td class="r num">{{ day.batches }}</td><td class="r num">{{ day.recv }}</td><td class="r num">{{ day.in }}</td><td class="r num">{{ $fmt(day.sales) }}</td>
+            <td class="r num">{{ day.filt }}</td><td class="r num">{{ day.fail }}</td><td class="r num">{{ day.pend }}</td><td class="r num">{{ day.quar }}</td><td class="r num">{{ $fmt(day.stock) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 对账 -->
+  <div class="card">
+    <div class="card-title">
+      <span>对账：ERP 申报的控制总数 与 平台实际受理、入库<small>业务日期 {{ sel }}</small></span>
+      <span class="right small muted">ERP 通过“每日对账申报”接口申报，两种粒度通用</span>
+    </div>
+    <div class="grid c2" style="margin-bottom:12px">
+      <div class="recon" v-for="r in recon" :key="r.src" :class="{bad: !r.ok}">
+        <h4>
+          <span class="code">{{ r.src }}</span>{{ r.name }}
+          <el-tag size="small" effect="plain" :type="r.src==='SRC-WX' ? 'success' : 'primary'">{{ r.mode }}</el-tag>
+          <span class="res">
+            <el-tag v-if="r.ok" type="success" effect="dark" size="small"><el-icon style="vertical-align:-2px"><CircleCheck /></el-icon> 一致</el-tag>
+            <el-tag v-else type="danger" effect="dark" size="small"><el-icon style="vertical-align:-2px"><Warning /></el-icon> 有差异</el-tag>
+          </span>
+        </h4>
+        <table class="plain-table src-table">
+          <thead><tr><th>对账项</th><th class="r">ERP 申报</th><th class="r">平台受理</th><th class="r">差异</th></tr></thead>
+          <tbody>
+            <tr v-for="x in r.rows" :key="x.k">
+              <td>{{ x.k }}</td>
+              <td class="r num">{{ $fmt(x.decl, x.d) }}</td>
+              <td class="r num">{{ $fmt(x.plat, x.d) }}</td>
+              <td class="r num"><span v-if="x.plat - x.decl === 0" class="muted">0</span><span v-else class="diff">{{ (x.plat - x.decl > 0 ? '+' : '') + $fmt(x.plat - x.decl, x.d) }}</span></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="small muted mt8" style="line-height:1.7">{{ r.note }}</div>
+        <div v-if="!r.ok" class="row mt8">
+          <el-button size="small" type="danger" plain @click="diffDlg = true">查看差异明细</el-button>
+          <span class="small muted">日汇总模式的更正方式：在 ERP 端重传当日完整批次（整批替换）</span>
+        </div>
+      </div>
+    </div>
+    <div class="tip-box small">
+      <b>对账口径</b>：ERP 申报的是按生效规则过滤后、应当上传的条数与吨位<template v-if="price">（及带价格记录的金额）</template>；平台用“受理数”（接收 − 规则过滤）比对，受理但尚未入库的记录（校验失败、待映射、隔离待确认）处理完成后自动转为入库。
+      <b>日汇总模式没有单据号，平台无法做单据级去重和单笔校验，对账是主要的完整性保障</b>，建议 SRC-WX 每日申报控制总数。
+    </div>
+  </div>
+
+  <!-- 分组表 -->
+  <div class="card">
+    <div class="card-title">
+      <span>当日分组汇总<small>业务日期 {{ sel }} · 已入库数据 · 吨位取整到 1 吨</small></span>
+      <span class="right">
+        <el-radio-group v-if="tab==='region'" v-model="regionMode" size="small">
+          <el-radio-button value="wh">按仓库所在地</el-radio-button><el-radio-button value="dest">按流向地</el-radio-button>
+        </el-radio-group>
+        <el-radio-group v-model="tab">
+          <el-radio-button value="cat">按品类</el-radio-button><el-radio-button value="wh">按仓库</el-radio-button>
+          <el-radio-button value="region">按地区</el-radio-button><el-radio-button value="brand">按品牌</el-radio-button>
+        </el-radio-group>
+      </span>
+    </div>
+    <table class="plain-table">
+      <thead>
+        <tr>
+          <th>{{ group.dim }}</th>
+          <th v-if="group.sub">{{ group.sub }}</th>
+          <th class="r">当日销量(吨)</th><th class="r">销量占比</th>
+          <th class="r">日末库存(吨)</th><th class="r">库存占比</th>
+          <template v-if="price"><th class="r">带价格销量(吨)</th><th class="r">金额(元)</th><th class="r">均价(元/吨)</th></template>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="g in group.rows" :key="g.name">
+          <td>{{ g.name }}<span v-if="g.tag" class="level-tag">{{ g.tag }}</span></td>
+          <td v-if="group.sub" class="muted">{{ g.sub }}</td>
+          <td class="r num">{{ $fmt(g.sales) }}</td><td class="r num">{{ (g.sales / day.sales * 100).toFixed(1) }}%</td>
+          <td class="r num"><span v-if="g.stock===null" class="muted">不适用</span><template v-else>{{ $fmt(g.stock) }}</template></td>
+          <td class="r num"><span v-if="g.stock===null" class="muted">不适用</span><template v-else>{{ (g.stock / day.stock * 100).toFixed(1) }}%</template></td>
+          <template v-if="price">
+            <td class="r num"><span v-if="!g.priced" class="muted">未上传价格</span><template v-else>{{ $fmt(g.priced) }}</template></td>
+            <td class="r num"><span v-if="!g.priced" class="muted">未上传价格</span><template v-else>{{ $fmt(g.amount) }}</template></td>
+            <td class="r num"><span v-if="!g.priced" class="muted">未上传价格</span><template v-else>{{ $fmt(g.amount / g.priced) }}</template></td>
+          </template>
+        </tr>
+        <tr class="total">
+          <td>合计</td><td v-if="group.sub"></td>
+          <td class="r num">{{ $fmt(day.sales) }}</td><td class="r num">100.0%</td>
+          <td class="r num">{{ $fmt(day.stock) }}</td><td class="r num">100.0%</td>
+          <template v-if="price"><td class="r num">{{ $fmt(day.pricedTon) }}</td><td class="r num">{{ $fmt(day.amount) }}</td><td class="r num">{{ $fmt(day.avg) }}</td></template>
+        </tr>
+      </tbody>
+    </table>
+    <div class="small muted mt8" style="line-height:1.8">
+      {{ group.note }}
+      <template v-if="price">　金额与均价只统计本企业价格上传范围内（建筑钢材、热轧板卷 · 东岳、金江 · 全部仓库）的数据。</template>
+    </div>
+  </div>
+
+  <div class="grid c2">
+    <!-- 月度报告入口 -->
+    <div class="card">
+      <div class="card-title"><span>月度报告<small>2026 年 11 月 · 截至 {{ dataDate }}</small></span><span class="right"><el-button size="small" type="primary" plain @click="reportDlg = true">查看月度报告</el-button></span></div>
+      <div class="grid c4" style="gap:10px;margin-bottom:0">
+        <div class="mini"><div class="k">本月上传天数</div><div class="v num">{{ month.valid }}<small>天</small></div><div class="f">应上传 {{ month.valid }} 天</div></div>
+        <div class="mini"><div class="k">入库销量合计</div><div class="v num">{{ $fmt(month.sales) }}<small>吨</small></div><div class="f">日均 {{ $fmt(month.sales / month.valid) }} 吨</div></div>
+        <div class="mini"><div class="k">质量评分</div><div class="v num">92<small>分</small><el-tag type="success" size="small" effect="dark">A</el-tag></div><div class="f">影响名录展示与分成系数</div></div>
+        <div class="mini"><div class="k">被订阅家数</div><div class="v num">23<small>家</small></div><div class="f"><a href="ledger.html">透明账本 ›</a></div></div>
+      </div>
+    </div>
+    <!-- 推送设置摘要 -->
+    <div class="card">
+      <div class="card-title"><span>每日汇总推送与告警</span><span class="right"><el-button size="small" @click="pushDlg = true"><el-icon><Setting /></el-icon>修改设置</el-button></span></div>
+      <dl class="kv" style="grid-template-columns:96px 1fr">
+        <dt>推送渠道</dt><dd><el-tag v-for="c in push.channels" :key="c" size="small" effect="plain" style="margin-right:6px">{{ c }}</el-tag><span v-if="!push.channels.length" class="muted">未开启</span></dd>
+        <dt>推送时间</dt><dd>每日 <b>{{ push.time }}</b>，推送前一业务日期的摘要</dd>
+        <dt>接收人</dt><dd>{{ push.receivers.join('、') }}</dd>
+        <dt>告警</dt>
+        <dd>
+          <span v-if="push.missAlert"><span class="dot err"></span>次日 {{ push.missTime }} 仍未上传</span>
+          <span v-if="push.failAlert" style="margin-left:14px"><span class="dot warn"></span>失败率超过 {{ push.failRate }}%</span>
+          <span v-if="push.reconAlert" style="margin-left:14px"><span class="dot warn"></span>对账有差异</span>
+        </dd>
+      </dl>
+    </div>
+  </div>
+
+  <!-- 差异明细 -->
+  <el-dialog v-model="diffDlg" title="SRC-WX 对账差异明细" width="680px">
+    <el-descriptions :column="2" border size="small">
+      <el-descriptions-item label="业务日期">{{ sel }}</el-descriptions-item>
+      <el-descriptions-item label="来源系统">SRC-WX 无锡分公司进销存（日汇总模式）</el-descriptions-item>
+      <el-descriptions-item label="生效批次">SB-WX-{{ sel.replace(/-/g, '') }}-01（分片 1 / 1，已收到末片标记）</el-descriptions-item>
+      <el-descriptions-item label="申报时间">{{ sel }} 23:56</el-descriptions-item>
+    </el-descriptions>
+    <table class="plain-table src-table mt12">
+      <thead><tr><th>对账项</th><th class="r">ERP 申报</th><th class="r">平台受理</th><th class="r">差异</th></tr></thead>
+      <tbody>
+        <tr v-for="x in wxRecon.rows" :key="x.k"><td>{{ x.k }}</td><td class="r num">{{ $fmt(x.decl, x.d) }}</td><td class="r num">{{ $fmt(x.plat, x.d) }}</td><td class="r num diff">{{ $fmt(x.plat - x.decl, x.d) }}</td></tr>
+      </tbody>
+    </table>
+    <div class="small muted mt12 mb8">平台收到的汇总记录按品名小计（供在 ERP 端逐项核对）</div>
+    <table class="plain-table src-table">
+      <thead><tr><th>标准品名</th><th class="r">汇总记录数</th><th class="r">所含单据行数</th><th class="r">净重(吨)</th></tr></thead>
+      <tbody>
+        <tr v-for="x in wxByProduct" :key="x[0]"><td>{{ x[0] }}</td><td class="r num">{{ x[1] }}</td><td class="r num">{{ x[2] }}</td><td class="r num">{{ $fmt(x[3], 3) }}</td></tr>
+        <tr class="total"><td>合计</td><td class="r num">45</td><td class="r num">203</td><td class="r num">313.740</td></tr>
+      </tbody>
+    </table>
+    <div class="tip-box orange small mt12">
+      平台比 ERP 申报少 1 条汇总记录、3.220 吨。批内维度组合无重复，批次完整。常见原因：ERP 汇总任务执行后又有出库单过账，未重新汇总。<br>
+      日汇总模式没有单据号，平台无法定位到具体单据。请在 ERP 端核对后<b>重传 {{ sel }} 的完整汇总批次</b>，平台整批替换并自动重新对账；不支持单条补录或作废。
+    </div>
+    <template #footer>
+      <el-button @click="diffDlg = false; toCheck('')">查看当日汇总记录</el-button>
+      <el-button @click="diffDlg = false; $demo('已通知接口对接员沈立新（无锡分公司）核对并重传')">通知接口对接员</el-button>
+      <el-button type="primary" @click="diffDlg = false">知道了</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 月度报告 -->
+  <el-dialog v-model="reportDlg" title="2026 年 11 月月度报告" width="760px">
+    <div class="small muted mb12">统计区间 2026-11-01 至 {{ dataDate }}（本月尚未结束，月末生成正式报告并推送给企业管理员）</div>
+    <div class="grid c4" style="gap:10px">
+      <div class="mini"><div class="k">上传天数</div><div class="v num">{{ month.valid }}<small>天</small></div><div class="f">按时 {{ month.valid - month.miss }} 天 · 补传 {{ month.miss }} 天</div></div>
+      <div class="mini"><div class="k">入库销量合计</div><div class="v num">{{ $fmt(month.sales) }}<small>吨</small></div><div class="f">入库 {{ $fmt(month.in) }} 条</div></div>
+      <div class="mini"><div class="k">月均日末库存</div><div class="v num">{{ $fmt(month.stock) }}<small>吨</small></div><div class="f">月末 {{ $fmt(28630) }} 吨</div></div>
+      <div class="mini"><div class="k">被订阅情况</div><div class="v num">23<small>家钢厂</small></div><div class="f">较上月 +2 家，只显示家数</div></div>
+    </div>
+    <div class="grid c2" style="margin-bottom:0">
+      <div>
+        <div class="small muted mb8">质量评分 <b style="color:#18a058;font-size:15px">92 分 · A 级</b></div>
+        <table class="plain-table src-table">
+          <thead><tr><th>评分项</th><th class="r">当前值</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td>及时率</td><td class="r num">98.6%</td><td class="muted">近 90 日，次日 08:00 前完成上传</td></tr>
+            <tr><td>连续性</td><td class="r num">{{ month.valid }}/{{ month.valid }}</td><td class="muted">本月无断传</td></tr>
+            <tr><td>映射率</td><td class="r num">96.5%</td><td class="muted">按物料种类计，12 个物料待映射</td></tr>
+            <tr><td>校验通过率</td><td class="r num">{{ (100 - month.fail / (month.recv - month.filt) * 100).toFixed(1) }}%</td><td class="muted">本月失败 {{ month.fail }} 条</td></tr>
+            <tr><td>可疑率</td><td class="r num">{{ (month.quar / (month.recv - month.filt) * 100).toFixed(2) }}%</td><td class="muted">本月隔离待确认 {{ month.quar }} 条</td></tr>
+            <tr><td>选填字段填报率</td><td class="r num">78%</td><td class="muted">流向地 71% · 客户类型 88% · 下游行业 75%</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div>
+        <div class="small muted mb8">本月数据去向</div>
+        <table class="plain-table src-table">
+          <thead><tr><th>项目</th><th class="r">条数</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td>接收</td><td class="r num">{{ $fmt(month.recv) }}</td><td class="muted">行级行数 + 日汇总记录数</td></tr>
+            <tr><td>入库</td><td class="r num">{{ $fmt(month.in) }}</td><td class="muted">参与聚合</td></tr>
+            <tr><td>规则过滤</td><td class="r num">{{ $fmt(month.filt) }}</td><td class="muted">不落盘，只有计数</td></tr>
+            <tr><td>校验失败</td><td class="r num">{{ $fmt(month.fail) }}</td><td class="muted">可在自查页下载失败明细</td></tr>
+            <tr><td>待映射</td><td class="r num">{{ $fmt(month.pend) }}</td><td class="muted">映射后自动回补</td></tr>
+            <tr><td>隔离待确认</td><td class="r num">{{ $fmt(month.quar) }}</td><td class="muted">确认前不参与聚合</td></tr>
+          </tbody>
+        </table>
+        <div class="tip-box green small mt12">价格为自愿上传，不计入质量评分。评级 A 对应的分成质量系数见 <a href="revenue.html">我的收益</a>。</div>
+      </div>
+    </div>
+    <template #footer>
+      <el-button @click="$demo('月度报告 PDF 已生成，仅本企业成员可下载')"><el-icon><Download /></el-icon>下载 PDF</el-button>
+      <el-button type="primary" @click="reportDlg = false">关闭</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 每日推送设置 -->
+  <el-dialog v-model="pushDlg" title="每日推送设置" width="620px" @open="pushForm = JSON.parse(JSON.stringify(push))">
+    <el-form label-width="110px">
+      <el-form-item label="推送渠道">
+        <el-checkbox-group v-model="pushForm.channels">
+          <el-checkbox value="站内信">站内信</el-checkbox>
+          <el-checkbox value="短信">短信</el-checkbox>
+          <el-checkbox value="邮件">邮件</el-checkbox>
+          <el-checkbox value="微信">微信（服务号通知）</el-checkbox>
+        </el-checkbox-group>
+        <div v-if="pushForm.channels.indexOf('微信') >= 0" class="small muted" style="width:100%">微信通知需接收人关注并绑定货袋子服务号，未绑定的成员改用短信。</div>
+      </el-form-item>
+      <el-form-item label="推送时间">
+        <el-time-select v-model="pushForm.time" start="08:00" step="00:30" end="12:00" style="width:140px" :clearable="false" />
+        <span class="small muted" style="margin-left:10px">推送前一业务日期的摘要；数据在每日 08:00 前处理完成</span>
+      </el-form-item>
+      <el-form-item label="接收人">
+        <el-select v-model="pushForm.receivers" multiple style="width:100%">
+          <el-option v-for="m in members" :key="m" :label="m" :value="m" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="摘要内容">
+        <el-checkbox :model-value="true" disabled>批次、条数、吨位、失败与待映射</el-checkbox>
+        <el-checkbox v-model="pushForm.withRecon">对账结果</el-checkbox>
+        <el-checkbox v-if="price" v-model="pushForm.withPrice">金额与均价（只发给有价格权限的成员）</el-checkbox>
+      </el-form-item>
+      <el-divider content-position="left">告警</el-divider>
+      <el-form-item label="未上传告警">
+        <el-switch v-model="pushForm.missAlert" />
+        <span class="small" style="margin-left:10px">截至次日</span>
+        <el-time-select v-model="pushForm.missTime" start="06:00" step="00:30" end="12:00" style="width:110px;margin:0 6px" :clearable="false" :disabled="!pushForm.missAlert" />
+        <span class="small">仍未收到任何批次时告警</span>
+      </el-form-item>
+      <el-form-item label="失败率告警">
+        <el-switch v-model="pushForm.failAlert" />
+        <span class="small" style="margin-left:10px">校验失败率超过</span>
+        <el-input-number v-model="pushForm.failRate" :min="0.5" :max="20" :step="0.5" :precision="1" size="small" style="width:110px;margin:0 6px" :disabled="!pushForm.failAlert" />
+        <span class="small">% 时告警</span>
+      </el-form-item>
+      <el-form-item label="对账差异告警"><el-switch v-model="pushForm.reconAlert" /><span class="small muted" style="margin-left:10px">ERP 申报的控制总数与平台受理数不一致时告警</span></el-form-item>
+      <el-form-item label="告警渠道">
+        <el-checkbox-group v-model="pushForm.alertChannels">
+          <el-checkbox value="站内信">站内信</el-checkbox><el-checkbox value="短信">短信</el-checkbox><el-checkbox value="邮件">邮件</el-checkbox><el-checkbox value="微信">微信</el-checkbox>
+        </el-checkbox-group>
+      </el-form-item>
+    </el-form>
+    <div class="tip-box small">连续 10 天无有效上传时，订阅本企业的名额会被冻结，冻结期间不计提分成<span class="demo-param" style="margin-left:6px">示例参数，待业务方确定</span>。建议保持未上传告警开启。</div>
+    <template #footer>
+      <el-button @click="pushDlg = false">取消</el-button>
+      <el-button type="primary" :disabled="!pushForm.channels.length" @click="savePush">保存设置</el-button>
+    </template>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const WK = ['日', '一', '二', '三', '四', '五', '六'];
+  const pad = STP.pad;
+  const r3 = (n) => Math.round(n * 1000) / 1000;
+  /* 与工作台“近 30 日本企业上传销量与库存”使用同一序列 */
+  const SALES = M.dailySeries(30, 1790, 321); SALES[29].v = 1846;
+  const STOCK = M.stockSeries(30, 28630, 77, 0.0006);
+  const STATUS = { 12: 'part', 15: 'miss', 23: 'part' };
+
+  /* 2026-11-23 的分组模板：sales 当日销量、stock 日末库存、priced 带价格销量、amount 金额（元） */
+  const TPL = {
+    cat: [
+      { name: '螺纹钢', sub: '建筑钢材', sales: 1154, stock: 14385, priced: 1082, amount: 3729589 },
+      { name: '盘螺', sub: '建筑钢材', sales: 255, stock: 3625, priced: 251, amount: 913446 },
+      { name: '热轧卷板', sub: '热轧板卷', sales: 246, stock: 5595, priced: 235, amount: 856537 },
+      { name: '热轧带钢', sub: '热轧板卷', sales: 98, stock: 2290, priced: 90, amount: 315656 },
+      { name: '高线', sub: '建筑钢材', sales: 92, stock: 2735, priced: 92, amount: 331162 }],
+    wh: [
+      { name: '苏州望亭库', sub: '苏州市 · SRC-HQ', sales: 990, stock: 13862, priced: 935, amount: 3279609 },
+      { name: '上海宝山库', sub: '上海市 · SRC-HQ', sales: 554, stock: 6828, priced: 542, amount: 1913336 },
+      { name: '无锡惠山库', sub: '无锡市 · SRC-WX', sales: 302, stock: 7940, priced: 272, amount: 953444 }],
+    region: [
+      { name: '苏州市', sub: '江苏省', sales: 990, stock: 13862, priced: 935, amount: 3279609 },
+      { name: '上海市', sub: '上海市', sales: 554, stock: 6828, priced: 542, amount: 1913336 },
+      { name: '无锡市', sub: '江苏省', sales: 302, stock: 7940, priced: 272, amount: 953444 }],
+    dest: [
+      { name: '苏州市', sub: '江苏省', sales: 538, stock: null, priced: 502, amount: 1761485 },
+      { name: '上海市', sub: '上海市', sales: 273, stock: null, priced: 273, amount: 960990 },
+      { name: '无锡市', sub: '江苏省', sales: 265, stock: null, priced: 231, amount: 806874 },
+      { name: '常州市', sub: '江苏省', sales: 108, stock: null, priced: 108, amount: 380514 },
+      { name: '嘉兴市', sub: '浙江省', sales: 85, stock: null, priced: 80, amount: 279966 },
+      { name: '南通市', sub: '江苏省', sales: 65, stock: null, priced: 64, amount: 221496 },
+      { name: '未填报', sub: '—', sales: 511, stock: null, priced: 492, amount: 1735064 }],
+    brand: [
+      { name: '东岳', sub: '东岳钢铁', tag: '代理品牌', sales: 1118, stock: 13582, priced: 1113, amount: 3897624 },
+      { name: '金江', sub: '金江钢铁', tag: '代理品牌', sales: 637, stock: 11178, priced: 637, amount: 2248765 },
+      { name: '海川', sub: '海川特钢', sales: 66, stock: 3071, priced: 0, amount: 0 },
+      { name: '云岭', sub: '云岭钢铁', sales: 25, stock: 799, priced: 0, amount: 0 }],
+  };
+  /* 2026-11-22 的销量与价格分组（库存沿用模板按当日库存缩放），与“已上传数据自查”中的明细一致 */
+  const T22 = {
+    cat: [
+      { name: '螺纹钢', sub: '建筑钢材', sales: 554, stock: 14385, priced: 484, amount: 1667843 },
+      { name: '盘螺', sub: '建筑钢材', sales: 246, stock: 3625, priced: 235, amount: 854857 },
+      { name: '热轧卷板', sub: '热轧板卷', sales: 238, stock: 5595, priced: 226, amount: 815649 },
+      { name: '热轧带钢', sub: '热轧板卷', sales: 38, stock: 2290, priced: 18, amount: 61367 },
+      { name: '高线', sub: '建筑钢材', sales: 67, stock: 2735, priced: 51, amount: 184483 }],
+    wh: [
+      { name: '苏州望亭库', sub: '苏州市 · SRC-HQ', sales: 587, stock: 13862, priced: 509, amount: 1800178 },
+      { name: '上海宝山库', sub: '上海市 · SRC-HQ', sales: 369, stock: 6828, priced: 343, amount: 1217816 },
+      { name: '无锡惠山库', sub: '无锡市 · SRC-WX', sales: 188, stock: 7940, priced: 161, amount: 566206 }],
+    region: [
+      { name: '苏州市', sub: '江苏省', sales: 587, stock: 13862, priced: 509, amount: 1800178 },
+      { name: '上海市', sub: '上海市', sales: 369, stock: 6828, priced: 343, amount: 1217816 },
+      { name: '无锡市', sub: '江苏省', sales: 188, stock: 7940, priced: 161, amount: 566206 }],
+    dest: [
+      { name: '苏州市', sub: '江苏省', sales: 373, stock: null, priced: 307, amount: 1082885 },
+      { name: '上海市', sub: '上海市', sales: 185, stock: null, priced: 170, amount: 603252 },
+      { name: '无锡市', sub: '江苏省', sales: 176, stock: null, priced: 159, amount: 558075 },
+      { name: '常州市', sub: '江苏省', sales: 43, stock: null, priced: 43, amount: 151537 },
+      { name: '嘉兴市', sub: '浙江省', sales: 36, stock: null, priced: 33, amount: 116979 },
+      { name: '南通市', sub: '江苏省', sales: 30, stock: null, priced: 30, amount: 106835 },
+      { name: '未填报', sub: '—', sales: 301, stock: null, priced: 271, amount: 964638 }],
+    brand: [
+      { name: '东岳', sub: '东岳钢铁', tag: '代理品牌', sales: 722, stock: 13582, priced: 722, amount: 2554009 },
+      { name: '金江', sub: '金江钢铁', tag: '代理品牌', sales: 292, stock: 11178, priced: 292, amount: 1030191 },
+      { name: '海川', sub: '海川特钢', sales: 71, stock: 3071, priced: 0, amount: 0 },
+      { name: '云岭', sub: '云岭钢铁', sales: 60, stock: 799, priced: 0, amount: 0 }],
+  };
+  const sum = (a, k) => a.reduce((s, x) => s + (x[k] || 0), 0);
+  /* 把模板按当日比例缩放，并保证各分组加总等于当日合计 */
+  const scale = (tpl, f, g, pf, tot) => {
+    const rows = tpl.map((t) => Object.assign({}, t, { sales: Math.round(t.sales * f), stock: t.stock === null ? null : Math.round(t.stock * g), priced: Math.round(t.priced * f) }));
+    rows.slice().sort((a, b) => (b.sales - b.priced) - (a.sales - a.priced))[0].sales += tot.sales - sum(rows, 'sales');
+    if (rows[0].stock !== null) rows[0].stock += tot.stock - sum(rows, 'stock');
+    const pr = rows.filter((x) => x.priced > 0);
+    pr[0].priced += tot.priced - sum(rows, 'priced');
+    pr.forEach((x) => { const t = tpl.find((y) => y.name === x.name); x.amount = Math.round(x.priced * t.amount / t.priced * pf); });
+    if (tot.amount != null) pr[0].amount += tot.amount - sum(rows, 'amount');
+    return rows;
+  };
+
+  const DAYS = {};
+  for (let d = 1; d <= 23; d++) {
+    const date = '2026-11-' + pad(d);
+    const sales = SALES[d + 6].v, stock = STOCK[d + 6];
+    const f = sales / 1846, g = stock / 28630, rnd = M.rngOf(1000 + d);
+    const wd = new Date(2026, 10, d).getDay();
+    let hq, wx;
+    if (d === 23) {
+      hq = { saleB: 3, recv: 301, in: 258, t: 1543.54, filt: 31, fail: 3, pend: 8, quar: 1, exT: 1033.58, inv: 412, stock: 20690 };
+      wx = { recv: 45, in: 41, t: 302.46, filt: 0, fail: 0, pend: 4, quar: 0, lines: 203, inLines: 188, exT: 11.28, inv: 86, stock: 7940 };
+    } else if (d === 22) {
+      /* 与“已上传数据自查”中 2026-11-22 的明细一致：含 2 行企业已作废的单据行 */
+      hq = { saleB: 2, recv: 189, in: 160, t: 956.189, filt: 22, fail: 0, pend: 5, quar: 0, voided: 2, exT: 63.96, inv: 415, stock: 20691 };
+      wx = { recv: 27, in: 25, t: 187.811, filt: 0, fail: 0, pend: 2, quar: 0, lines: 122, inLines: 115, exT: 7.051, inv: 86, stock: 7939 };
+    } else {
+      const hi = Math.round(258 * f), wi = Math.round(41 * f);
+      hq = { saleB: wd === 0 ? 2 : 3, in: hi, filt: Math.round(31 * f * (0.8 + rnd() * 0.4)), fail: d === 12 ? 21 : (rnd() < 0.3 ? 1 : 0), pend: 2 + Math.floor(rnd() * 5), quar: rnd() < 0.15 ? 1 : 0, inv: 405 + (d * 7) % 12 };
+      hq.recv = hq.in + hq.filt + hq.fail + hq.pend + hq.quar;
+      hq.t = r3(Math.round(sales * 0.836) + (rnd() - 0.5) * 0.8);
+      hq.exT = r3((hq.fail + hq.pend + hq.quar) * (6 + rnd() * 5));
+      hq.stock = Math.round(stock * 0.7227);
+      wx = { in: wi, filt: 0, fail: 0, pend: Math.floor(rnd() * 3), quar: 0, inv: 84 + d % 4 };
+      wx.recv = wx.in + wx.pend;
+      wx.lines = Math.round(wx.recv * 4.5); wx.inLines = Math.round(wx.in * 4.58);
+      wx.t = r3(sales - hq.t); wx.exT = r3(wx.pend * (2 + rnd() * 2));
+      wx.stock = stock - hq.stock;
+    }
+    const status = STATUS[d] || 'ok';
+    /* 11-22 用当日自己的销量与价格分组，库存取模板；其余日期按 11-23 的模板缩放 */
+    const T = {};
+    Object.keys(TPL).forEach((k) => { T[k] = d === 22 ? TPL[k].map((t) => Object.assign({}, T22[k].find((x) => x.name === t.name), { stock: t.stock })) : TPL[k]; });
+    const fs = d === 22 ? 1 : f;
+    const tot = { sales, stock, priced: Math.round(sum(T.cat, 'priced') * fs) };
+    const pf = d >= 22 ? 1 : 1 + ((d * 37) % 11 - 5) / 1000;
+    const cat = scale(T.cat, fs, g, pf, tot);
+    tot.amount = sum(cat, 'amount');
+    const groups = { cat, wh: scale(T.wh, fs, g, pf, tot), region: scale(T.region, fs, g, pf, tot), dest: scale(T.dest, fs, g, pf, tot), brand: scale(T.brand, fs, g, pf, tot) };
+    const inN = hq.in + wx.in, recv = hq.recv + wx.recv, fail = hq.fail + wx.fail, pend = hq.pend + wx.pend;
+    const priced = d === 23 ? 281 : d === 22 ? 164 : Math.min(inN, Math.round(281 * f));
+    const wxDiff = d === 23;
+    const hqAmt = groups.wh[0].amount + groups.wh[1].amount, wxAmt = groups.wh[2].amount;
+    DAYS[date] = {
+      date, d, wk: WK[wd], status, sales, stock, hq, wx, groups,
+      batches: hq.saleB + 1 + 2, saleBatches: hq.saleB + 1, invBatches: 2,
+      recv, in: inN, filt: hq.filt + wx.filt, fail, pend, quar: hq.quar + wx.quar, voided: hq.voided || 0,
+      failRate: (fail / recv * 100).toFixed(1),
+      priced, priceRatio: (priced / inN * 100).toFixed(1), pricedTon: tot.priced, amount: tot.amount, avg: Math.round(tot.amount / tot.priced),
+      wxDiff, hqAmt, wxAmt,
+      alert: d === 23 ? '当日有 3 条校验失败、12 条待映射、1 条隔离待确认，这些数据不参与聚合；SRC-WX 的对账有差异（平台比 ERP 申报少 1 条、3.220 吨）。'
+        : d === 12 ? '校验失败 21 条，失败率 ' + (fail / recv * 100).toFixed(1) + '%，超过告警阈值 1%，已于 2026-11-13 08:30 推送告警。失败原因集中在“规格超出取值范围”（总部 ERP 新增物料的规格文本异常）。'
+        : d === 15 ? '该业务日期截至次日 08:00 未收到任何批次（总部 ERP 周末停机维护），日历按“未上传”标记，并已于 2026-11-16 08:05 发送未上传告警。数据已于 2026-11-16 10:42 补传并回补进聚合，下方为补传后的结果；有效上传天数照常计入。' : '',
+    };
+  }
+
+  STP.mount({
+    data() {
+      return {
+        dataDate: M.DATA_DATE, sel: '2026-11-23', tab: 'cat', regionMode: 'wh',
+        diffDlg: false, reportDlg: false, pushDlg: false,
+        members: ['陈海峰（企业管理员）', '周凯（信息部 · 接口对接员）', '沈立新（无锡分公司 · 接口对接员）', '顾晓燕（财务）'],
+        push: { channels: ['站内信', '短信', '邮件'], time: '08:30', receivers: ['陈海峰（企业管理员）', '周凯（信息部 · 接口对接员）'], withRecon: true, withPrice: false, missAlert: true, missTime: '08:00', failAlert: true, failRate: 1, reconAlert: true, alertChannels: ['站内信', '短信'] },
+        pushForm: { channels: [], time: '08:30', receivers: [], withRecon: true, withPrice: false, missAlert: true, missTime: '08:00', failAlert: true, failRate: 1, reconAlert: true, alertChannels: [] },
+        wxByProduct: [['螺纹钢', 27, 125, 202.177], ['盘螺', 6, 22, 54.753], ['热轧卷板', 5, 24, 25.647], ['热轧带钢', 2, 15, 10.046], ['高线', 1, 2, 9.837], ['待映射（尚无标准品名）', 4, 15, 11.28]],
+      };
+    },
+    computed: {
+      price() { return this.$state.dnPrice === 'on'; },
+      day() { return DAYS[this.sel]; },
+      cells() {
+        const out = [];
+        for (let i = 0; i < 6; i++) out.push({ cls: 'blank' });
+        for (let d = 1; d <= 30; d++) {
+          const date = '2026-11-' + pad(d), x = DAYS[date];
+          if (x) out.push({ d, date, cls: x.status, text: STP.fmt(x.sales), flag: x.status === 'part' ? '部分失败' : x.status === 'miss' ? '未上传' : '' });
+          else if (d === 24) out.push({ d, cls: 'today', text: '今日' });
+          else out.push({ d, cls: 'future', text: '' });
+        }
+        return out;
+      },
+      month() {
+        const ds = Object.keys(DAYS).map((k) => DAYS[k]);
+        const s = (k) => ds.reduce((a, x) => a + x[k], 0);
+        return { valid: ds.length, ok: ds.filter((x) => x.status === 'ok').length, part: ds.filter((x) => x.status === 'part').length, miss: ds.filter((x) => x.status === 'miss').length,
+          sales: s('sales'), stock: Math.round(s('stock') / ds.length), recv: s('recv'), in: s('in'), filt: s('filt'), fail: s('fail'), pend: s('pend'), quar: s('quar') };
+      },
+      recon() {
+        const d = this.day, p = this.price;
+        const hqN = d.hq.in + d.hq.fail + d.hq.pend + d.hq.quar + (d.hq.voided || 0), hqT = r3(d.hq.t + d.hq.exT);
+        const wxN = d.wx.in + d.wx.pend, wxT = r3(d.wx.t + d.wx.exT);
+        const hq = { src: 'SRC-HQ', name: '总部 ERP', mode: '行级模式', ok: true,
+          rows: [{ k: '条数（单据行）', decl: hqN, plat: hqN, d: 0 }, { k: '吨位（吨）', decl: hqT, plat: hqT, d: 3 }],
+          note: '平台受理 ' + hqN + ' 行 = 入库 ' + d.hq.in + ' + 校验失败 ' + d.hq.fail + ' + 待映射 ' + d.hq.pend + ' + 隔离待确认 ' + d.hq.quar + (d.hq.voided ? ' + 企业已作废 ' + d.hq.voided : '') + '；另有规则过滤 ' + d.hq.filt + ' 行不落盘，不参与对账。' };
+        const wx = { src: 'SRC-WX', name: '无锡分公司进销存', mode: '日汇总模式', ok: !d.wxDiff,
+          rows: [{ k: '条数（汇总记录）', decl: wxN + (d.wxDiff ? 1 : 0), plat: wxN, d: 0 }, { k: '吨位（吨）', decl: r3(wxT + (d.wxDiff ? 3.22 : 0)), plat: wxT, d: 3 }],
+          note: '平台受理 ' + wxN + ' 条 = 入库 ' + d.wx.in + ' + 待映射 ' + d.wx.pend + '，所含单据行数 ' + d.wx.lines + ' 行（仅用于合理性校验）。' };
+        if (p) {
+          hq.rows.push({ k: '金额（元，带价格记录）', decl: d.hqAmt, plat: d.hqAmt, d: 2 });
+          wx.rows.push({ k: '金额（元，带价格记录）', decl: d.wxAmt + (d.wxDiff ? 11205.6 : 0), plat: d.wxAmt, d: 2 });
+        }
+        return [hq, wx];
+      },
+      wxRecon() { return this.recon[1]; },
+      group() {
+        const g = this.day.groups, t = this.tab;
+        if (t === 'cat') return { dim: '品名', sub: '大类', rows: g.cat, note: '品类为平台标准化后的品名。待映射的数据不在表内，映射完成后自动回补。' };
+        if (t === 'wh') return { dim: '标准仓库', sub: '所在市 · 来源系统', rows: g.wh, note: '仓库为平台标准仓库。无锡惠山库的数据来自日汇总模式的 SRC-WX，其余来自行级模式的 SRC-HQ。' };
+        if (t === 'brand') return { dim: '品牌', sub: '钢厂标准名', rows: g.brand, note: '这里按本企业上传的全部品牌展示。对上游钢厂：其本厂品牌实名展示，其余品牌合并为“其他品牌”，且只有聚合值。' };
+        return this.regionMode === 'wh'
+          ? { dim: '仓库所在地', sub: '所属省', rows: g.region, note: '销量默认按出库仓库所在地统计；库存按仓库所在地统计。' }
+          : { dim: '流向地（收货地）', sub: '所属省', rows: g.dest, note: '流向地为选填字段，当日填报率 ' + ((1 - g.dest[g.dest.length - 1].sales / this.day.sales) * 100).toFixed(0) + '%（按销量），未填报的归入“未填报”；填报率计入质量评分。库存没有流向地口径。' };
+      },
+    },
+    methods: {
+      pick(c) { if (c.date) this.sel = c.date; else if (c.d) this.$info(c.cls === 'today' ? '今日数据尚在上传中，明日 08:00 前生成当日汇总' : '未来日期暂无数据'); },
+      toCheck(status) {
+        try { sessionStorage.setItem('stp-dc-preset', JSON.stringify({ date: this.sel, status })); } catch (e) { /* ignore */ }
+        this.$go('data-check.html');
+      },
+      savePush() { this.push = JSON.parse(JSON.stringify(this.pushForm)); this.pushDlg = false; this.$demo('推送设置已保存，自明日起生效'); },
+    },
+  });
+})();
+</script>
+</body>
+</html>

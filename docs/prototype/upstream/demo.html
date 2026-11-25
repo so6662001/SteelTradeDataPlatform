@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>模拟数据演示看板 · 上游钢厂端 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.demo-cta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.demo-cta .it { border: 1px solid var(--stp-border); border-radius: 8px; padding: 14px 16px; background: #fafcff; }
+.demo-cta .it b { display: block; font-size: 14px; margin-bottom: 4px; }
+.demo-cta .it p { margin: 0 0 10px; color: var(--stp-sub); font-size: 13px; line-height: 1.7; min-height: 44px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="upstream" active="demo" title="模拟数据演示看板"
+  desc="购买前先看看产品长什么样。本页数据全部由程序生成，结构、交互与披露规则和正式看板一致，但不来自任何真实企业。">
+  <template #actions>
+    <el-button @click="ruleDlg = true"><el-icon><Lock /></el-icon>披露规则说明</el-button>
+    <el-button type="primary" @click="$go('directory.html')"><el-icon><ShoppingCart /></el-icon>去选购数据来源企业</el-button>
+  </template>
+
+  <div class="demo-ribbon">
+    <el-tag type="warning" effect="dark" size="small">演示</el-tag>
+    <span><b>模拟数据，仅用于了解产品形态。</b>数据池为虚构的 120 家示例企业，数值不代表任何真实企业或市场，不可用于经营决策；演示看板不提供导出，也不展示企业名单。</span>
+    <span style="margin-left:auto;white-space:nowrap">试用剩余 <b>12</b> 天</span>
+  </div>
+
+  <up-board demo></up-board>
+
+  <div class="card">
+    <div class="card-title"><span>正式开通后，你可以</span></div>
+    <div class="demo-cta">
+      <div class="it"><b>自己挑数据来源</b><p>在企业名录中按地区、主营品类、规模、数据质量挑选下游企业组成数据池，至少 {{ $PV.nMin }} 家。</p><el-button size="small" type="primary" plain @click="$go('directory.html')">企业名录选购</el-button></div>
+      <div class="it"><b>按名额批量购买</b><p>一次购买名额包，有效期内自由分配，数量越多单价越低。</p><el-button size="small" type="primary" plain @click="$go('quota-package.html')">批量购买名额包</el-button></div>
+      <div class="it"><b>自由组合查询与导出</b><p>按时间、地区、品类、规格、品牌组合查询销量与库存，结果可导出，规则与页面一致。</p><el-button size="small" type="primary" plain @click="$go('query.html')">看看多维查询</el-button></div>
+    </div>
+  </div>
+
+  <el-dialog v-model="ruleDlg" title="披露规则说明" width="620px">
+    <table class="plain-table">
+      <tr><th style="width:150px">只看聚合</th><td>任何页面、导出与接口都不提供单家企业的销量、库存或价格。</td></tr>
+      <tr><th>最小数据池</th><td>数据池有效企业不少于 {{ $PV.nMin }} 家，否则不提供聚合数据。</td></tr>
+      <tr><th>最小贡献企业数</th><td>每个单元格的贡献企业不少于 {{ $PV.k }} 家，否则显示“—”，提示“样本不足，不予披露”。</td></tr>
+      <tr><th>优势度</th><td>单家占比超过 {{ $PV.dom1 }}%，或前两家合计超过 {{ $PV.dom2 }}% 的单元格不披露。</td></tr>
+      <tr><th>合并与追加屏蔽</th><td>列表中不满足条件的成员合并为“其他（合并披露）”；交叉表追加屏蔽，防止用合计倒推。</td></tr>
+      <tr><th>企业数区间</th><td>贡献企业数只展示区间：{{ $PV.bands.join('、') }} 家。</td></tr>
+      <tr><th>修约与时效</th><td>吨位取整到 1 吨；T+1 发布，最细到日、到地级市。</td></tr>
+    </table>
+    <template #footer><el-button type="primary" @click="ruleDlg=false">知道了</el-button></template>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/lib/geo/china.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script src="../assets/js/upstream-board.js"></script>
+<script>
+STP.mount({ components: { 'up-board': UpBoard }, data() { return { ruleDlg: false }; } });
+</script>
+</body>
+</html>

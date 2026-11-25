@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>已上传数据自查 · 下游钢贸端 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.dc-filter .el-form-item { margin-bottom: 10px; margin-right: 16px; }
+.dc-table .cell { padding: 0 8px; }
+.raw-val { color: #5b6778; }
+.raw-val .l1 { font-family: "SFMono-Regular", Consolas, Menlo, var(--el-font-family); color: #3d4b5c; }
+.std-val .l1 { font-weight: 500; }
+.l2 { font-size: 12px; color: var(--stp-sub); line-height: 18px; }
+.band-tag { display: inline-block; padding: 0 5px; border-radius: 3px; font-size: 11px; line-height: 17px; background: #eef4fb; color: #2b5d9b; border: 1px solid #d5e4f5; margin-left: 4px; font-weight: 400; white-space: nowrap; }
+.hd-raw { color: #6b7787; } .hd-std { color: #2b5d9b; }
+.ops a { margin-right: 8px; white-space: nowrap; }
+.ops a.danger { color: #e5484d; }
+.reason { font-size: 12px; color: #c9383d; line-height: 17px; margin-top: 3px; }
+.reason.warn { color: #b26a00; }
+.map-table td, .map-table th { padding: 7px 10px; }
+.map-table tr.grp td { background: #f6f8fa; font-weight: 600; }
+.map-table tr.grp td small { font-weight: 400; color: var(--stp-sub); margin-left: 8px; }
+.conf { display: inline-flex; align-items: center; gap: 6px; }
+.conf i { display: inline-block; width: 46px; height: 6px; border-radius: 3px; background: #e8ecf1; overflow: hidden; }
+.conf i u { display: block; height: 100%; background: #f0a020; }
+.conf.hi i u { background: #18a058; } .conf.lo i u { background: #e5484d; }
+.cmp-table td, .cmp-table th { padding: 6px 8px; font-size: 12.5px; }
+.el-descriptions__label { white-space: nowrap; }
+.demo-param { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 11px; line-height: 18px; background: #fff8eb; color: #9a6400; border: 1px solid #f3dfb8; font-weight: 400; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="downstream" active="data-check" title="已上传数据自查"
+  desc="逐条核对本企业上传到平台的数据，以及平台是怎样理解这些数据的：ERP 原始值与平台标准化后的值并列展示。这些明细只有本企业的授权成员能看到。">
+  <template #actions>
+    <el-tooltip placement="bottom" content="原型演示用：模拟本企业在“上传设置”中的价格上传开关（默认关闭）。关闭时本页不出现任何价格、金额列。">
+      <span class="proto-switch">原型状态 · 价格上传
+        <el-switch :model-value="price" size="small" @change="v => $setState('dnPrice', v ? 'on' : 'off')" />
+        <b :style="{color: price ? '#18a058' : '#8a94a3'}">{{ price ? '已开启' : '未开启' }}</b>
+      </span>
+    </el-tooltip>
+    <el-button @click="$go('daily-summary.html')"><el-icon><Calendar /></el-icon>每日上传汇总</el-button>
+    <el-button type="primary" @click="exportDlg = true"><el-icon><Download /></el-icon>导出本企业数据</el-button>
+  </template>
+
+  <div class="status-line">
+    <b>来源系统</b>
+    <el-radio-group v-model="src" @change="onSrc">
+      <el-radio-button value="HQ">SRC-HQ 总部 ERP · 行级模式</el-radio-button>
+      <el-radio-button value="WX">SRC-WX 无锡分公司进销存 · 日汇总模式</el-radio-button>
+    </el-radio-group>
+    <span v-if="src==='HQ'"><span class="dot info"></span>当前粒度 <b>行级模式</b>：每条是一行单据，有单据号和行号，可单条作废</span>
+    <span v-else><span class="dot ok"></span>当前粒度 <b>日汇总模式</b>（自 2026-10-01 起）：每条是一条汇总记录，没有单据号</span>
+    <a href="upload-settings.html" style="margin-left:auto">上传设置 ›</a>
+  </div>
+
+  <div class="card">
+    <el-tabs v-model="tab">
+      <!-- ================= 销售明细 ================= -->
+      <el-tab-pane name="sales">
+        <template #label>销售明细</template>
+        <el-form inline class="dc-filter" label-width="70px">
+          <el-form-item label="业务日期"><el-date-picker v-model="f.biz" type="daterange" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始" end-placeholder="结束" style="width:236px" :clearable="false" /></el-form-item>
+          <el-form-item label="上传日期"><el-date-picker v-model="f.up" type="daterange" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="不限" end-placeholder="不限" style="width:236px" /></el-form-item>
+          <el-form-item label="单据号">
+            <el-input v-model="f.doc" :disabled="src==='WX'" :placeholder="src==='WX' ? '日汇总模式无单据号' : '支持模糊匹配'" clearable style="width:170px" />
+          </el-form-item>
+          <el-form-item label="仓库"><el-select v-model="f.wh" clearable placeholder="全部" style="width:150px"><el-option v-for="w in whOpts" :key="w" :label="w" :value="w" /></el-select></el-form-item>
+          <el-form-item label="品名"><el-select v-model="f.product" clearable placeholder="全部" style="width:150px"><el-option v-for="p in ['螺纹钢','盘螺','高线','热轧卷板','热轧带钢','未映射']" :key="p" :label="p" :value="p" /></el-select></el-form-item>
+          <el-form-item label="材质"><el-select v-model="f.mat" clearable placeholder="全部" style="width:150px"><el-option v-for="p in ['HRB400E','HRB500E','HPB300','Q195','Q235B','Q355B','SPHC']" :key="p" :label="p" :value="p" /></el-select></el-form-item>
+          <el-form-item label="规格"><el-input v-model="f.spec" placeholder="如 20" clearable style="width:150px" /></el-form-item>
+          <el-form-item label="品牌"><el-select v-model="f.mill" clearable placeholder="全部" style="width:150px"><el-option v-for="p in ['东岳钢铁','金江钢铁','海川特钢','云岭钢铁']" :key="p" :label="p" :value="p" /></el-select></el-form-item>
+          <el-form-item label-width="0">
+            <el-button type="primary" :loading="loading" @click="query"><el-icon><Search /></el-icon>查询</el-button>
+            <el-button @click="reset">重置</el-button>
+          </el-form-item>
+        </el-form>
+
+        <div class="row between mb12">
+          <div class="row">
+            <span class="small muted">状态</span>
+            <el-radio-group v-model="f.status" size="small">
+              <el-radio-button v-for="s in statusOpts" :key="s.k" :value="s.k">{{ s.t }} {{ s.n }}</el-radio-button>
+            </el-radio-group>
+            <el-tag v-if="f.batch" closable size="small" @close="f.batch = ''">批次 {{ f.batch }}</el-tag>
+          </div>
+          <div class="row">
+            <template v-if="src==='HQ'">
+              <span v-if="picked.length" class="small muted">已选 {{ picked.length }} 条</span>
+              <el-button size="small" type="danger" plain :disabled="!picked.length" @click="openVoid(picked)">批量作废</el-button>
+            </template>
+            <el-tooltip v-else placement="top" content="日汇总模式按日整批替换，没有单条更新和单条作废">
+              <el-button size="small" disabled>批量作废（不支持）</el-button>
+            </el-tooltip>
+          </div>
+        </div>
+
+        <div v-if="src==='WX'" class="tip-box orange small mb12">
+          日汇总模式：一条记录代表“某业务日期 × 一组维度取值”的销售净量，<b>没有单据号</b>，下表展示汇总批次号与所含单据行数。<b>不支持单条作废</b>，如需更正，请在 ERP 端<b>重传当日完整批次</b>，平台整批替换。
+        </div>
+
+        <el-table ref="tbl" class="dc-table" :data="pageRows" border size="small" row-key="id" v-loading="loading" @selection-change="s => picked = s" :empty-text="emptyText">
+          <el-table-column v-if="src==='HQ'" type="selection" width="38" :selectable="r => r.status==='已入库'" reserve-selection />
+          <el-table-column :label="src==='HQ' ? '单据号 · 行号' : '汇总批次号'" :width="src==='HQ' ? 150 : 162">
+            <template #default="{row}">
+              <div class="num" v-if="src==='HQ'">{{ row.docNo }}<span class="muted"> · {{ row.lineNo }}</span></div>
+              <div class="num" v-else>{{ row.sumBatch }}</div>
+              <div class="l2"><span :style="{color: row.badDate ? '#c9383d' : ''}">{{ row.bizDate }}</span><template v-if="src==='HQ'"> · {{ row.docType }}</template><template v-else> · 含 {{ row.lines }} 行单据</template></div>
+            </template>
+          </el-table-column>
+          <el-table-column min-width="198">
+            <template #header><span class="hd-raw">原始上传值（ERP 原文）</span></template>
+            <template #default="{row}">
+              <div class="raw-val"><div class="l1">{{ row.raw.name }}</div><div class="l2">{{ row.raw.mat }} · {{ row.raw.spec }} · {{ row.raw.mill }} · {{ row.raw.wh }}</div></div>
+            </template>
+          </el-table-column>
+          <el-table-column min-width="228">
+            <template #header><span class="hd-std">平台标准化后的值</span></template>
+            <template #default="{row}">
+              <div class="std-val" v-if="row.std.product">
+                <div class="l1">{{ row.std.product }} {{ row.std.mat }} {{ row.std.spec }}<span v-if="row.std.band" class="band-tag">规格段 {{ row.std.band }}</span></div>
+                <div class="l2">{{ row.std.mill }} · {{ row.std.wh }}（{{ row.std.city }}）</div>
+              </div>
+              <div class="std-val" v-else>
+                <div class="l1" style="color:#b26a00">品名、规格尚未对应标准值</div>
+                <div class="l2">{{ row.std.mill }} · {{ row.std.wh }}（{{ row.std.city }}）</div>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column :label="src==='HQ' ? '重量(吨) / 计重' : '净重(吨) / 计重'" width="92" align="right">
+            <template #default="{row}"><div class="num" :style="{color: row.weight < 0 ? '#18a058' : ''}">{{ $fmt(row.weight, 3) }}</div><div class="l2">{{ row.mode }}</div></template>
+          </el-table-column>
+          <el-table-column label="流向地 / 客户类型" width="88">
+            <template #default="{row}"><div><span v-if="row.dest">{{ row.dest }}</span><span v-else class="muted">未填报</span></div><div class="l2">{{ row.ctype || '未填报' }}</div></template>
+          </el-table-column>
+          <el-table-column v-if="price" label="单价 / 金额 / 价格口径" width="132" align="right">
+            <template #default="{row}">
+              <template v-if="row.price">
+                <div class="num">{{ $fmt(row.price.unit) }} <span class="muted small">元/吨</span></div>
+                <div class="num l2" style="color:#3d4b5c">{{ $fmt(row.price.amount, 2) }} 元</div>
+                <div class="l2">{{ row.price.term }}<span v-if="row.price.q" style="color:#b26a00"> · 价格隔离</span></div>
+              </template>
+              <span v-else class="muted small">{{ row.std.product ? '范围外，未接收' : '映射后判定' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="状态 / 失败原因" :width="price ? 132 : 156">
+            <template #default="{row}">
+              <el-tag size="small" :type="tagOf(row.status)" effect="light">{{ row.status }}</el-tag>
+              <div v-if="row.reason" class="reason" :class="{warn: row.status!=='校验失败'}">{{ row.reason }}</div>
+              <div v-if="price && row.price && row.price.q" class="reason warn">单价低于该品名合理区间，价格字段已隔离；销量照常入库</div>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" :width="price ? 88 : 96">
+            <template #default="{row}">
+              <div class="ops">
+                <a href="javascript:;" @click="openDetail(row)">详情</a>
+                <template v-if="row.status==='隔离待确认'"><a href="javascript:;" @click="confirmTrue(row)">属实</a><a href="javascript:;" @click="openFix(row)">更正</a></template>
+                <a v-else-if="row.status==='待映射'" href="javascript:;" @click="tab = 'map'">去映射</a>
+                <a v-else-if="row.status==='已入库' && src==='HQ'" href="javascript:;" class="danger" @click="openVoid([row])">作废</a>
+              </div>
+            </template>
+          </el-table-column>
+        </el-table>
+        <div class="tbl-foot">
+          <span>共 <b>{{ filtered.length }}</b> 条，合计{{ src==='HQ' ? '重量' : '净重' }} <b class="num">{{ $fmt(sumWeight, 3) }}</b> 吨<template v-if="src==='WX'">，所含单据行数 <b>{{ sumLines }}</b> 行</template>。被规则过滤的数据不落盘，不在此列表中。</span>
+          <el-pagination small background layout="prev, pager, next" :total="filtered.length" :page-size="pageSize" v-model:current-page="page" />
+        </div>
+      </el-tab-pane>
+
+      <!-- ================= 库存快照 ================= -->
+      <el-tab-pane name="stock">
+        <template #label>库存快照</template>
+        <el-form inline class="dc-filter" label-width="70px">
+          <el-form-item label="快照日期"><el-date-picker v-model="sf.date" type="date" value-format="YYYY-MM-DD" style="width:160px" :clearable="false" /></el-form-item>
+          <el-form-item label="仓库"><el-select v-model="sf.wh" clearable placeholder="全部" style="width:150px"><el-option v-for="w in whOpts" :key="w" :label="w" :value="w" /></el-select></el-form-item>
+          <el-form-item label="品名"><el-select v-model="sf.product" clearable placeholder="全部" style="width:150px"><el-option v-for="p in ['螺纹钢','盘螺','高线','热轧卷板','热轧带钢']" :key="p" :label="p" :value="p" /></el-select></el-form-item>
+          <el-form-item label="品牌"><el-select v-model="sf.mill" clearable placeholder="全部" style="width:150px"><el-option v-for="p in ['东岳钢铁','金江钢铁','海川特钢','云岭钢铁']" :key="p" :label="p" :value="p" /></el-select></el-form-item>
+          <el-form-item label-width="0"><el-button @click="sf = {date: '2026-11-23', wh: '', product: '', mill: ''}">重置</el-button></el-form-item>
+        </el-form>
+        <div class="tip-box small mb12">库存是日末全量快照，两种上传粒度的接口相同：同一快照日期以最新的完整批次为准。库存快照不设价格、金额、成本字段。</div>
+        <el-table class="dc-table" :data="stockPage" border size="small" :empty-text="'所选快照日期没有数据（原型仅模拟 2026-11-23 的库存快照）'">
+          <el-table-column label="快照批次" width="170"><template #default="{row}"><div class="num">{{ row.batch }}</div><div class="l2">{{ row.date }} 日末</div></template></el-table-column>
+          <el-table-column min-width="200">
+            <template #header><span class="hd-raw">原始上传值（ERP 原文）</span></template>
+            <template #default="{row}"><div class="raw-val"><div class="l1">{{ row.raw.name }}</div><div class="l2">{{ row.raw.mat }} · {{ row.raw.spec }} · {{ row.raw.mill }} · {{ row.raw.wh }}</div></div></template>
+          </el-table-column>
+          <el-table-column min-width="240">
+            <template #header><span class="hd-std">平台标准化后的值</span></template>
+            <template #default="{row}"><div class="std-val"><div class="l1">{{ row.std.product }} {{ row.std.mat }} {{ row.std.spec }}<span class="band-tag">规格段 {{ row.std.band }}</span></div><div class="l2">{{ row.std.mill }} · {{ row.std.wh }}（{{ row.std.city }}）</div></div></template>
+          </el-table-column>
+          <el-table-column label="库存重量(吨)" width="116" align="right"><template #default="{row}"><span class="num">{{ $fmt(row.weight, 3) }}</span></template></el-table-column>
+          <el-table-column label="件数" width="80" align="right"><template #default="{row}"><span class="num">{{ row.qty }} {{ row.unit }}</span></template></el-table-column>
+          <el-table-column prop="type" label="库存类型" width="100" />
+          <el-table-column prop="age" label="库龄段" width="100" />
+          <el-table-column label="状态" width="90"><template #default><el-tag size="small" type="success" effect="light">已入库</el-tag></template></el-table-column>
+        </el-table>
+        <div class="tbl-foot">
+          <span>共 <b>{{ stockFiltered.length }}</b> 条，合计库存 <b class="num">{{ $fmt(stockSum, 3) }}</b> 吨（货权属于本企业的账面实物库存，不含代管他人货物）</span>
+          <el-pagination small background layout="prev, pager, next" :total="stockFiltered.length" :page-size="pageSize" v-model:current-page="spage" />
+        </div>
+      </el-tab-pane>
+
+      <!-- ================= 上传批次 ================= -->
+      <el-tab-pane name="batch">
+        <template #label>上传批次</template>
+        <el-table class="dc-table" :data="batchRows" border size="small">
+          <el-table-column label="批次号" width="162"><template #default="{row}"><span class="num">{{ row.no }}</span></template></el-table-column>
+          <el-table-column label="接口" min-width="130"><template #default="{row}"><div>{{ row.api }}</div><div class="l2">{{ row.path }}</div></template></el-table-column>
+          <el-table-column label="业务日期 / 上传时间" width="132"><template #default="{row}"><div class="num">{{ row.day }}</div><div class="l2">{{ row.at }}</div></template></el-table-column>
+          <el-table-column label="接收" width="56" align="right"><template #default="{row}"><span class="num">{{ row.recv }}</span></template></el-table-column>
+          <el-table-column label="入库" width="56" align="right"><template #default="{row}"><span class="num">{{ row.in }}</span></template></el-table-column>
+          <el-table-column label="过滤" width="56" align="right"><template #default="{row}"><span class="num">{{ row.filt }}</span></template></el-table-column>
+          <el-table-column label="失败" width="56" align="right"><template #default="{row}"><span class="num" :style="{color: row.fail ? '#e5484d' : ''}">{{ row.fail }}</span></template></el-table-column>
+          <el-table-column label="待映射" width="62" align="right"><template #default="{row}"><span class="num" :style="{color: row.pend ? '#b26a00' : ''}">{{ row.pend }}</span></template></el-table-column>
+          <el-table-column label="隔离" width="52" align="right"><template #default="{row}"><span class="num">{{ row.quar }}</span></template></el-table-column>
+          <el-table-column v-if="price" label="带价格" width="62" align="right"><template #default="{row}"><span class="num" v-if="row.priced !== null">{{ row.priced }}</span><span v-else class="muted small">不适用</span></template></el-table-column>
+          <el-table-column label="状态" min-width="140">
+            <template #default="{row}">
+              <el-tag size="small" :type="row.fail ? 'warning' : 'success'" effect="light">{{ row.status }}</el-tag>
+              <div v-if="row.tip" class="l2">{{ row.tip }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="146">
+            <template #default="{row}">
+              <div class="ops">
+                <a v-if="row.kind==='sale'" href="javascript:;" @click="viewBatch(row)">逐行结果</a>
+                <a v-else href="javascript:;" @click="tab = 'stock'">查看快照</a>
+                <a v-if="row.fail" href="javascript:;" @click="$demo('失败明细已生成（' + row.fail + ' 行，含原因码），仅本企业成员可下载')">下载失败明细</a>
+              </div>
+            </template>
+          </el-table-column>
+        </el-table>
+        <div class="tip-box small mt12">
+          接收 = 入库 + 过滤 + 失败 + 待映射 + 隔离，各列为批次处理完成时的结果。<b>被规则过滤的数据不落盘，平台只保留计数</b>，因此没有可查看或下载的过滤明细。接口收到客户名称、业务员、成本、毛利等未定义字段时直接丢弃，并在批次结果中提示。
+          <template v-if="src==='WX'">日汇总模式同一业务日期以最新的完整批次为准，旧批次整批失效。</template>
+        </div>
+      </el-tab-pane>
+
+      <!-- ================= 待映射物料 ================= -->
+      <el-tab-pane name="map">
+        <template #label>待映射物料<el-badge v-if="pendAll.length" :value="pendAll.length" type="warning" style="margin-left:6px" /></template>
+        <template v-if="pendAll.length">
+          <div class="row between mb12">
+            <span>共 <b>{{ pendAll.length }}</b> 个物料待映射，涉及近 30 日 <b>{{ pendStat.cnt }}</b> 条、<b>{{ $fmt(pendStat.ton, 1) }}</b> 吨，占本企业近 30 日销量 <b>{{ pendStat.share }}%</b><span class="muted small">（两个来源系统合计，按大类分组，销量占比高的排前）</span></span>
+            <span class="row">
+              <el-button size="small" @click="$info('原型演示：上传 ERP 物料档案后，平台批量给出映射推荐')"><el-icon><Upload /></el-icon>导入 ERP 物料档案</el-button>
+              <el-button size="small" @click="mapSel = pendAll.filter(p => p.conf >= 80).map(p => p.key)">勾选置信度 ≥ 80% 的</el-button>
+              <el-button size="small" type="primary" :disabled="!mapSel.length" @click="confirmMap(mapSel.slice())"><el-icon><Check /></el-icon>批量确认推荐（{{ mapSel.length }}）</el-button>
+            </span>
+          </div>
+          <table class="plain-table map-table">
+            <thead><tr><th style="width:36px"></th><th>原始值（ERP 原文）</th><th>来源系统</th><th class="r">近 30 日条数 / 吨位</th><th class="r">销量占比</th><th>系统推荐的标准值</th><th>置信度</th><th>操作</th></tr></thead>
+            <tbody>
+              <template v-for="g in pendGroups" :key="g.name">
+                <tr class="grp"><td colspan="8">{{ g.name }}<small>{{ g.items.length }} 个物料 · 近 30 日 {{ $fmt(g.ton, 1) }} 吨</small></td></tr>
+                <tr v-for="p in g.items" :key="p.key">
+                  <td class="c"><el-checkbox :model-value="mapSel.indexOf(p.key) >= 0" @change="v => toggleMap(p.key, v)" /></td>
+                  <td><div class="raw-val"><div class="l1">{{ p.raw.name }}</div><div class="l2">材质 {{ p.raw.mat }} · 规格 {{ p.raw.spec }}</div></div></td>
+                  <td><span class="code">SRC-{{ p.src }}</span></td>
+                  <td class="r num">{{ p.cnt }} 条 / {{ $fmt(p.ton, 1) }} 吨</td>
+                  <td class="r num">{{ p.share.toFixed(2) }}%</td>
+                  <td><div class="std-val"><div class="l1">{{ p.rec.product }}<template v-if="p.rec.mat"> · {{ p.rec.mat }} · {{ p.rec.spec }}</template><span v-if="p.rec.band" class="band-tag">规格段 {{ p.rec.band }}</span></div><div class="l2">{{ p.rec.cat }}<template v-if="!p.rec.mat"> · 长尾归口，参与大类级聚合，不开放下钻</template></div></div></td>
+                  <td><span class="conf" :class="{hi: p.conf >= 80, lo: p.conf < 65}"><i><u :style="{width: p.conf + '%'}"></u></i><span class="num">{{ p.conf }}%</span></span></td>
+                  <td><div class="ops"><a href="javascript:;" @click="confirmMap([p.key])">确认推荐</a><a href="javascript:;" @click="openManual(p)">手动选择</a></div></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </template>
+        <el-empty v-else description="全部物料已映射，历史数据将在下一次聚合计算时自动回补" />
+        <div class="tip-box blue small mt12">
+          <b>待映射的数据不参与聚合</b>，也不计入每日汇总的“入库”；映射完成后自动回补，包括此前已上传的历史数据。置信度不低于 95% 的推荐已自动生效<span class="demo-param" style="margin:0 4px">示例参数，待业务方确定</span>，这里只列需要你确认的。映射率是数据质量评分的组成项。
+        </div>
+      </el-tab-pane>
+    </el-tabs>
+  </div>
+
+  <div class="tip-box green">
+    <el-icon style="vertical-align:-2px;margin-right:4px"><Lock /></el-icon><b>平台人员默认不可查看这些明细。</b>确需协助排查时，须由平台发起明细访问工单，经你授权后限时查看，每次访问都会留痕。经你授权的访问记录见 <a href="ledger.html">数据使用透明账本</a>。上游钢厂在任何情况下都看不到这些明细，只能看到多家企业聚合后的结果。
+  </div>
+
+  <!-- 行详情 -->
+  <el-drawer v-model="detailDlg" :title="cur && src==='WX' ? '汇总记录详情' : '单据行详情'" size="620px">
+    <template v-if="cur">
+      <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="来源系统">SRC-{{ cur.src }} · {{ cur.src==='HQ' ? '行级模式' : '日汇总模式' }}</el-descriptions-item>
+        <el-descriptions-item label="状态"><el-tag size="small" :type="tagOf(cur.status)">{{ cur.status }}</el-tag></el-descriptions-item>
+        <template v-if="cur.src==='HQ'">
+          <el-descriptions-item label="单据号">{{ cur.docNo }}</el-descriptions-item>
+          <el-descriptions-item label="行号 / 类型">{{ cur.lineNo }} · {{ cur.docType }}</el-descriptions-item>
+        </template>
+        <template v-else>
+          <el-descriptions-item label="汇总批次号">{{ cur.sumBatch }}</el-descriptions-item>
+          <el-descriptions-item label="所含单据行数">{{ cur.lines }} 行（无单据号）</el-descriptions-item>
+        </template>
+        <el-descriptions-item label="业务日期">{{ cur.bizDate }}</el-descriptions-item>
+        <el-descriptions-item label="上传批次">{{ cur.batch }}</el-descriptions-item>
+        <el-descriptions-item label="平台接收时间">{{ cur.at }}</el-descriptions-item>
+        <el-descriptions-item :label="cur.src==='HQ' ? 'ERP 最后修改' : '更正方式'">{{ cur.src==='HQ' ? cur.upd : '重传当日完整批次' }}</el-descriptions-item>
+      </el-descriptions>
+
+      <div class="card-title mt16" style="margin-bottom:8px"><span>原始值与标准化值对照</span></div>
+      <table class="plain-table cmp-table">
+        <thead><tr><th>字段</th><th>ERP 原始上传值</th><th>平台标准化后的值</th><th>标准化方式</th></tr></thead>
+        <tbody>
+          <tr><td>品名</td><td class="raw-val">{{ cur.raw.name }}</td><td><b v-if="cur.std.product">{{ cur.std.product }}</b><span v-else style="color:#b26a00">未对应标准值</span><span v-if="cur.std.cat" class="muted">（{{ cur.std.cat }}）</span></td><td class="muted">{{ cur.std.product ? '企业映射' : '待映射' }}</td></tr>
+          <tr><td>材质</td><td class="raw-val">{{ cur.raw.mat }}</td><td>{{ cur.std.mat || '—' }}</td><td class="muted">{{ cur.std.mat ? '别名库自动匹配' : '待映射' }}</td></tr>
+          <tr><td>规格</td><td class="raw-val">{{ cur.raw.spec }}</td><td>{{ cur.std.spec || '—' }}<span v-if="cur.std.band" class="band-tag">规格段 {{ cur.std.band }}</span></td><td class="muted">{{ cur.std.spec ? '规格解析' : '待映射' }}</td></tr>
+          <tr><td>钢厂</td><td class="raw-val">{{ cur.raw.mill }}</td><td>{{ cur.std.mill }}</td><td class="muted">别名库自动匹配</td></tr>
+          <tr><td>仓库</td><td class="raw-val">{{ cur.raw.wh }}</td><td>{{ cur.std.wh }} · {{ cur.std.city }}</td><td class="muted">企业映射</td></tr>
+          <tr><td>流向地</td><td class="raw-val">{{ cur.dest ? cur.destCode : '未传' }}</td><td>{{ cur.dest || '未填报' }}</td><td class="muted">{{ cur.dest ? '行政区划代码' : '—' }}</td></tr>
+        </tbody>
+      </table>
+
+      <el-descriptions :column="2" border size="small" class="mt16">
+        <el-descriptions-item :label="cur.src==='HQ' ? '结算重量' : '净销量'"><b class="num">{{ $fmt(cur.weight, 3) }}</b> 吨</el-descriptions-item>
+        <el-descriptions-item label="计重方式">{{ cur.mode }}</el-descriptions-item>
+        <el-descriptions-item label="客户类型">{{ cur.ctype || '未填报' }}</el-descriptions-item>
+        <el-descriptions-item label="下游行业">{{ cur.industry || '未填报' }}</el-descriptions-item>
+        <template v-if="price && cur.price">
+          <el-descriptions-item :label="cur.src==='HQ' ? '成交单价' : '均价'"><b class="num">{{ $fmt(cur.price.unit) }}</b> 元/吨<span v-if="cur.src==='WX'" class="muted small">（金额 ÷ 净重）</span></el-descriptions-item>
+          <el-descriptions-item label="金额"><b class="num">{{ $fmt(cur.price.amount, 2) }}</b> 元</el-descriptions-item>
+          <el-descriptions-item label="价格口径">{{ cur.price.term }} · 非暂估</el-descriptions-item>
+          <el-descriptions-item label="价格状态">{{ cur.price.q ? '价格字段隔离待确认（销量已入库）' : '已接收' }}</el-descriptions-item>
+        </template>
+      </el-descriptions>
+
+      <el-alert v-if="cur.reason" :type="cur.status==='校验失败' ? 'error' : 'warning'" show-icon :closable="false" class="mt16" :title="cur.status + '：' + cur.reason" />
+      <div v-if="cur.voidInfo" class="tip-box small mt12">{{ cur.voidInfo }}</div>
+
+      <div class="card-title mt16" style="margin-bottom:8px"><span>处理过程</span></div>
+      <el-timeline style="padding-left:4px">
+        <el-timeline-item v-for="t in timeline" :key="t.t" :type="t.type" :timestamp="t.time" placement="top">{{ t.t }}</el-timeline-item>
+      </el-timeline>
+      <div class="tip-box small">接口不设客户名称、业务员、成本、毛利字段。ERP 若传了这些字段，平台在入口直接丢弃，不落盘。</div>
+    </template>
+  </el-drawer>
+
+  <!-- 作废确认 -->
+  <el-dialog v-model="voidDlg" title="作废确认" width="540px">
+    <el-alert type="warning" show-icon :closable="false" :title="'将作废 ' + voidRows.length + ' 条已入库的单据行，合计 ' + $fmt(voidRows.reduce((a, r) => a + r.weight, 0), 3) + ' 吨'" />
+    <ul style="margin:0 0 12px;padding-left:20px;line-height:1.9;font-size:13px">
+      <li>作废后这些数据<b>不再参与后续聚合计算</b>，受影响日期的聚合结果自动重算。</li>
+      <li>已生成并已披露的历史聚合结果不回溯修改。</li>
+      <li>作废不可撤销。如需恢复，请在 ERP 端重新上传该单据行（同一单据号与行号，按最后修改时间取最新）。</li>
+    </ul>
+    <el-form label-width="84px">
+      <el-form-item label="作废原因">
+        <el-select v-model="voidReason" style="width:100%"><el-option v-for="r in ['ERP 录入错误，已重新开单','单据在 ERP 中已作废','不应上传的数据（规则设置遗漏）','其他']" :key="r" :label="r" :value="r" /></el-select>
+      </el-form-item>
+      <el-form-item label="单据行">
+        <div class="small muted" style="line-height:1.8">{{ voidRows.slice(0, 4).map(r => r.docNo + '-' + r.lineNo).join('、') }}<template v-if="voidRows.length > 4"> 等 {{ voidRows.length }} 行</template></div>
+      </el-form-item>
+    </el-form>
+    <template #footer><el-button @click="voidDlg = false">取消</el-button><el-button type="danger" @click="doVoid">确认作废</el-button></template>
+  </el-dialog>
+
+  <!-- 隔离更正 -->
+  <el-dialog v-model="fixDlg" title="更正隔离数据" width="540px">
+    <template v-if="cur">
+      <el-descriptions :column="1" border size="small">
+        <el-descriptions-item label="单据行">{{ cur.docNo }} · {{ cur.lineNo }}　{{ cur.raw.name }}　<b class="num">{{ $fmt(cur.weight, 3) }}</b> 吨</el-descriptions-item>
+        <el-descriptions-item label="隔离原因">{{ cur.reason }}</el-descriptions-item>
+      </el-descriptions>
+      <el-radio-group v-model="fixMode" class="mt12" style="display:flex;flex-direction:column;align-items:flex-start;gap:6px">
+        <el-radio value="reupload">在 ERP 中修正后重新上传该单据行（推荐）</el-radio>
+        <el-radio value="void">直接作废该行，不再参与聚合</el-radio>
+      </el-radio-group>
+      <div class="tip-box small mt12">隔离中的数据不参与聚合。选择“重新上传”后，该行保持隔离，直到平台收到 ERP 的更新版本（同一单据号与行号，按最后修改时间取最新）。</div>
+    </template>
+    <template #footer><el-button @click="fixDlg = false">取消</el-button><el-button type="primary" @click="doFix">确定</el-button></template>
+  </el-dialog>
+
+  <!-- 手动映射 -->
+  <el-dialog v-model="manualDlg" title="手动选择标准值" width="560px">
+    <template v-if="manual.p">
+      <el-descriptions :column="1" border size="small">
+        <el-descriptions-item label="ERP 原始值">{{ manual.p.raw.name }}　材质 {{ manual.p.raw.mat }}　规格 {{ manual.p.raw.spec }}</el-descriptions-item>
+        <el-descriptions-item label="系统推荐">{{ manual.p.rec.cat }} / {{ manual.p.rec.product }}（置信度 {{ manual.p.conf }}%）</el-descriptions-item>
+      </el-descriptions>
+      <el-form label-width="96px" class="mt16">
+        <el-form-item label="标准品名"><el-cascader v-model="manual.path" :options="catOpts" style="width:100%" placeholder="大类 / 品名" /></el-form-item>
+        <el-form-item label="标准材质"><el-select v-model="manual.mat" style="width:100%" placeholder="请选择" :disabled="!manualMats.length"><el-option v-for="m in manualMats" :key="m" :label="m" :value="m" /></el-select></el-form-item>
+        <el-form-item label="规格"><el-input v-model="manual.spec" placeholder="可留空，由平台按规格文本解析" /></el-form-item>
+      </el-form>
+      <div class="tip-box small">确认后只影响本企业的映射；同时作为别名建议提交平台主数据管理员审核，通过后进入平台别名库。</div>
+    </template>
+    <template #footer><el-button @click="manualDlg = false">取消</el-button><el-button type="primary" :disabled="manual.path.length < 2" @click="doManual">确认映射</el-button></template>
+  </el-dialog>
+
+  <!-- 导出 -->
+  <el-dialog v-model="exportDlg" title="导出本企业数据" width="560px">
+    <el-form label-width="96px">
+      <el-form-item label="导出内容">
+        <el-radio-group v-model="exp.scope">
+          <el-radio value="cur">当前筛选结果（{{ filtered.length }} 条销售明细）</el-radio>
+          <el-radio value="stock">库存快照（{{ stockFiltered.length }} 条）</el-radio>
+          <el-radio value="batch">上传批次清单</el-radio>
+        </el-radio-group>
+      </el-form-item>
+      <el-form-item label="文件格式"><el-radio-group v-model="exp.fmt"><el-radio value="xlsx">Excel</el-radio><el-radio value="csv">CSV</el-radio></el-radio-group></el-form-item>
+      <el-form-item label="包含列">
+        <el-checkbox v-model="exp.raw">原始上传值</el-checkbox><el-checkbox v-model="exp.std">平台标准化值</el-checkbox>
+        <el-checkbox v-if="price" v-model="exp.price">单价、金额、价格口径</el-checkbox>
+      </el-form-item>
+    </el-form>
+    <div class="tip-box small">导出的是本企业自己上传的数据，仅企业管理员和被授权的“数据查看员”可操作。导出记录写入本企业的操作审计日志。</div>
+    <template #footer><el-button @click="exportDlg = false">取消</el-button><el-button type="primary" @click="exportDlg = false; $demo('导出任务已提交，生成后通过站内信通知下载')">生成导出文件</el-button></template>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const r3 = (n) => Math.round(n * 1000) / 1000, r2 = (n) => Math.round(n * 100) / 100;
+  const pad4 = (n) => String(n).padStart(4, '0');
+  /* ERP 原始写法 → 平台标准值。字段：原始品名、原始材质、原始规格、标准品名、标准材质、标准规格、规格段、大类、权重、参考含税价、计重 */
+  const ITEMS = {
+    HQ: [
+      ['三级螺纹 20 9米', 'HRB400E', '20*9000', '螺纹钢', 'HRB400E', 'Φ20', 'Φ16–25', '建筑钢材', 16, 3420, '理计'],
+      ['三级螺纹 16 9米', 'HRB400E', '16*9000', '螺纹钢', 'HRB400E', 'Φ16', 'Φ16–25', '建筑钢材', 12, 3430, '理计'],
+      ['三级螺纹 25 12米', 'HRB400E', '25*12000', '螺纹钢', 'HRB400E', 'Φ25', 'Φ16–25', '建筑钢材', 10, 3410, '理计'],
+      ['三级螺纹 12 9米', 'HRB400E', '12*9000', '螺纹钢', 'HRB400E', 'Φ12', 'Φ12–14', '建筑钢材', 8, 3480, '理计'],
+      ['抗震螺纹 14mm', '400E', 'Φ14×9m', '螺纹钢', 'HRB400E', 'Φ14', 'Φ12–14', '建筑钢材', 4, 3470, '理计'],
+      ['四级螺纹 32 12米', 'HRB500E', '32*12000', '螺纹钢', 'HRB500E', 'Φ32', 'Φ28–40', '建筑钢材', 5, 3620, '理计'],
+      ['盘螺 8', 'HRB400E', 'Φ8', '盘螺', 'HRB400E', 'Φ8', 'Φ6–8', '建筑钢材', 7, 3640, '磅计'],
+      ['盘螺 10', 'HRB400E', 'Φ10', '盘螺', 'HRB400E', 'Φ10', 'Φ10–12', '建筑钢材', 5, 3620, '磅计'],
+      ['高线 6.5', 'HPB300', 'Φ6.5', '高线', 'HPB300', 'Φ6.5', 'Φ6.5', '建筑钢材', 4, 3600, '磅计'],
+      ['普线 8', 'Q195', 'Φ8', '高线', 'Q195', 'Φ8', 'Φ8–10', '建筑钢材', 3, 3580, '磅计'],
+      ['热卷 5.75*1500', 'Q235B', '5.75*1500*C', '热轧卷板', 'Q235B', '5.75×1500mm', '3.0–6.0mm', '热轧板卷', 10, 3560, '磅计'],
+      ['热卷 2.75*1250', 'SPHC', '2.75*1250*C', '热轧卷板', 'SPHC', '2.75×1250mm', '1.5–3.0mm', '热轧板卷', 5, 3640, '磅计'],
+      ['锰卷 9.75*1500', 'Q355B', '9.75*1500*C', '热轧卷板', 'Q355B', '9.75×1500mm', '6.0–12.0mm', '热轧板卷', 6, 3710, '磅计'],
+      ['带钢 3.0*355', 'Q195', '3.0*355', '热轧带钢', 'Q195', '3.0×355mm', '2.0–4.0mm', '热轧板卷', 5, 3480, '磅计']],
+    WX: [
+      ['螺纹钢 Φ20', 'HRB400E', 'Φ20×9m', '螺纹钢', 'HRB400E', 'Φ20', 'Φ16–25', '建筑钢材', 14, 3420, '理计'],
+      ['螺纹钢 Φ18', 'HRB400E', 'Φ18×9m', '螺纹钢', 'HRB400E', 'Φ18', 'Φ16–25', '建筑钢材', 10, 3420, '理计'],
+      ['螺纹钢 Φ22', 'HRB400E', 'Φ22×9m', '螺纹钢', 'HRB400E', 'Φ22', 'Φ16–25', '建筑钢材', 9, 3410, '理计'],
+      ['螺纹钢 Φ12', 'HRB400E', 'Φ12×9m', '螺纹钢', 'HRB400E', 'Φ12', 'Φ12–14', '建筑钢材', 7, 3480, '理计'],
+      ['螺纹钢 Φ28', 'HRB400E', 'Φ28×12m', '螺纹钢', 'HRB400E', 'Φ28', 'Φ28–40', '建筑钢材', 5, 3450, '理计'],
+      ['盘螺 Φ8', 'HRB400E', 'Φ8', '盘螺', 'HRB400E', 'Φ8', 'Φ6–8', '建筑钢材', 7, 3640, '磅计'],
+      ['盘螺 Φ10', 'HRB400E', 'Φ10', '盘螺', 'HRB400E', 'Φ10', 'Φ10–12', '建筑钢材', 5, 3620, '磅计'],
+      ['线材 Φ6.5', 'HPB300', 'Φ6.5', '高线', 'HPB300', 'Φ6.5', 'Φ6.5', '建筑钢材', 5, 3600, '磅计'],
+      ['热轧卷板 4.75*1500', 'Q235B', '4.75*1500', '热轧卷板', 'Q235B', '4.75×1500mm', '3.0–6.0mm', '热轧板卷', 8, 3560, '磅计'],
+      ['热轧带钢 2.5*232', 'Q195', '2.5*232', '热轧带钢', 'Q195', '2.5×232mm', '2.0–4.0mm', '热轧板卷', 3, 3480, '磅计']],
+  };
+  const MILLS = { HQ: [['东岳', '东岳钢铁', 60], ['金江', '金江钢铁', 33], ['海川', '海川特钢', 5], ['云岭', '云岭钢铁', 2]], WX: [['东岳', '东岳钢铁', 62], ['金江钢厂', '金江钢铁', 34], ['海川', '海川特钢', 4]] };
+  const WHS = { HQ: [['望亭1号库', '苏州望亭库', '苏州市', 38], ['望亭2号库', '苏州望亭库', '苏州市', 24], ['宝山库', '上海宝山库', '上海市', 38]], WX: [['惠山库', '无锡惠山库', '无锡市', 100]] };
+  const DESTS = { 苏州市: [['苏州市', '320500', 60], ['无锡市', '320200', 12], ['常州市', '320400', 12], ['南通市', '320600', 9], ['嘉兴市', '330400', 7]], 上海市: [['上海市', '310000', 78], ['苏州市', '320500', 14], ['嘉兴市', '330400', 8]], 无锡市: [['无锡市', '320200', 74], ['常州市', '320400', 16], ['苏州市', '320500', 10]] };
+  /* 待映射物料（两个来源系统合计 12 个） */
+  const PEND = [
+    { key: 'P1', src: 'HQ', raw: { name: '精轧螺纹 32', mat: 'PSB830', spec: 'Φ32×12m' }, rec: { cat: '建筑钢材', product: '其他品名' }, conf: 58, cnt: 14, ton: 186.4, w: 12.48 },
+    { key: 'P3', src: 'HQ', raw: { name: '三级螺纹 22 定尺', mat: 'HRB400E', spec: '22*定尺' }, rec: { cat: '建筑钢材', product: '螺纹钢', mat: 'HRB400E', spec: 'Φ22', band: 'Φ16–25' }, conf: 86, cnt: 19, ton: 142.6, w: 8.94 },
+    { key: 'P5', src: 'HQ', raw: { name: '花纹卷 4.5*1250', mat: 'H-Q235B', spec: '4.5*1250*C' }, rec: { cat: '热轧板卷', product: '热轧卷板', mat: 'Q235B', spec: '4.5×1250mm', band: '3.0–6.0mm' }, conf: 78, cnt: 16, ton: 121.3, w: 6.73 },
+    { key: 'P2', src: 'HQ', raw: { name: '抗震盘螺 8mm', mat: '400E', spec: 'Φ8' }, rec: { cat: '建筑钢材', product: '盘螺', mat: 'HRB400E', spec: 'Φ8', band: 'Φ6–8' }, conf: 88, cnt: 21, ton: 96.8, w: 4.26 },
+    { key: 'P6', src: 'HQ', raw: { name: '开平板 8*1500*6000', mat: 'Q235B', spec: '8*1500*6000' }, rec: { cat: '热轧板卷', product: '其他品名' }, conf: 66, cnt: 11, ton: 88.2, w: 5.12 },
+    { key: 'P9', src: 'WX', raw: { name: '螺纹钢 Φ40', mat: 'HRB500E', spec: 'Φ40×12m' }, rec: { cat: '建筑钢材', product: '螺纹钢', mat: 'HRB500E', spec: 'Φ40', band: 'Φ28–40' }, conf: 89, cnt: 9, ton: 72.5, w: 4.82 },
+    { key: 'P11', src: 'WX', raw: { name: '热板 5.5*1500', mat: 'Q235B', spec: '5.5*1500' }, rec: { cat: '热轧板卷', product: '热轧卷板', mat: 'Q235B', spec: '5.5×1500mm', band: '3.0–6.0mm' }, conf: 76, cnt: 12, ton: 64.9, w: 3.15 },
+    { key: 'P7', src: 'HQ', raw: { name: '酸洗卷 3.0*1250', mat: 'SPHC', spec: '3.0*1250*C' }, rec: { cat: '热轧板卷', product: '其他品名' }, conf: 64, cnt: 8, ton: 58.3, w: 3.86 },
+    { key: 'P8', src: 'HQ', raw: { name: '带钢 2.5*183', mat: 'Q195L', spec: '2.5*183' }, rec: { cat: '热轧板卷', product: '热轧带钢', mat: 'Q195', spec: '2.5×183mm', band: '2.0–4.0mm' }, conf: 84, cnt: 10, ton: 41.7, w: 2.78 },
+    { key: 'P10', src: 'WX', raw: { name: '盘圆 Φ10', mat: 'HPB300', spec: 'Φ10' }, rec: { cat: '建筑钢材', product: '高线', mat: 'HPB300', spec: 'Φ10', band: 'Φ8–10' }, conf: 82, cnt: 7, ton: 36.2, w: 2.36 },
+    { key: 'P4', src: 'HQ', raw: { name: '圆钢 16', mat: 'HPB300', spec: 'Φ16×9m' }, rec: { cat: '建筑钢材', product: '其他品名' }, conf: 61, cnt: 6, ton: 28.4, w: 2.15 },
+    { key: 'P12', src: 'WX', raw: { name: '扁钢 40*4', mat: 'Q235B', spec: '40*4*6000' }, rec: { cat: '型钢', product: '其他品名' }, conf: 52, cnt: 3, ton: 11.6, w: 0.95 }];
+  const TOTAL30 = 50830; // 本企业近 30 日入库销量（吨）
+  PEND.forEach((p) => { p.share = p.ton / TOTAL30 * 100; });
+
+  const pickW = (arr, rnd, wi) => { const t = arr.reduce((a, x) => a + x[wi], 0); let v = rnd() * t; for (const x of arr) { v -= x[wi]; if (v <= 0) return x; } return arr[arr.length - 1]; };
+  let SEQ = 0;
+  const mkRow = (src, day, rnd, it, o) => {
+    const mill = pickW(MILLS[src], rnd, 2), wh = pickW(WHS[src], rnd, 3);
+    const dest = rnd() < 0.71 ? pickW(DESTS[wh[2]], rnd, 2) : null;
+    const ct = rnd() < 0.88 ? (rnd() < 0.56 ? '终端' : '贸易商') : '';
+    const ind = ct && rnd() < 0.85 ? ['房建', '基建', '钢结构', '机械制造', '其他'][Math.floor(rnd() * 5)] : '';
+    const inRange = mill[1] === '东岳钢铁' || mill[1] === '金江钢铁';
+    const unit = it ? it[9] + (Math.floor(rnd() * 7) - 3) * 10 + (mill[1] === '东岳钢铁' ? 10 : 0) : 0;
+    return Object.assign({
+      id: ++SEQ, src, day, bizDate: day, docType: '销售出库', status: '已入库', reason: '',
+      raw: { name: it ? it[0] : '', mat: it ? it[1] : '', spec: it ? it[2] : '', mill: mill[0], wh: wh[0] },
+      std: { product: it ? it[3] : '', mat: it ? it[4] : '', spec: it ? it[5] : '', band: it ? it[6] : '', cat: it ? it[7] : '', mill: mill[1], wh: wh[1], city: wh[2] },
+      mode: it ? it[10] : '理计', dest: dest ? dest[0] : '', destCode: dest ? dest[1] : '', ctype: ct, industry: ind,
+      weight: 0, unit: inRange ? unit : 0, term: rnd() < 0.9 ? '含税 · 自提' : '含税 · 送到',
+    }, o || {});
+  };
+  const fitWeights = (rows, total) => {
+    const s = rows.reduce((a, r) => a + r.weight, 0), k = total / s;
+    rows.forEach((r) => { r.weight = r3(r.weight * k); });
+    rows[rows.length - 1].weight = r3(rows[rows.length - 1].weight + total - rows.reduce((a, r) => a + r.weight, 0));
+  };
+  const pendRow = (src, day, rnd, key, w, o) => {
+    const p = PEND.find((x) => x.key === key);
+    const row = mkRow(src, day, rnd, null, Object.assign({ status: '待映射', reason: '品名、规格未能对应标准值，暂不参与聚合', pendKey: key, weight: w }, o));
+    row.raw.name = p.raw.name; row.raw.mat = p.raw.mat; row.raw.spec = p.raw.spec; row.unit = 0;
+    return row;
+  };
+
+  /* SRC-HQ 行级模式：按批次生成单据行。cfg.batches: [{no, at, nIn, extra: [行]}] */
+  const genHQ = (day, seed, totalIn, batches) => {
+    const rnd = M.rngOf(seed), ymd = day.slice(2).replace(/-/g, '');
+    const all = [], ins = [];
+    let doc = 0, line = 0, left = 0;
+    batches.forEach((b) => {
+      const add = (row) => {
+        if (left <= 0) { doc += 1 + Math.floor(rnd() * 3); line = 0; left = 1 + Math.floor(rnd() * 4); }
+        line++; left--;
+        row.docNo = 'XS' + ymd + pad4(doc); row.lineNo = line; row.batch = b.no; row.at = b.at;
+        row.upd = day + ' ' + b.at.slice(11, 13) + ':' + String(10 + Math.floor(rnd() * 40));
+        all.push(row);
+      };
+      for (let i = 0; i < b.nIn; i++) {
+        const it = all.length === 0 ? ITEMS.HQ[0] : pickW(ITEMS.HQ, rnd, 8);
+        const row = mkRow('HQ', day, rnd, it);
+        row.weight = 1.2 + Math.pow(rnd(), 2) * 14.5;
+        if (rnd() < 0.015) { row.docType = '销售退货'; row.weight = -row.weight * 0.4; }
+        ins.push(row); add(row);
+      }
+      (b.extra || []).forEach((fn) => add(fn(rnd)));
+    });
+    fitWeights(ins, totalIn);
+    return all;
+  };
+  /* SRC-WX 日汇总模式：每条是一个维度组合的净销量 */
+  const genWX = (day, seed, nIn, totalIn, linesIn, pend, linesPend) => {
+    const rnd = M.rngOf(seed), ymd = day.replace(/-/g, '');
+    const sumBatch = 'SB-WX-' + ymd + '-01', at = day + ' 23:55';
+    const used = {}, ins = [];
+    while (ins.length < nIn) {
+      const row = mkRow('WX', day, rnd, pickW(ITEMS.WX, rnd, 8));
+      const k = [row.raw.name, row.raw.mill, row.dest, row.ctype].join('|');
+      if (used[k]) continue; used[k] = 1;
+      row.weight = 2 + Math.pow(rnd(), 1.6) * 16; row.lines = 1 + Math.floor(rnd() * 8);
+      ins.push(row);
+    }
+    fitWeights(ins, totalIn);
+    const fitLines = (rows, t) => { let d = t - rows.reduce((a, r) => a + r.lines, 0), i = 0; while (d !== 0) { const r = rows[i++ % rows.length]; if (d > 0) { r.lines++; d--; } else if (r.lines > 1) { r.lines--; d++; } } };
+    fitLines(ins, linesIn);
+    const ps = pend.map((p) => pendRow('WX', day, rnd, p[0], p[1], { lines: 3 }));
+    if (ps.length) fitLines(ps, linesPend);
+    return ins.concat(ps).map((r) => Object.assign(r, { sumBatch, batch: sumBatch, at, docNo: '', lineNo: '' }));
+  };
+
+  const special = (name, o) => (rnd) => { const row = mkRow('HQ', o.day, rnd, ITEMS.HQ.find((x) => x[0] === name), o); row.unit = row.unit || 0; return row; };
+  const pr = (day, key, w) => (rnd) => pendRow('HQ', day, rnd, key, w);
+  const D23 = '2026-11-23', D22 = '2026-11-22';
+  const HQ23 = genHQ(D23, 2311, 1543.54, [
+    { no: 'B-HQ-20261123-001', at: D23 + ' 12:05', nIn: 93, extra: [
+      special('盘螺 8', { day: D23, status: '校验失败', reason: '吨位超出单行上限（盘螺单行上限 300 吨）', weight: 320 }),
+      pr(D23, 'P1', 12.48), pr(D23, 'P2', 4.26), pr(D23, 'P5', 6.73)] },
+    { no: 'B-HQ-20261123-002', at: D23 + ' 18:05', nIn: 100, extra: [
+      special('三级螺纹 25 12米', { day: D23, status: '校验失败', reason: '吨位超出单行上限（螺纹钢单行上限 400 吨）', weight: 468.5 }),
+      special('热卷 5.75*1500', { day: D23, status: '校验失败', reason: '业务日期晚于当前日期', weight: 12.36, bizDate: '2026-12-23', badDate: true }),
+      special('三级螺纹 20 9米', { day: D23, status: '隔离待确认', reason: '单行吨位相对本企业近 30 日同品名单行均值（6.2 吨）突变，确认前不参与聚合', weight: 186.4 }),
+      pr(D23, 'P3', 8.94), pr(D23, 'P6', 5.12), pr(D23, 'P4', 2.15)] },
+    { no: 'B-HQ-20261123-003', at: D23 + ' 23:40', nIn: 65, extra: [pr(D23, 'P7', 3.86), pr(D23, 'P8', 2.78)] }]);
+  const voided = (w) => special('三级螺纹 16 9米', { day: D22, status: '已作废', weight: w, voidInfo: '2026-11-23 09:14 由陈海峰作废。原因：ERP 录入错误，已重新开单。作废后不再参与聚合，2026-11-22 的聚合结果已重算。' });
+  const HQ22 = genHQ(D22, 2211, 956.189, [
+    { no: 'B-HQ-20261122-001', at: D22 + ' 13:02', nIn: 86, extra: [voided(11.25), voided(7.15), pr(D22, 'P1', 14.2), pr(D22, 'P3', 9.86)] },
+    { no: 'B-HQ-20261122-002', at: D22 + ' 23:41', nIn: 74, extra: [pr(D22, 'P5', 8.44), pr(D22, 'P2', 6.9), pr(D22, 'P6', 6.16)] }]);
+  const WX23 = genWX(D23, 2312, 41, 302.46, 188, [['P9', 4.82], ['P10', 2.36], ['P11', 3.15], ['P12', 0.95]], 15);
+  const WX22 = genWX(D22, 2212, 25, 187.811, 115, [['P9', 4.211], ['P11', 2.84]], 7);
+  const ROWS = { HQ: HQ23.concat(HQ22), WX: WX23.concat(WX22) };
+  /* 价格：只在本企业价格上传范围内（东岳、金江）的行上有值 */
+  Object.keys(ROWS).forEach((k) => ROWS[k].forEach((r) => {
+    r.price = r.unit && r.std.product ? { unit: r.unit, amount: r2(r.unit * r.weight), term: r.term, q: false } : null;
+  }));
+  const pq = HQ23.find((r) => r.price && r.status === '已入库' && r.std.product === '盘螺');
+  if (pq) { pq.price.unit = 364; pq.price.amount = r2(364 * pq.weight); pq.price.q = true; }
+  const ORDER = { 校验失败: 0, 隔离待确认: 1, 待映射: 2, 已入库: 3, 已作废: 4 };
+  Object.keys(ROWS).forEach((k) => ROWS[k].sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : (ORDER[a.status] - ORDER[b.status]) || a.id - b.id)));
+
+  /* 库存快照 */
+  const genStock = (src, n, total, seed) => {
+    const rnd = M.rngOf(seed), rows = [], used = {};
+    const AGE = [['0–30 天', 52], ['31–60 天', 28], ['61–90 天', 13], ['90 天以上', 7]];
+    while (rows.length < n) {
+      const it = pickW(ITEMS[src], rnd, 8), mill = pickW(MILLS[src], rnd, 2), wh = pickW(WHS[src], rnd, 3), age = pickW(AGE, rnd, 1);
+      const type = rnd() < 0.9 ? '自有现货' : '已售未提';
+      const k = [it[0], mill[0], wh[0], age[0], type].join('|');
+      if (used[k]) continue; used[k] = 1;
+      const w = 8 + Math.pow(rnd(), 1.8) * 160;
+      rows.push({ id: src + rows.length, batch: 'S-' + src + '-20261123-01', date: D23, raw: { name: it[0], mat: it[1], spec: it[2], mill: mill[0], wh: wh[0] },
+        std: { product: it[3], mat: it[4], spec: it[5], band: it[6], mill: mill[1], wh: wh[1], city: wh[2] }, weight: w, qty: Math.max(1, Math.round(w / (it[7] === '建筑钢材' ? 2.4 : 21))), unit: it[7] === '建筑钢材' ? '件' : '卷', type, age: age[0] });
+    }
+    fitWeights(rows, total);
+    return rows.sort((a, b) => b.weight - a.weight);
+  };
+  const STOCK = { HQ: genStock('HQ', 412, 20690, 77), WX: genStock('WX', 86, 7940, 78) };
+
+  const BATCH = {
+    HQ: [
+      { no: 'B-HQ-20261123-003', kind: 'sale', api: '销售出库批量上传', path: 'POST /sales/batch', day: D23, at: D23 + ' 23:40', recv: 75, in: 65, filt: 8, fail: 0, pend: 2, quar: 0, priced: 59, status: '处理完成' },
+      { no: 'S-HQ-20261123-01', kind: 'inv', api: '库存快照上传', path: 'POST /inventory/snapshot', day: D23, at: D23 + ' 23:52', recv: 412, in: 412, filt: 0, fail: 0, pend: 0, quar: 0, priced: null, status: '处理完成', tip: '分片 1 / 1，已收到末片标记' },
+      { no: 'B-HQ-20261123-002', kind: 'sale', api: '销售出库批量上传', path: 'POST /sales/batch', day: D23, at: D23 + ' 18:05', recv: 118, in: 100, filt: 12, fail: 2, pend: 3, quar: 1, priced: 96, status: '部分失败', tip: '已丢弃未定义字段 customerName（不落盘）' },
+      { no: 'B-HQ-20261123-001', kind: 'sale', api: '销售出库批量上传', path: 'POST /sales/batch', day: D23, at: D23 + ' 12:05', recv: 108, in: 93, filt: 11, fail: 1, pend: 3, quar: 0, priced: 88, status: '部分失败' },
+      { no: 'B-HQ-20261122-002', kind: 'sale', api: '销售出库批量上传', path: 'POST /sales/batch', day: D22, at: D22 + ' 23:41', recv: 87, in: 74, filt: 10, fail: 0, pend: 3, quar: 0, priced: 69, status: '处理完成' },
+      { no: 'S-HQ-20261122-01', kind: 'inv', api: '库存快照上传', path: 'POST /inventory/snapshot', day: D22, at: D22 + ' 23:50', recv: 415, in: 415, filt: 0, fail: 0, pend: 0, quar: 0, priced: null, status: '处理完成', tip: '分片 1 / 1，已收到末片标记' },
+      { no: 'B-HQ-20261122-001', kind: 'sale', api: '销售出库批量上传', path: 'POST /sales/batch', day: D22, at: D22 + ' 13:02', recv: 102, in: 88, filt: 12, fail: 0, pend: 2, quar: 0, priced: 76, status: '处理完成', tip: '其中 2 行已于 2026-11-23 由企业作废' }],
+    WX: [
+      { no: 'SB-WX-20261123-01', kind: 'sale', api: '销售日汇总上传', path: 'POST /sales/daily-summary', day: D23, at: D23 + ' 23:55', recv: 45, in: 41, filt: 0, fail: 0, pend: 4, quar: 0, priced: 38, status: '已生效', tip: '分片 1 / 1，整批替换；所含单据行数 203' },
+      { no: 'S-WX-20261123-01', kind: 'inv', api: '库存快照上传', path: 'POST /inventory/snapshot', day: D23, at: D23 + ' 23:58', recv: 86, in: 86, filt: 0, fail: 0, pend: 0, quar: 0, priced: null, status: '处理完成', tip: '分片 1 / 1，已收到末片标记' },
+      { no: 'SB-WX-20261122-01', kind: 'sale', api: '销售日汇总上传', path: 'POST /sales/daily-summary', day: D22, at: D22 + ' 23:55', recv: 27, in: 25, filt: 0, fail: 0, pend: 2, quar: 0, priced: 21, status: '已生效', tip: '分片 1 / 1，整批替换；所含单据行数 122' },
+      { no: 'S-WX-20261122-01', kind: 'inv', api: '库存快照上传', path: 'POST /inventory/snapshot', day: D22, at: D22 + ' 23:57', recv: 86, in: 86, filt: 0, fail: 0, pend: 0, quar: 0, priced: null, status: '处理完成', tip: '分片 1 / 1，已收到末片标记' }],
+  };
+  const emptyF = () => ({ biz: [D23, D23], up: null, doc: '', wh: '', product: '', mat: '', spec: '', mill: '', status: '', batch: '' });
+
+  STP.mount({
+    data() {
+      let preset = null;
+      try { preset = JSON.parse(sessionStorage.getItem('stp-dc-preset') || 'null'); sessionStorage.removeItem('stp-dc-preset'); } catch (e) { /* ignore */ }
+      const f = emptyF();
+      if (preset) { if (preset.date === D22 || preset.date === D23) f.biz = [preset.date, preset.date]; f.status = preset.status || ''; }
+      return {
+        src: 'HQ', tab: 'sales', f, sf: { date: D23, wh: '', product: '', mill: '' }, page: 1, spage: 1, pageSize: 15, loading: false, picked: [],
+        rows: ROWS, pend: PEND.slice(), mapSel: [],
+        detailDlg: false, cur: null, voidDlg: false, voidRows: [], voidReason: 'ERP 录入错误，已重新开单', fixDlg: false, fixMode: 'reupload',
+        manualDlg: false, manual: { p: null, path: [], mat: '', spec: '' },
+        exportDlg: false, exp: { scope: 'cur', fmt: 'xlsx', raw: true, std: true, price: false },
+        presetOut: !!(preset && preset.date !== D22 && preset.date !== D23),
+        catOpts: M.categories.map((c) => ({ value: c.name, label: c.name, children: c.products.map((p) => ({ value: p.name, label: p.name })).concat([{ value: '其他品名', label: '其他品名（长尾归口）' }]) })),
+      };
+    },
+    mounted() { if (this.presetOut) this.$info('原型仅模拟 2026-11-22、2026-11-23 两天的明细，已为你显示 2026-11-23'); },
+    computed: {
+      price() { return this.$state.dnPrice === 'on'; },
+      whOpts() { return this.src === 'HQ' ? ['苏州望亭库', '上海宝山库'] : ['无锡惠山库']; },
+      base() {
+        const f = this.f;
+        return this.rows[this.src].filter((r) => r.day >= f.biz[0] && r.day <= f.biz[1]
+          && (!f.up || !f.up.length || (r.at.slice(0, 10) >= f.up[0] && r.at.slice(0, 10) <= f.up[1]))
+          && (!f.doc || r.docNo.indexOf(f.doc.trim().toUpperCase()) >= 0)
+          && (!f.wh || r.std.wh === f.wh)
+          && (!f.product || (f.product === '未映射' ? !r.std.product : r.std.product === f.product))
+          && (!f.mat || r.std.mat === f.mat)
+          && (!f.spec || (r.raw.spec + r.std.spec + r.raw.name).indexOf(f.spec.trim()) >= 0)
+          && (!f.mill || r.std.mill === f.mill)
+          && (!f.batch || r.batch === f.batch));
+      },
+      statusOpts() {
+        const b = this.base, c = (s) => b.filter((r) => r.status === s).length;
+        return [{ k: '', t: '全部', n: b.length }].concat(['已入库', '校验失败', '待映射', '隔离待确认', '已作废'].map((s) => ({ k: s, t: s, n: c(s) })));
+      },
+      filtered() { return this.f.status ? this.base.filter((r) => r.status === this.f.status) : this.base; },
+      pageRows() { return this.filtered.slice((this.page - 1) * this.pageSize, this.page * this.pageSize); },
+      sumWeight() { return this.filtered.reduce((a, r) => a + r.weight, 0); },
+      sumLines() { return this.filtered.reduce((a, r) => a + (r.lines || 0), 0); },
+      emptyText() { return '没有符合条件的记录。原型仅模拟 2026-11-22、2026-11-23 两天的明细；被规则过滤的数据不落盘，不会出现在这里'; },
+      stockFiltered() { const f = this.sf; return STOCK[this.src].filter((r) => r.date === f.date && (!f.wh || r.std.wh === f.wh) && (!f.product || r.std.product === f.product) && (!f.mill || r.std.mill === f.mill)); },
+      stockPage() { return this.stockFiltered.slice((this.spage - 1) * this.pageSize, this.spage * this.pageSize); },
+      stockSum() { return this.stockFiltered.reduce((a, r) => a + r.weight, 0); },
+      batchRows() { return BATCH[this.src]; },
+      pendAll() { return this.pend; },
+      pendGroups() {
+        const g = {};
+        this.pend.forEach((p) => { (g[p.rec.cat] = g[p.rec.cat] || []).push(p); });
+        return Object.keys(g).map((k) => ({ name: k, items: g[k].slice().sort((a, b) => b.share - a.share), ton: g[k].reduce((a, p) => a + p.ton, 0) })).sort((a, b) => b.ton - a.ton);
+      },
+      pendStat() { const p = this.pend; return { cnt: p.reduce((a, x) => a + x.cnt, 0), ton: p.reduce((a, x) => a + x.ton, 0), share: p.reduce((a, x) => a + x.share, 0).toFixed(2) }; },
+      manualMats() { const pa = this.manual.path; if (pa.length < 2) return []; const c = M.categories.find((x) => x.name === pa[0]); const p = c && c.products.find((x) => x.name === pa[1]); return p ? p.materials : []; },
+      timeline() {
+        const r = this.cur; if (!r) return [];
+        const t = [{ t: '平台入口接收，签名与报文格式校验通过', time: r.at, type: 'success' }, { t: '按本企业上传条件规则二次过滤：符合规则，继续处理', time: r.at, type: 'success' }];
+        if (r.status === '校验失败') t.push({ t: '字段校验未通过：' + r.reason, time: r.at, type: 'danger' });
+        else {
+          t.push({ t: '字段校验通过', time: r.at, type: 'success' });
+          if (r.status === '待映射') t.push({ t: '映射校验：品名、规格未能对应标准值，进入待映射队列', time: r.at, type: 'warning' });
+          else {
+            t.push({ t: '映射到平台标准值', time: r.at, type: 'success' });
+            if (r.status === '隔离待确认') t.push({ t: '业务校验：' + r.reason, time: STP.addDays(r.day, 1) + ' 02:10', type: 'warning' });
+            else {
+              t.push({ t: '入库，参与 ' + STP.addDays(r.day, 1) + ' 08:00 前发布的 T+1 聚合', time: STP.addDays(r.day, 1) + ' 02:30', type: 'success' });
+              if (r.status === '已作废') t.push({ t: '企业作废，不再参与聚合', time: r.voidAt || '2026-11-23 09:14', type: 'info' });
+            }
+          }
+        }
+        return t;
+      },
+    },
+    watch: {
+      filtered() { this.page = 1; },
+      stockFiltered() { this.spage = 1; },
+      'manual.path'() { this.manual.mat = ''; },
+    },
+    methods: {
+      tagOf(s) { return { 已入库: 'success', 校验失败: 'danger', 待映射: 'warning', 隔离待确认: 'warning', 已作废: 'info' }[s]; },
+      onSrc() { this.f = emptyF(); this.sf = { date: D23, wh: '', product: '', mill: '' }; this.picked = []; if (this.$refs.tbl) this.$refs.tbl.clearSelection(); },
+      query() { this.loading = true; setTimeout(() => { this.loading = false; }, 400); },
+      reset() { this.f = emptyF(); },
+      openDetail(row) { this.cur = row; this.detailDlg = true; },
+      openVoid(rows) { this.voidRows = rows.slice(); this.voidDlg = true; },
+      doVoid() {
+        this.voidRows.forEach((r) => { r.status = '已作废'; r.voidAt = '2026-11-24 14:20'; r.voidInfo = '2026-11-24 14:20 由陈海峰作废。原因：' + this.voidReason + '。作废后不再参与聚合，' + r.day + ' 的聚合结果将自动重算。'; });
+        const n = this.voidRows.length;
+        this.voidDlg = false; this.picked = []; if (this.$refs.tbl) this.$refs.tbl.clearSelection();
+        this.$demo('已作废 ' + n + ' 条，受影响日期的聚合将自动重算');
+      },
+      confirmTrue(row) {
+        ElementPlus.ElMessageBox.confirm('确认该行数据属实（' + row.raw.name + '，' + STP.fmt(row.weight, 3) + ' 吨）？确认后解除隔离并入库，参与下一次聚合计算。', '确认属实', { confirmButtonText: '属实，解除隔离', cancelButtonText: '取消', type: 'warning' })
+          .then(() => { row.status = '已入库'; row.reason = ''; this.$demo('已解除隔离并入库'); }).catch(() => {});
+      },
+      openFix(row) { this.cur = row; this.fixMode = 'reupload'; this.fixDlg = true; },
+      doFix() {
+        const r = this.cur;
+        if (this.fixMode === 'void') { r.status = '已作废'; r.reason = ''; r.voidAt = '2026-11-24 14:20'; r.voidInfo = '2026-11-24 14:20 由陈海峰在隔离区作废。'; this.$demo('已作废该行'); }
+        else { r.reason = '等待 ERP 重新上传该单据行；收到更新版本前保持隔离'; this.$demo('已标记为“等待重传”，收到 ERP 更新后自动重新校验'); }
+        this.fixDlg = false;
+      },
+      viewBatch(b) { this.f = Object.assign(emptyF(), { biz: [b.day, b.day], batch: b.no }); this.tab = 'sales'; },
+      toggleMap(k, v) { const i = this.mapSel.indexOf(k); if (v && i < 0) this.mapSel.push(k); if (!v && i >= 0) this.mapSel.splice(i, 1); },
+      applyMap(keys, recOf) {
+        let n = 0;
+        keys.forEach((k) => {
+          const p = this.pend.find((x) => x.key === k); if (!p) return;
+          const rec = recOf(p);
+          Object.keys(this.rows).forEach((s) => this.rows[s].forEach((r) => {
+            if (r.pendKey === k && r.status === '待映射') { Object.assign(r.std, { product: rec.product, mat: rec.mat || '', spec: rec.spec || '', band: rec.band || '', cat: rec.cat }); r.status = '已入库'; r.reason = ''; n++; }
+          }));
+        });
+        this.pend = this.pend.filter((p) => keys.indexOf(p.key) < 0);
+        this.mapSel = this.mapSel.filter((k) => keys.indexOf(k) < 0);
+        return n;
+      },
+      confirmMap(keys) {
+        const hist = this.pend.filter((p) => keys.indexOf(p.key) >= 0).reduce((a, p) => a + p.cnt, 0);
+        this.applyMap(keys, (p) => p.rec);
+        this.$demo('已确认 ' + keys.length + ' 个物料的映射，近 30 日 ' + hist + ' 条历史数据将自动回补并参与聚合');
+      },
+      openManual(p) { this.manual = { p, path: [p.rec.cat, p.rec.product], mat: '', spec: p.rec.spec || '' }; this.$nextTick(() => { this.manual.mat = p.rec.mat || ''; }); this.manualDlg = true; },
+      doManual() {
+        const m = this.manual;
+        this.applyMap([m.p.key], () => ({ cat: m.path[0], product: m.path[1], mat: m.mat, spec: m.spec, band: '' }));
+        this.manualDlg = false;
+        this.$demo('映射已保存，历史数据将自动回补');
+      },
+    },
+  });
+})();
+</script>
+</body>
+</html>

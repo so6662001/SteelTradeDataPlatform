@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>企业名录选购 · 上游钢厂端 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.dir-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 304px; gap: 14px; align-items: start; }
+.dir-filter { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px 10px; }
+.dir-filter label { display: block; font-size: 12px; color: #6b7787; margin-bottom: 4px; }
+.dir-filter .el-select, .dir-filter .el-cascader, .dir-filter .el-input { width: 100%; }
+.pack-card { border: 1px solid var(--stp-border); border-radius: 6px; padding: 10px 12px; background: #fff; cursor: pointer; transition: all .15s; position: relative; }
+.pack-card:hover { border-color: #a8d2ff; }
+.pack-card.on { border-color: var(--el-color-primary); background: #f7fbff; box-shadow: 0 0 0 2px var(--el-color-primary-light-8); }
+.pack-card h4 { margin: 0 0 4px; font-size: 14px; display: flex; align-items: center; justify-content: space-between; }
+.pack-card h4 b { font-size: 16px; color: var(--el-color-primary); }
+.pack-card p { margin: 0; font-size: 12px; color: var(--stp-sub); line-height: 1.7; }
+.dir-tbl .el-table { font-size: 12.5px; }
+.dir-tbl .el-table .cell { padding: 0 6px; line-height: 18px; }
+.dir-tbl .el-table th.el-table__cell .cell { line-height: 16px; }
+.dir-tbl .two span { display: block; color: var(--stp-sub); font-size: 12px; }
+.dir-tbl .el-table .sel-row td.el-table__cell { background: #f3f9ff !important; }
+.rel-tag { display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: 3px; font-size: 11px; line-height: 17px; background: #fff7e8; color: #b26a00; border: 1px solid #f5dfb5; vertical-align: 1px; white-space: nowrap; }
+.cart-card { padding: 0; margin: 0; display: flex; flex-direction: column; max-height: calc(100vh - 88px); }
+.cart-head { padding: 12px 14px 10px; border-bottom: 1px solid var(--stp-border); display: flex; align-items: center; justify-content: space-between; font-weight: 600; font-size: 15px; }
+.cart-body { padding: 12px 14px; overflow-y: auto; flex: 1; min-height: 0; }
+.cart-foot { padding: 10px 14px 12px; border-top: 1px solid var(--stp-border); background: #fafbfc; border-radius: 0 0 6px 6px; }
+.cart-n { font-size: 30px; font-weight: 600; line-height: 1; }
+.cart-sec { font-size: 12px; font-weight: 600; color: #4a5568; margin: 14px 0 8px; padding-top: 12px; border-top: 1px dashed var(--stp-border); display: flex; justify-content: space-between; align-items: center; }
+.cart-kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; font-size: 12.5px; margin: 0; }
+.cart-kv dt { color: var(--stp-sub); } .cart-kv dd { margin: 0; text-align: right; }
+.cart-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.cart-chips .c { font-size: 12px; padding: 0 6px; line-height: 20px; background: #f4f6f9; border: 1px solid #e6e9ef; border-radius: 3px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cart-chips .c i { font-style: normal; cursor: pointer; color: #a0a9b6; margin-left: 4px; }
+.avail-row { display: grid; grid-template-columns: 72px 1fr 64px; align-items: center; gap: 6px; font-size: 12px; margin-bottom: 5px; }
+.avail-row .v { text-align: right; }
+.avail-row .v b { color: #18a058; }
+.hint-li { display: flex; gap: 6px; font-size: 12px; line-height: 1.6; margin-bottom: 4px; color: #4a5568; }
+.hint-li .el-icon { margin-top: 3px; flex-shrink: 0; }
+.formula { font-size: 11.5px; color: var(--stp-sub); line-height: 1.6; margin-top: 4px; }
+.el-descriptions__label { white-space: nowrap; }
+.ex-tag { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 11px; line-height: 18px; background: #fff8eb; color: #9a6400; border: 1px solid #f3dfb8; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="upstream" active="directory" title="企业名录选购" watermark
+  desc="从已上架的下游企业中挑选数据来源，加入购物清单后按名额计费。名录只展示企业画像，不展示任何单家企业的经营数据。">
+  <template #actions>
+    <el-button @click="leadDlg = true"><el-icon><Promotion /></el-icon>提交希望接入的企业线索</el-button>
+    <el-button @click="$go('quota-package.html')"><el-icon><Box /></el-icon>批量购买名额包</el-button>
+    <el-button @click="$go('pool.html')"><el-icon><OfficeBuilding /></el-icon>我的数据池</el-button>
+  </template>
+
+  <el-alert type="info" show-icon :closable="false">
+    <template #title>名录画像（主营大类、代理品牌、规模档、覆盖声明等）均为企业自主申报并确认的信息，不展示任何由上传数据计算的企业级数值。活跃度只给月度等级（活跃 / 一般 / 停更），不给日级状态。</template>
+  </el-alert>
+
+  <div class="dir-wrap">
+    <div>
+      <!-- 筛选 -->
+      <div class="card tight">
+        <div class="dir-filter">
+          <div><label>地区（大区 / 省 / 市）</label><el-cascader v-model="f.region" :options="regionOpts" :props="{checkStrictly: true}" clearable placeholder="全国" /></div>
+          <div><label>主营大类</label><el-select v-model="f.cats" multiple collapse-tags clearable placeholder="全部"><el-option v-for="c in catOpts" :key="c" :label="c" :value="c" /></el-select></div>
+          <div><label>代理品牌（企业自主申报）</label><el-select v-model="f.brand" clearable placeholder="全部"><el-option v-for="b in brandOpts" :key="b" :label="b === '东岳钢铁' ? '东岳钢铁（本厂）' : b" :value="b" /></el-select></div>
+          <div><label>规模档（企业自主申报）</label><el-select v-model="f.scale" clearable placeholder="全部"><el-option v-for="s in scaleOpts" :key="s" :label="s" :value="s" /></el-select></div>
+          <div><label>质量评级</label><el-select v-model="f.quality" clearable placeholder="全部"><el-option label="A" value="A" /><el-option label="B 及以上" value="B" /><el-option label="C 及以上" value="C" /></el-select></div>
+          <div><label>接入时长</label><el-select v-model="f.months" clearable placeholder="不限"><el-option label="3 个月以上" :value="3" /><el-option label="6 个月以上" :value="6" /><el-option label="12 个月以上" :value="12" /></el-select></div>
+          <div v-if="$state.gate === 'open'"><label>是否提供价格数据</label><el-select v-model="f.price" clearable placeholder="不限"><el-option label="是" value="y" /><el-option label="否" value="n" /></el-select></div>
+          <div><label>是否已在我的数据池</label><el-select v-model="f.inPool" clearable placeholder="不限"><el-option label="已在池" value="y" /><el-option label="未在池（可选购）" value="n" /></el-select></div>
+          <div><label>上架方式</label><el-select v-model="f.mode" clearable placeholder="不限"><el-option label="实名上架" value="实名" /><el-option label="匿名上架" value="匿名" /></el-select></div>
+          <div><label>&nbsp;</label><el-button @click="resetFilter">重置筛选</el-button></div>
+        </div>
+      </div>
+
+      <!-- 预置组合包 -->
+      <div class="card tight">
+        <div class="card-title" style="margin-bottom:8px"><span>平台预置组合包<small>由平台运营按区域、品类编排，点一下即按条件圈选</small></span></div>
+        <div class="grid c3" style="margin-bottom:0;gap:10px">
+          <div class="pack-card" v-for="p in packs" :key="p.k" :class="{on: f.pack === p.k}" @click="pickPack(p)">
+            <h4><span>{{ p.name }}</span><span><b class="num">{{ p.n }}</b> 家</span></h4>
+            <p>{{ p.desc }}</p>
+            <p>其中 {{ p.inPool }} 家已在池，圈选其余 <b style="color:#1f2d3d">{{ p.n - p.inPool }}</b> 家</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 企业表 -->
+      <div class="card tight dir-tbl">
+        <div class="row between mb12">
+          <div class="row">
+            <span>符合条件 <b class="num">{{ filtered.length }}</b> 家</span>
+            <el-tag v-if="curPack" closable type="primary" @close="f.pack = ''">{{ curPack.name }}</el-tag>
+            <span class="muted small">其中可选购 {{ selectable.length }} 家、已在池 {{ filtered.filter(e => e.inPool).length }} 家<template v-if="filtered.some(e => e.pendIn)">、待生效 {{ filtered.filter(e => e.pendIn).length }} 家</template><template v-if="filtered.some(e => e.pendOrder)">、加购待核销 {{ filtered.filter(e => e.pendOrder).length }} 家</template></span>
+          </div>
+          <div class="row">
+            <el-button type="primary" plain :disabled="!selectable.length" @click="selectAllFiltered"><el-icon><Finished /></el-icon>按当前筛选结果全选（{{ selectable.length }} 家）</el-button>
+            <el-button :disabled="!selCount" @click="clearSel">清空已选</el-button>
+          </div>
+        </div>
+        <el-table :data="pageRows" :row-class-name="rowCls">
+          <el-table-column width="34" align="center">
+            <template #header><el-checkbox :model-value="pageAll" :indeterminate="pageSome && !pageAll" :disabled="!pageSelectable.length" @change="togglePage" /></template>
+            <template #default="{row}">
+              <el-tooltip v-if="row.inPool" content="已在我的数据池中，无需重复选购" placement="right"><el-checkbox :model-value="false" disabled /></el-tooltip>
+              <el-tooltip v-else-if="row.pendIn" content="已分配名额，将于 2026-12-01 生效，无需重复选购" placement="right"><el-checkbox :model-value="false" disabled /></el-tooltip>
+              <el-tooltip v-else-if="row.pendOrder" content="已在加购订单 DO-20261120-0052 中指定，订单待核销，无需重复选购" placement="right"><el-checkbox :model-value="false" disabled /></el-tooltip>
+              <el-checkbox v-else :model-value="!!sel[row.id]" @change="v => toggle(row, v)" />
+            </template>
+          </el-table-column>
+          <el-table-column label="企业" min-width="160">
+            <template #default="{row}">
+              <el-tooltip v-if="row.mode === '匿名'" placement="top" content="该企业选择匿名上架，购买前后均只展示匿名编号"><span class="anon-name">{{ row.anon }}</span></el-tooltip>
+              <span v-else>{{ row.name }}</span>
+              <el-tooltip v-if="row.related" placement="top" content="钢厂关联的贸易公司，关联关系来自企业认证信息"><span class="rel-tag">关联企业</span></el-tooltip>
+            </template>
+          </el-table-column>
+          <el-table-column label="所在省市" width="60"><template #default="{row}"><div class="two">{{ row.prov }}<span>{{ row.city }}</span></div></template></el-table-column>
+          <el-table-column label="主营大类" width="74" prop="cat" />
+          <el-table-column label="代理品牌" width="64"><template #default="{row}"><div v-for="b in row.brands" :key="b">{{ b }}</div></template></el-table-column>
+          <el-table-column label="规模档" width="80" prop="scale" />
+          <el-table-column label="覆盖声明" width="82">
+            <template #default="{row}"><span v-if="row.cover === '全量上传'">全量上传</span><div v-else class="two">部分上传<span>{{ row.cover.split('：')[1] }}</span></div></template>
+          </el-table-column>
+          <el-table-column v-if="$state.gate === 'open'" label="提供价格数据" width="48" align="center"><template #default="{row}"><span :class="{muted: !row.priceOn}">{{ row.priceOn ? '是' : '否' }}</span></template></el-table-column>
+          <el-table-column label="接入时长" width="58"><template #default="{row}">{{ row.months }} 个月</template></el-table-column>
+          <el-table-column label="质量评级" width="44" align="center"><template #default="{row}"><el-tag size="small" :type="row.quality === 'A' ? 'success' : row.quality === 'B' ? 'primary' : 'warning'" effect="plain">{{ row.quality }}</el-tag></template></el-table-column>
+          <el-table-column label="活跃等级" width="54"><template #default="{row}"><span class="dot" :class="row.activity === '活跃' ? 'ok' : row.activity === '一般' ? 'warn' : 'err'" style="margin-right:4px"></span>{{ row.activity }}</template></el-table-column>
+          <el-table-column label="状态" width="64" align="center">
+            <template #default="{row}"><el-tag v-if="row.inPool" size="small" type="success">已在池</el-tag><el-tag v-else-if="row.pendIn" size="small" type="primary" effect="plain">待生效</el-tag><el-tooltip v-else-if="row.pendOrder" content="已在加购订单 DO-20261120-0052 中指定，订单待核销" placement="top"><el-tag size="small" type="warning" effect="plain">待核销</el-tag></el-tooltip><el-tag v-else-if="sel[row.id]" size="small" type="primary">已选</el-tag><el-tag v-else size="small" type="info" effect="plain">可选购</el-tag></template>
+          </el-table-column>
+          <template #empty><el-empty description="没有符合条件的企业，可调整筛选条件，或提交希望接入的企业线索" :image-size="80"><el-button @click="leadDlg = true">提交企业线索</el-button></el-empty></template>
+        </el-table>
+        <div class="tbl-foot">
+          <span>规模档、覆盖声明、代理品牌为企业自主申报；质量评级由平台按上传及时性与完整性评定</span>
+          <el-pagination background layout="prev, pager, next" :pager-count="5" :page-size="pageSize" v-model:current-page="page" :total="filtered.length" />
+        </div>
+      </div>
+    </div>
+
+    <!-- 购物清单（吸顶侧栏） -->
+    <div class="cart-bar">
+      <div class="card cart-card">
+        <div class="cart-head"><span><el-icon style="vertical-align:-2px;margin-right:4px"><ShoppingCart /></el-icon>购物清单</span><span class="ex-tag">示例参数，待业务方确定</span></div>
+        <div class="cart-body">
+          <div class="row between" style="align-items:flex-end">
+            <div><div class="muted small">已选企业</div><div class="cart-n num">{{ selCount }}<span class="small muted" style="font-weight:400;margin-left:4px">家</span></div></div>
+            <el-button v-if="selCount" link type="primary" @click="clearSel">清空</el-button>
+          </div>
+          <div v-if="selCount" class="cart-chips">
+            <span class="c" v-for="e in selList.slice(0, 4)" :key="e.id" :class="{'anon-name': e.mode === '匿名'}">{{ e.display }}<i @click="toggle(e, false)">×</i></span>
+            <span v-if="selCount > 4" class="c" style="background:#fff">等 {{ selCount }} 家</span>
+          </div>
+          <div v-else class="muted small mt8">在左侧勾选企业，或点击组合包、按筛选结果全选。</div>
+
+          <div class="cart-sec"><span>名额来源</span></div>
+          <dl class="cart-kv">
+            <dt>优先使用未分配名额</dt><dd><b class="num">{{ calc.free }}</b> / {{ freeQuota }} 个<el-tooltip content="名额包 200 个名额已全部分配：在池 186 个、待生效 14 个。待生效的 14 个里，1 个是 2026-11-19 数据池调整时新增的，13 个是 2026-11-20 选购时用未分配名额分配的" placement="top"><el-icon style="vertical-align:-2px;margin-left:4px;color:#909399"><QuestionFilled /></el-icon></el-tooltip></dd>
+            <dt>超出部分为加购</dt><dd><b class="num">{{ calc.buy }}</b> 个</dd>
+          </dl>
+          <div class="formula">用已购名额包内的未分配名额分配企业<b>不属于加购，不产生新费用</b>（费用自名额包订单生效日起已计算）；只有超出的部分按加购计费。<br>目前没有未分配名额：2026-11-20 的选购共选 43 家，其中 13 家用完了未分配名额（不产生费用，已列为待生效），其余 30 家为加购（订单 DO-20261120-0052，待核销）。现在新选的企业全部按加购计价。</div>
+
+          <div class="cart-sec"><span>阶梯与单价</span>
+            <el-popover placement="left" :width="300" trigger="hover">
+              <template #reference><a href="javascript:;" style="font-weight:400">数量阶梯 ›</a></template>
+              <table class="plain-table" style="font-size:12px">
+                <thead><tr><th>累计名额数</th><th class="r">阶梯折扣</th><th class="r">年付单价</th></tr></thead>
+                <tbody><tr v-for="t in tiers" :key="t.label" :class="{total: t.label === calc.tier.label}"><td>{{ t.label }}</td><td class="r">{{ t.off === 1 ? '原价' : (t.off * 100) + ' 折' }}</td><td class="r num">{{ (base * yearOff * t.off).toFixed(0) }} 元</td></tr></tbody>
+              </table>
+              <div class="muted small mt8">单价为元 / 名额·月。示例参数，待业务方确定。</div>
+            </el-popover>
+          </div>
+          <dl class="cart-kv">
+            <dt>累计名额数</dt><dd><span class="num">200 + {{ calc.buy }} = {{ 200 + calc.buy }}</span> 个</dd>
+            <dt>适用数量阶梯</dt><dd>{{ calc.tier.label }} 档 · {{ calc.tier.off === 1 ? '原价' : (calc.tier.off * 100) + ' 折' }}</dd>
+            <dt>折后单价</dt><dd><b class="num">{{ calc.unit.toFixed(0) }}</b> 元 / 名额·月</dd>
+            <dt>适用日单价</dt><dd><span class="num">{{ calc.day.toFixed(2) }}</span> 元 / 名额·日</dd>
+          </dl>
+          <div class="formula">目录价 {{ base }} 元 × 年付 {{ yearOff * 100 }} 折 × 阶梯折扣；日单价 = 折后年价 ÷ 365。待核销的加购订单在核销前不计入累计名额数。<span class="ex-tag">按日折算口径（N-24）与加购适用阶梯（N-25）待确认</span></div>
+
+          <div class="cart-sec"><span>加购计费</span></div>
+          <dl class="cart-kv">
+            <dt>计划生效日</dt><dd><b class="num">2026-12-01</b></dd>
+            <dt>计费起止日</dt><dd><span class="num">2026-12-01 至 2027-03-31</span></dd>
+            <dt>计费天数</dt><dd><span class="num">121</span> 天（含首尾）</dd>
+          </dl>
+          <div class="formula"><b>下单日至生效日之间不收费。</b>加购名额从新增企业的生效日起计费，到期日与原订单对齐；生效前为“已分配（待生效）”，不计费，企业数据不进入聚合。</div>
+
+          <div class="cart-sec"><span>应付金额</span></div>
+          <div class="row between" style="align-items:baseline">
+            <span class="price-big num">¥ {{ $fmt(calc.amount) }}</span>
+            <span class="muted small">{{ calc.buy ? '加购 ' + calc.buy + ' 个名额' : '无需付款' }}</span>
+          </div>
+          <div class="formula">公式：加购数 × 适用日单价 × 计费天数<br>= 加购数 × {{ base }} × 12 × {{ yearOff }} × 阶梯折扣 × 121/365<template v-if="calc.buy"><br>= {{ calc.buy }} × {{ base }} × 12 × {{ yearOff }} × {{ calc.tier.off }} × 121/365</template></div>
+
+          <div class="cart-sec"><span>池可用性预估</span>
+            <el-tooltip placement="left" content="按“已选企业 + 现有数据池”预估：标准维度组合（省 × 大类 × 日）下可披露单元格的比例。只是比例预估，不展示任何实际数值"><el-icon style="color:#a0a9b6"><QuestionFilled /></el-icon></el-tooltip>
+          </div>
+          <div class="row between" style="align-items:baseline;margin-bottom:8px">
+            <span><b class="num" style="font-size:22px">{{ avail.total }}%</b><span class="muted small" style="margin-left:6px">可披露单元格比例</span></span>
+            <span v-if="avail.total > 71" class="small" style="color:#18a058">较当前 71% 提高 {{ avail.total - 71 }} 点</span>
+            <span v-else class="small muted">当前数据池</span>
+          </div>
+          <div class="avail-row" v-for="c in avail.cats" :key="c.name">
+            <span>{{ c.name }}</span>
+            <el-progress :percentage="c.now" :show-text="false" :stroke-width="6" :color="c.now >= 70 ? '#18a058' : c.now >= 50 ? '#409eff' : '#f0a020'" />
+            <span class="v num">{{ c.now }}%<b v-if="c.now > c.base"> +{{ c.now - c.base }}</b></span>
+          </div>
+          <div class="mt8">
+            <div class="hint-li" v-for="h in hints" :key="h.prov + h.cat">
+              <el-icon v-if="h.left <= 0" style="color:#18a058"><CircleCheckFilled /></el-icon><el-icon v-else style="color:#f0a020"><InfoFilled /></el-icon>
+              <span v-if="h.left > 0">再增加 <b>{{ h.left }}</b> 家{{ h.prov }}{{ h.abbr }}企业，可使{{ h.prov }} · {{ h.cat }}可披露。<a href="javascript:;" @click="applyHint(h)">筛选</a></span>
+              <span v-else>已选企业可使{{ h.prov }} · {{ h.cat }}达到可披露条件。</span>
+            </div>
+          </div>
+          <div class="formula">优特钢、不锈钢等品类样本较稀疏，屏蔽比例会高于建筑钢材。预估不展示任何实际数值。</div>
+
+          <div class="cart-sec"><span>生效说明</span></div>
+          <div class="small" style="line-height:1.7;color:#4a5568">新增企业 <b>2026-12-01</b> 起生效（数据池按周期统一生效）；生效日之前的数据仍按原成员集合展示，历史不重算。生效前在数据池页面列为“待生效”。</div>
+        </div>
+        <div class="cart-foot">
+          <el-button type="primary" style="width:100%" size="large" :disabled="!selCount" @click="openCheckout">去结算{{ selCount ? '（' + selCount + ' 家）' : '' }}</el-button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 确认订单 -->
+  <el-dialog v-model="ck.show" title="确认订单" width="740px" top="6vh">
+    <table class="plain-table">
+      <thead><tr><th>商品</th><th class="r">数量</th><th class="r">单价</th><th>周期</th><th class="r">金额（元）</th></tr></thead>
+      <tbody>
+        <tr v-if="calc.free"><td>分配未分配名额<div class="muted small">来自订单 DO-20260318-0007；不属于加购，不产生新费用</div></td><td class="r num nowrap">{{ calc.free }} 个</td><td class="r muted nowrap">已购</td><td class="nowrap">至 2027-03-31</td><td class="r num">0</td></tr>
+        <tr v-if="calc.buy"><td>周期内加购名额<div class="muted small">{{ calc.tier.label }} 档 · 年付 {{ yearOff * 100 }} 折 · 阶梯 {{ calc.tier.off === 1 ? '原价' : (calc.tier.off * 100) + ' 折' }}</div></td><td class="r num nowrap">{{ calc.buy }} 个</td><td class="r num nowrap">{{ calc.unit.toFixed(0) }} 元/名额·月</td><td class="nowrap">121 天（含首尾）<div class="muted small">2026-12-01 至 2027-03-31</div></td><td class="r num nowrap">{{ $fmt(calc.amount) }}</td></tr>
+        <tr class="total"><td colspan="4">应付金额<span class="ex-tag" style="margin-left:8px;font-weight:400">示例参数，待业务方确定</span></td><td class="r nowrap"><span class="price-big num" style="font-size:20px">¥ {{ $fmt(calc.amount) }}</span></td></tr>
+      </tbody>
+    </table>
+    <el-descriptions :column="1" border size="small" class="mt12">
+      <el-descriptions-item label="购买主体">东岳钢铁集团有限公司</el-descriptions-item>
+      <el-descriptions-item label="选购企业">共 {{ selCount }} 家（实名 {{ selReal }} 家、匿名 {{ selCount - selReal }} 家），2026-12-01 起生效</el-descriptions-item>
+      <template v-if="calc.buy">
+        <el-descriptions-item label="计划生效日"><b class="num">2026-12-01</b><span class="muted small">（新增企业生效日，即计费起始日）</span></el-descriptions-item>
+        <el-descriptions-item label="计费起止日"><span class="num">2026-12-01 至 2027-03-31</span>，共 <b class="num">121</b> 天（含首尾），到期日与原订单对齐</el-descriptions-item>
+        <el-descriptions-item label="适用单价"><span class="num">{{ calc.unit.toFixed(0) }}</span> 元/名额·月，折合 <span class="num">{{ calc.day.toFixed(2) }}</span> 元/名额·日 <span class="ex-tag">折算口径 N-24、适用阶梯 N-25 待确认</span></el-descriptions-item>
+        <el-descriptions-item label="计费规则"><b>下单日至生效日之间不收费。</b>生效前名额为“已分配（待生效）”，不计费、不计提分成，企业数据不进入聚合；生效日之前可取消并全额退款。订单与合同记载上述日期。</el-descriptions-item>
+        <el-descriptions-item label="截单时点">须在 <b class="num">2026-11-28 18:00</b> 前完成支付或对公核销，新增企业才能在计划生效日生效；逾期顺延到 2027-01-01 生效并重新计价。<span class="ex-tag">截单时点与差额处理待确认（N-27）</span></el-descriptions-item>
+      </template>
+      <el-descriptions-item v-if="calc.buy" label="支付方式">
+        <el-radio-group v-model="ck.pay">
+          <el-radio value="transfer">对公转账</el-radio>
+          <el-radio value="online">在线支付</el-radio>
+        </el-radio-group>
+        <div class="muted small">{{ ck.pay === 'transfer' ? '下单后在“订单与订阅”上传转账凭证，平台财务核销后生效。' : '跳转货袋子收银台完成支付，支付成功后订单进入待生效。' }}</div>
+      </el-descriptions-item>
+      <el-descriptions-item label="电子合同">
+        《钢贸数据服务订单合同》<span class="muted small">（提交后生成，双方电子签章，可在订单详情下载）</span>
+        <el-button link type="primary" @click="$info('原型演示：合同预览复用货袋子电子合同能力')">预览</el-button>
+      </el-descriptions-item>
+    </el-descriptions>
+    <div class="tip-box orange small mt12">
+      《数据服务协议》<b>禁止再识别条款</b>：不得通过任何方式推算或识别单家企业的经营数据，不得转售数据；违约的，平台可终止服务并追究责任。
+    </div>
+    <el-checkbox v-model="ck.agree" class="mt12">我已阅读并同意《数据服务协议》，包括其中的禁止再识别条款</el-checkbox>
+    <template #footer>
+      <el-button @click="ck.show = false">返回修改</el-button>
+      <el-button type="primary" :disabled="!ck.agree" :loading="ck.loading" @click="submitOrder">{{ calc.buy ? '提交订单' : '确认分配' }}</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 企业线索 -->
+  <el-dialog v-model="leadDlg" title="提交希望接入的企业线索" width="600px">
+    <div class="tip-box blue small mb12">名录里没有想要的企业（例如本厂经销商）？提交线索后由平台运营跟进邀请。企业是否入驻、是否上架、实名还是匿名，均由该企业自行决定。</div>
+    <el-form label-width="96px">
+      <el-form-item label="提交方式">
+        <el-radio-group v-model="lead.mode"><el-radio-button value="single">逐家填写</el-radio-button><el-radio-button value="batch">批量上传名单</el-radio-button></el-radio-group>
+      </el-form-item>
+      <template v-if="lead.mode === 'single'">
+        <el-form-item label="企业名称" required><el-input v-model="lead.name" placeholder="请输入企业全称" /></el-form-item>
+        <el-form-item label="所在省市"><el-cascader v-model="lead.region" :options="provOpts" clearable placeholder="请选择" style="width:100%" /></el-form-item>
+        <el-form-item label="与本厂关系">
+          <el-radio-group v-model="lead.rel"><el-radio value="一级代理">一级代理</el-radio><el-radio value="二级分销">二级分销</el-radio><el-radio value="其他">其他</el-radio></el-radio-group>
+        </el-form-item>
+        <el-form-item label="企业联系人"><div class="row" style="width:100%;flex-wrap:nowrap"><el-input v-model="lead.contact" placeholder="姓名（选填）" /><el-input v-model="lead.phone" placeholder="联系电话（选填）" /></div></el-form-item>
+      </template>
+      <el-form-item v-else label="企业名单">
+        <el-upload action="#" :auto-upload="false" :limit="1" accept=".xlsx,.csv"><el-button><el-icon><Upload /></el-icon>选择文件</el-button><template #tip><div class="muted small">支持 Excel、CSV，单次不超过 500 家。<a href="javascript:;" @click="$info('原型演示：下载名单模板')">下载模板</a></div></template></el-upload>
+      </el-form-item>
+      <el-form-item label="备注"><el-input v-model="lead.note" type="textarea" :rows="2" placeholder="例如：希望优先邀请湖南地区的建材经销商" /></el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="leadDlg = false">取消</el-button>
+      <el-button type="primary" :disabled="lead.mode === 'single' && !lead.name.trim()" @click="submitLead">提交线索</el-button>
+    </template>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script src="../assets/js/upstream-directory.js"></script>
+<script>
+(function () {
+  const P = M.PRICING;
+  const { PACKS, GAPS, LIST } = UpDir;
+
+  /* 池可用性预估：分大类的可披露单元格比例（加权后当前为 71%） */
+  const AVAIL = [
+    { name: '建筑钢材', base: 88, w: 24, tau: 30 }, { name: '热轧板卷', base: 81, w: 16, tau: 22 }, { name: '中厚板', base: 72, w: 10, tau: 14 }, { name: '冷轧及涂镀', base: 67, w: 12, tau: 14 },
+    { name: '管材', base: 62, w: 12, tau: 14 }, { name: '型钢', base: 64, w: 10, tau: 12 }, { name: '优特钢', base: 54, w: 8, tau: 14 }, { name: '不锈钢', base: 44, w: 8, tau: 12 },
+  ];
+  /* 东岳名额包 200 个 = 在池 186 + 待生效 14 + 未分配 0：未分配名额已在 2026-11-20 的选购中用完 */
+  const FREE_QUOTA = 0;
+  const emptyFilter = () => ({ region: [], cats: [], brand: '', scale: '', quality: '', months: '', price: '', inPool: '', mode: '', pack: '' });
+
+  STP.mount({
+    data() {
+      return {
+        list: LIST, packs: PACKS, f: emptyFilter(), sel: {}, page: 1, pageSize: 10,
+        base: P.base, yearOff: P.yearOff, tiers: P.tiers, freeQuota: FREE_QUOTA,
+        ck: { show: false, pay: 'transfer', agree: false, loading: false },
+        leadDlg: false, lead: { mode: 'single', name: '', region: [], rel: '一级代理', contact: '', phone: '', note: '' },
+      };
+    },
+    computed: {
+      regionOpts() {
+        const regs = [];
+        M.provinces.forEach((p) => { let r = regs.find((x) => x.value === p.region); if (!r) regs.push(r = { value: p.region, label: p.region, children: [] }); r.children.push({ value: p.name, label: p.name, children: p.muni ? undefined : p.cities.map((c) => ({ value: c[0], label: c[0] })) }); });
+        return regs;
+      },
+      provOpts() { return M.provinces.map((p) => ({ value: p.name, label: p.name, children: p.cities.map((c) => ({ value: c[0], label: c[0] })) })); },
+      catOpts() { return M.categories.map((c) => c.name).concat(['综合']); },
+      brandOpts() { return M.MILLS; },
+      scaleOpts() { return M.SCALE; },
+      curPack() { return this.packs.find((p) => p.k === this.f.pack); },
+      filtered() {
+        const f = this.f, rg = f.region || [], q = { A: ['A'], B: ['A', 'B'], C: ['A', 'B', 'C'] }[f.quality];
+        return this.list.filter((e) => (!rg[0] || e.region === rg[0]) && (!rg[1] || e.prov === rg[1]) && (!rg[2] || e.city === rg[2])
+          && (!f.cats.length || f.cats.indexOf(e.cat) >= 0) && (!f.brand || e.brands.indexOf(f.brand) >= 0) && (!f.scale || e.scale === f.scale)
+          && (!q || q.indexOf(e.quality) >= 0) && (!f.months || e.months >= f.months) && (!f.price || this.$state.gate !== 'open' || e.priceOn === (f.price === 'y'))
+          && (!f.inPool || e.inPool === (f.inPool === 'y')) && (!f.mode || e.mode === f.mode));
+      },
+      selectable() { return this.filtered.filter((e) => !e.inPool && !e.pendIn && !e.pendOrder); },
+      pageRows() { return this.filtered.slice((this.page - 1) * this.pageSize, this.page * this.pageSize); },
+      pageSelectable() { return this.pageRows.filter((e) => !e.inPool && !e.pendIn && !e.pendOrder); },
+      pageAll() { return this.pageSelectable.length > 0 && this.pageSelectable.every((e) => this.sel[e.id]); },
+      pageSome() { return this.pageSelectable.some((e) => this.sel[e.id]); },
+      selList() { return this.list.filter((e) => this.sel[e.id]); },
+      selCount() { return this.selList.length; },
+      selReal() { return this.selList.filter((e) => e.mode === '实名').length; },
+      calc() {
+        const n = this.selCount, free = Math.min(n, FREE_QUOTA), buy = n - free;
+        const tier = M.tierOf(200 + buy);
+        const unit = P.base * P.yearOff * tier.off;
+        return { free, buy, tier, unit, day: unit * 12 / 365, amount: Math.round(buy * P.base * 12 * P.yearOff * tier.off * 121 / 365) };
+      },
+      avail() {
+        const cnt = {}; this.selList.forEach((e) => { cnt[e.cat] = (cnt[e.cat] || 0) + 1; });
+        const cats = AVAIL.map((c) => {
+          const n = (cnt[c.name] || 0) + (cnt['综合'] || 0) * 0.25;
+          return { name: c.name, base: c.base, w: c.w, now: Math.round(c.base + (100 - c.base) * 0.9 * (1 - Math.exp(-n / c.tau))) };
+        });
+        return { cats, total: Math.round(cats.reduce((a, c) => a + c.now * c.w, 0) / cats.reduce((a, c) => a + c.w, 0)) };
+      },
+      hints() {
+        return GAPS.map((g) => Object.assign({}, g, { left: g.need - this.selList.filter((e) => e.prov === g.prov && e.cat === g.cat).length }));
+      },
+    },
+    watch: {
+      f: { deep: true, handler() { this.page = 1; } },
+    },
+    methods: {
+      rowCls({ row }) { return this.sel[row.id] ? 'sel-row' : ''; },
+      resetFilter() { this.f = emptyFilter(); },
+      toggle(e, v) { if (v) this.sel[e.id] = true; else delete this.sel[e.id]; },
+      togglePage(v) { this.pageSelectable.forEach((e) => this.toggle(e, v)); },
+      selectAllFiltered() {
+        const n = this.selectable.filter((e) => !this.sel[e.id]).length;
+        this.selectable.forEach((e) => { this.sel[e.id] = true; });
+        this.$demo('已按当前筛选结果圈选 ' + this.selectable.length + ' 家' + (n < this.selectable.length ? '（其中新加入 ' + n + ' 家）' : ''));
+      },
+      clearSel() { this.sel = {}; },
+      pickPack(p) {
+        this.f = Object.assign(emptyFilter(), { region: p.set.region.slice(), cats: p.set.cats.slice(), pack: p.k });
+        this.$nextTick(() => {
+          this.selectable.forEach((e) => { this.sel[e.id] = true; });
+          this.$demo('已圈选“' + p.name + '”：共 ' + p.n + ' 家，其中 ' + p.inPool + ' 家已在池，新选入 ' + (p.n - p.inPool) + ' 家');
+        });
+      },
+      applyHint(h) {
+        const p = M.provinces.find((x) => x.name === h.prov);
+        this.f = Object.assign(emptyFilter(), { region: [p.region, p.name], cats: [h.cat], inPool: 'n' });
+      },
+      openCheckout() { this.ck = { show: true, pay: 'transfer', agree: false, loading: false }; },
+      submitOrder() {
+        const c = this.calc;
+        this.ck.loading = true;
+        setTimeout(() => {
+          this.ck.show = false; this.ck.loading = false;
+          if (c.buy) {
+            this.$demo('订单 DO-20261124-0061 已提交，应付 ' + STP.fmt(c.amount) + ' 元；' + (this.ck.pay === 'transfer' ? '请上传转账凭证' : '请在收银台完成支付') + '，正在跳转订单与订阅…');
+            setTimeout(() => this.$go('orders.html'), 1400);
+          } else {
+            this.$demo('已使用未分配名额分配 ' + c.free + ' 家企业，2026-12-01 起生效，正在跳转订单与订阅…');
+            setTimeout(() => this.$go('orders.html'), 1400);
+          }
+        }, 600);
+      },
+      submitLead() {
+        this.leadDlg = false;
+        this.$demo('线索已提交，平台运营将在 3 个工作日内跟进邀请，进展通过站内信通知');
+        this.lead = { mode: 'single', name: '', region: [], rel: '一级代理', contact: '', phone: '', note: '' };
+      },
+    },
+  });
+})();
+</script>
+</body>
+</html>

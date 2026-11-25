@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>我的收益 · 下游钢贸端 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.demo-param { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 11px; line-height: 18px; background: #fff8eb; color: #9a6400; border: 1px solid #f3dfb8; font-weight: 400; white-space: nowrap; }
+.qual { display: flex; gap: 12px; align-items: center; padding: 12px 14px; border-radius: 6px; background: #f1faf5; border: 1px solid #cfe9da; margin-bottom: 12px; }
+.qual .ic { font-size: 28px; color: #18a058; display: flex; }
+.qual b { font-size: 16px; }
+.chk-list { margin: 0; padding: 0; list-style: none; font-size: 13px; }
+.chk-list li { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; border-bottom: 1px dashed var(--stp-border); line-height: 1.6; }
+.chk-list li:last-child { border-bottom: none; }
+.chk-list li .el-icon { margin-top: 3px; flex-shrink: 0; color: #18a058; }
+.chk-list li .el-icon.w { color: #d48806; }
+.chk-list li .rt { margin-left: auto; white-space: nowrap; color: var(--stp-sub); font-size: 12px; padding-left: 10px; }
+.rule-table td, .rule-table th { padding: 7px 10px; line-height: 1.6; }
+.rule-table td.v { font-weight: 600; }
+.formula { background: #f7f9fc; border: 1px solid var(--stp-border); border-radius: 6px; padding: 12px 14px; font-size: 13px; line-height: 1.9; margin-bottom: 12px; }
+.formula .f { font-weight: 600; color: #1f2a37; }
+.lever { display: grid; grid-template-columns: 34px 1fr auto; gap: 10px; padding: 11px 0; border-bottom: 1px dashed var(--stp-border); align-items: flex-start; }
+.lever:last-child { border-bottom: none; }
+.lever .ic { width: 34px; height: 34px; border-radius: 8px; background: #eef4fb; color: #2b5d9b; display: flex; align-items: center; justify-content: center; font-size: 17px; }
+.lever .tt { font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.lever .ds { font-size: 12px; color: #4a5568; line-height: 1.7; margin-top: 2px; }
+.lever .gain { text-align: right; font-size: 12px; color: var(--stp-sub); white-space: nowrap; padding-top: 2px; }
+.lever .gain b { display: block; font-size: 14px; color: #18a058; }
+.lever .gain b.na { color: #8a94a3; font-weight: 400; }
+.bars { display: flex; gap: 14px; margin-top: 6px; flex-wrap: wrap; }
+.bars .b { flex: 1; min-width: 110px; }
+.bars .b .l { display: flex; justify-content: space-between; font-size: 12px; color: #4a5568; margin-bottom: 2px; }
+.acct { border: 1px solid var(--stp-border); border-radius: 6px; padding: 14px; }
+.acct h4 { margin: 0 0 10px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.acct h4 .el-icon { color: var(--el-color-primary); }
+.stm-sum { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 12px 0; }
+.stm-sum > div { border: 1px solid var(--stp-border); border-radius: 6px; padding: 10px 12px; }
+.stm-sum .l { font-size: 12px; color: var(--stp-sub); }
+.stm-sum .v { font-size: 18px; font-weight: 600; margin-top: 2px; }
+.voucher { border: 1px solid var(--stp-border); border-radius: 6px; padding: 16px; background: linear-gradient(180deg, #fbfdff, #fff); }
+.voucher .amt { font-size: 28px; font-weight: 600; text-align: center; margin: 4px 0 2px; }
+.voucher .ok { text-align: center; color: #18a058; font-size: 13px; margin-bottom: 12px; }
+.el-descriptions__label { white-space: nowrap; }
+.ops a { margin-right: 10px; white-space: nowrap; }
+.ops a:last-child { margin-right: 0; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="downstream" active="revenue" title="我的收益"
+  desc="本企业的数据被钢厂订阅后，平台按规则把部分收入分给你。这里可以看到每个月怎么算出来的、结算到了哪一步。">
+  <template #actions>
+    <el-button @click="jump('rules')"><el-icon><Document /></el-icon>分成规则</el-button>
+    <el-button @click="jump('acct')"><el-icon><CreditCard /></el-icon>开票与收款账户</el-button>
+  </template>
+
+  <el-alert type="warning" show-icon :closable="false" style="margin-bottom:14px">
+    <template #title>本页涉及的分成比例、基数、系数、门槛、起付金额等均为<b>示例参数，待业务方确定</b>；页面用来说明收益的展示方式与结算流程，金额不代表实际承诺。</template>
+  </el-alert>
+
+  <div class="grid c4">
+    <div class="stat">
+      <div class="label">本期预计收益（2026-11）<span class="demo-param" style="margin-left:6px">示例</span></div>
+      <div class="value num">{{ $fmt(curMonth.amt) }}<span class="unit">元</span></div>
+      <div class="foot"><span>名额天数 {{ $fmt(curMonth.days) }}</span><span>系数 {{ curMonth.q.toFixed(2) }} × {{ curMonth.r.toFixed(2) }}</span></div>
+      <div class="foot" style="margin-top:4px"><span>截至 11-23 已累计 529 个名额日，月底按实际计提</span></div>
+      <div class="ico"><el-icon><TrendCharts /></el-icon></div>
+    </div>
+    <div class="stat">
+      <div class="label">待结算金额 <el-tooltip content="已出结算单、等待你确认或正在处理异议的金额"><el-icon style="vertical-align:-2px"><QuestionFilled /></el-icon></el-tooltip></div>
+      <div class="value num">{{ $fmt(pendingAmt) }}<span class="unit">元</span></div>
+      <div class="foot"><span>{{ pendingList }}</span></div>
+      <div class="foot" style="margin-top:4px"><a href="javascript:;" @click="jump('stm')">去处理结算单 ›</a></div>
+      <div class="ico" style="background:#fff8eb;color:#d48806"><el-icon><Clock /></el-icon></div>
+    </div>
+    <div class="stat">
+      <div class="label">累计已结算金额 <el-tooltip content="你已确认的结算单应付金额合计"><el-icon style="vertical-align:-2px"><QuestionFilled /></el-icon></el-tooltip></div>
+      <div class="value num">{{ $fmt(settledAmt) }}<span class="unit">元</span></div>
+      <div class="foot"><span>已到账 <b>{{ $fmt(paidAmt) }}</b> 元</span><span>在途 {{ $fmt(settledAmt - paidAmt) }} 元</span></div>
+      <div class="foot" style="margin-top:4px"><span>在途：待开票、待付款、已冻结</span></div>
+      <div class="ico" style="background:#e8f7ef;color:#18a058"><el-icon><Wallet /></el-icon></div>
+    </div>
+    <div class="stat">
+      <div class="label">当前被订阅 <el-tooltip content="只显示订阅的钢厂家数，不显示钢厂名称，也不按钢厂拆分金额"><el-icon style="vertical-align:-2px"><QuestionFilled /></el-icon></el-tooltip></div>
+      <div class="value num">23<span class="unit">家钢厂</span></div>
+      <div class="foot"><span>较上月 <b class="up">+2</b> 家</span><span>名额全部生效中</span></div>
+      <div class="foot" style="margin-top:4px"><a href="ledger.html">数据使用透明账本 ›</a></div>
+      <div class="ico"><el-icon><OfficeBuilding /></el-icon></div>
+    </div>
+  </div>
+
+  <div class="grid c-3-2">
+    <div class="card" style="margin-bottom:0">
+      <div class="card-title"><span>月度收益<small>计提金额与月末订阅家数 · 2025-10 至 2026-11</small></span><span class="small muted">2026-11 为预计值</span></div>
+      <ve-chart :option="chart" height="290px"></ve-chart>
+    </div>
+    <div class="card" style="margin-bottom:0">
+      <div class="card-title"><span>分成资格</span><span class="demo-param">门槛为示例参数，待业务方确定</span></div>
+      <div class="qual">
+        <span class="ic"><el-icon><CircleCheckFilled /></el-icon></span>
+        <div><b>本期满足分成资格</b><div class="small muted">每月末评定一次，不满足的期间不计提</div></div>
+      </div>
+      <ul class="chk-list">
+        <li><el-icon><CircleCheck /></el-icon><span>质量评级 <span class="level-tag A">A</span></span><span class="rt">门槛：不低于 C</span></li>
+        <li><el-icon><CircleCheck /></el-icon><span>本月有效上传 <b>23 天</b></span><span class="rt">门槛：当月不少于 20 天</span></li>
+        <li><el-icon><CircleCheck /></el-icon><span>已上架（实名），被 23 家钢厂订阅</span><span class="rt">门槛：已上架且被订阅</span></li>
+        <li><el-icon><CircleCheck /></el-icon><span>名额状态：全部生效，无冻结</span><span class="rt">暂停或断传时冻结</span></li>
+        <li v-if="frozen"><el-icon class="w"><WarningFilled /></el-icon><span>2026-07 期结算单的待付金额被冻结，不影响本期资格</span><span class="rt"><a href="javascript:;" @click="open('freeze', frozen)">原因与申诉 ›</a></span></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 按月明细 -->
+  <div class="card">
+    <div class="card-title">
+      <span>按月明细<small>只显示订阅家数，不显示钢厂名称，不按钢厂拆分金额</small></span>
+      <el-button size="small" @click="$demo('收益明细 Excel 已生成，可在下载中心获取')"><el-icon><Download /></el-icon>导出明细</el-button>
+    </div>
+    <el-table :data="monthsDesc" border size="small" :row-class-name="({row}) => row.cur ? 'cur-month' : ''">
+      <el-table-column label="月份" width="110"><template #default="{row}"><b class="num">{{ row.m }}</b><el-tag v-if="row.cur" size="small" type="primary" effect="plain" style="margin-left:6px">本期</el-tag></template></el-table-column>
+      <el-table-column label="名额天数" align="right" width="110">
+        <template #header>名额天数 <el-tooltip content="当月每一天、订阅本企业且处于生效状态的名额数之和。冻结的名额日不计入。"><el-icon style="vertical-align:-2px"><QuestionFilled /></el-icon></el-tooltip></template>
+        <template #default="{row}"><span class="num">{{ $fmt(row.days) }}</span><span v-if="row.cur" class="small muted">（预计）</span></template>
+      </el-table-column>
+      <el-table-column label="订阅家数（月末）" align="right" width="130"><template #default="{row}"><span class="num">{{ row.subs }} 家</span></template></el-table-column>
+      <el-table-column label="质量系数" align="right" width="110"><template #default="{row}"><span class="num">{{ row.q.toFixed(2) }}</span><span class="small muted" style="margin-left:4px">{{ row.q >= 1.1 ? 'A' : 'B' }} 级</span></template></el-table-column>
+      <el-table-column label="丰富度系数" align="right" width="100"><template #default="{row}"><span class="num">{{ row.r.toFixed(2) }}</span></template></el-table-column>
+      <el-table-column label="计提金额(元)" align="right" width="120"><template #default="{row}"><b class="num">{{ $fmt(row.amt) }}</b><span v-if="row.cur" class="small muted">（预计）</span></template></el-table-column>
+      <el-table-column label="冲正(元)" align="right" width="90"><template #default="{row}"><el-tooltip v-if="row.adj" :content="row.adjNote"><b class="num down" style="cursor:help">−{{ $fmt(-row.adj) }}</b></el-tooltip><span v-else class="muted">—</span></template></el-table-column>
+      <el-table-column label="状态" width="100"><template #default="{row}"><el-tag size="small" :type="tagType(stOf(row))" :effect="stOf(row)==='已付款' ? 'plain' : 'light'">{{ stOf(row) }}</el-tag></template></el-table-column>
+      <el-table-column label="说明" min-width="200"><template #default="{row}"><span class="small muted">{{ row.note }}</span></template></el-table-column>
+    </el-table>
+    <div class="tbl-foot">
+      <span>计提金额 = 名额天数 × 日分成基数 × 分成比例 × 质量系数 × 丰富度系数，四舍五入到元。日分成基数按 400 ÷ 30 计算，不先取整。</span>
+      <span>共 {{ months.length }} 个月</span>
+    </div>
+  </div>
+
+  <!-- 结算单 -->
+  <div class="card" id="stm">
+    <div class="card-title">
+      <span>结算单<small>按月生成，次月 5 日出单；你确认并开票后，平台对公付款</small></span>
+      <el-radio-group v-model="stFilter" size="small">
+        <el-radio-button value="todo">待我处理 {{ todoCount }}</el-radio-button>
+        <el-radio-button value="all">全部 {{ stms.length }}</el-radio-button>
+      </el-radio-group>
+    </div>
+    <el-table :data="stmList" border size="small">
+      <el-table-column label="结算单号 / 期间" width="170"><template #default="{row}"><a href="javascript:;" @click="open('stm', row)" class="num">{{ row.no }}</a><div class="small muted">{{ row.m }} · {{ row.issue }} 出单</div></template></el-table-column>
+      <el-table-column label="计提合计(元)" align="right" width="110"><template #default="{row}"><span class="num">{{ $fmt(row.amt) }}</span></template></el-table-column>
+      <el-table-column label="冲正(元)" align="right" width="90"><template #default="{row}"><span v-if="row.adj" class="num down">−{{ $fmt(-row.adj) }}</span><span v-else class="muted">—</span></template></el-table-column>
+      <el-table-column label="结转(元)" align="right" width="100">
+        <template #header>结转 <el-tooltip content="正数：上期不足起付金额、结转到本期的金额；负数：本期不足起付金额、转入下期"><el-icon style="vertical-align:-2px"><QuestionFilled /></el-icon></el-tooltip></template>
+        <template #default="{row}"><span v-if="row.carry" class="num">{{ row.carry > 0 ? '+' : '−' }}{{ $fmt(Math.abs(row.carry)) }}</span><span v-else class="muted">—</span></template>
+      </el-table-column>
+      <el-table-column label="应付金额(元)" align="right" width="110"><template #default="{row}"><b class="num">{{ $fmt(row.pay) }}</b></template></el-table-column>
+      <el-table-column label="状态" width="96"><template #default="{row}"><el-tag size="small" :type="tagType(row.st)" :effect="row.st==='已付款' ? 'plain' : 'light'">{{ row.st }}</el-tag></template></el-table-column>
+      <el-table-column label="进度" min-width="220"><template #default="{row}"><span class="small" style="color:#4a5568">{{ row.prog }}</span></template></el-table-column>
+      <el-table-column label="操作" width="170">
+        <template #default="{row}">
+          <div class="ops">
+            <template v-if="row.st==='待确认'"><a href="javascript:;" @click="open('confirm', row)">确认</a><a href="javascript:;" @click="open('dispute', row)">提出异议</a></template>
+            <template v-else-if="row.st==='待开票'"><a href="javascript:;" @click="open('invoice', row)">上传发票</a></template>
+            <template v-else-if="row.st==='待付款'"><a href="javascript:;" @click="open('invoiceView', row)">查看发票</a></template>
+            <template v-else-if="row.st==='已付款'"><a href="javascript:;" @click="open('voucher', row)">查看付款凭证</a></template>
+            <template v-else-if="row.st==='有异议'"><a href="javascript:;" @click="open('progress', row)">异议进度</a></template>
+            <template v-else-if="row.st==='已冻结'"><a href="javascript:;" @click="open('freeze', row)">原因与申诉</a></template>
+            <a href="javascript:;" @click="open('stm', row)">明细</a>
+          </div>
+        </template>
+      </el-table-column>
+    </el-table>
+    <div class="tbl-foot">
+      <span>流程：出结算单 → 企业确认或提出异议 → 企业开票 → 平台对公付款。应付金额 = 计提合计 − 冲正 + 结转。</span>
+      <span><span class="demo-param">待业务方确认 N-20</span> 结算与付款的启用时点待定</span>
+    </div>
+  </div>
+
+  <div class="grid c2">
+    <!-- 规则说明 -->
+    <div class="card" id="rules" style="margin-bottom:0">
+      <div class="card-title"><span>分成规则说明<small>当前生效规则，调整前会提前通知</small></span><span class="demo-param">全部为示例参数，待业务方确定</span></div>
+      <div class="formula">
+        <div class="f">当月分成 = 名额天数 × 日分成基数 × 分成比例 × 质量系数 × 丰富度系数</div>
+        <div v-for="e in egs" :key="e.m">{{ e.m }}{{ e.cur ? '（本期预计）' : '' }}：{{ $fmt(e.days) }} × (400 ÷ 30) × 20% × {{ e.q.toFixed(2) }} × {{ e.r.toFixed(2) }} = {{ $fmt(e.raw, 2) }}，四舍五入为 <b>{{ $fmt(e.amt) }} 元</b></div>
+        <div class="small muted">日分成基数按 400 ÷ 30 计算，不先取整为 13.33，结果最后四舍五入到元。</div>
+      </div>
+      <table class="plain-table rule-table">
+        <thead><tr><th style="width:96px">项目</th><th style="width:150px">当前规则</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr v-for="r in rules" :key="r[0]"><td>{{ r[0] }}</td><td class="v">{{ r[1] }}</td><td>{{ r[2] }} <span class="demo-param">示例参数，待业务方确定</span></td></tr>
+        </tbody>
+      </table>
+      <div class="tip-box small mt12" style="margin-bottom:0">不计提的情形：名额冻结（暂停或断传）期间、不满足资格门槛的期间、钢厂订单未实收或退款、关联方订阅、已退出平台。上游退款导致已计提金额变化时，自动生成冲正记录，从后续结算中扣减。</div>
+    </div>
+
+    <!-- 如何提高收益 -->
+    <div class="card" style="margin-bottom:0">
+      <div class="card-title"><span>如何提高收益<small>影响本企业分成的因素与当前状态</small></span></div>
+      <div class="lever">
+        <span class="ic"><el-icon><Medal /></el-icon></span>
+        <div>
+          <div class="tt">质量评级 <span class="level-tag A">A</span><el-tag size="small" type="success" effect="plain">已是最高档</el-tag></div>
+          <div class="ds">决定质量系数：A 1.10、B 1.00、C 0.85。当前及时率 98.6%、映射率 96.5%、校验通过率 99.5%。处理待映射物料和校验失败数据可以保持评级。<a href="data-check.html">去自查 ›</a></div>
+        </div>
+        <div class="gain">质量系数<b>1.10</b></div>
+      </div>
+      <div class="lever">
+        <span class="ic"><el-icon><Calendar /></el-icon></span>
+        <div>
+          <div class="tt">有效上传天数 <el-tag size="small" type="success" effect="plain">本月 23 天，已达标</el-tag></div>
+          <div class="ds">当月不少于 20 天才有分成资格；连续 10 天没有有效上传，名额会被冻结，冻结期间不计提。<a href="daily-summary.html">每日上传汇总 ›</a></div>
+        </div>
+        <div class="gain">资格门槛<b>已满足</b></div>
+      </div>
+      <div class="lever">
+        <span class="ic"><el-icon><List /></el-icon></span>
+        <div>
+          <div class="tt">选填字段填报率 <b>78%</b><el-tag size="small" type="warning" effect="plain">还有提升空间</el-tag></div>
+          <div class="ds">填报率越高，丰富度系数越高（当前档 +0.05；达到 85% 为 +0.06，95% 为 +0.07）。</div>
+          <div class="bars">
+            <div class="b" v-for="f in fills" :key="f.t"><div class="l"><span>{{ f.t }}</span><b>{{ f.v }}%</b></div><el-progress :percentage="f.v" :show-text="false" :stroke-width="6" :color="f.v < 75 ? '#e6a23c' : '#18a058'"></el-progress></div>
+          </div>
+        </div>
+        <div class="gain">到 85% 预计<b>约 +20 元/月</b></div>
+      </div>
+      <div class="lever">
+        <span class="ic"><el-icon><Files /></el-icon></span>
+        <div>
+          <div class="tt">是否全量上传 <el-tag size="small" type="info" effect="plain">当前：部分上传</el-tag></div>
+          <div class="ds">当前规则 v7 只上传主营大类、指定仓库。声明并实际全量上传时，丰富度系数 +0.03。是否放开由你决定。<a href="upload-rules.html">上传条件规则 ›</a></div>
+        </div>
+        <div class="gain">全量上传预计<b>约 +61 元/月</b></div>
+      </div>
+      <div class="lever">
+        <span class="ic"><el-icon><PriceTag /></el-icon></span>
+        <div>
+          <div class="tt">是否上传价格 <el-tag size="small" type="info" effect="plain">当前：{{ $state.dnPrice==='on' ? '已开启' : '未开启' }}</el-tag><span class="demo-param">是否计入系数待确认</span></div>
+          <div class="ds">上传价格、上传粒度（行级或日汇总）是否计入丰富度系数，业务方尚未确定。<b>目前不计入，不影响当前收益</b>；如将来计入，会提前通知。<a href="upload-settings.html">上传设置 ›</a></div>
+        </div>
+        <div class="gain">当前<b class="na">不影响收益</b></div>
+      </div>
+      <div class="tip-box blue small mt8" style="margin-bottom:0">被多少家钢厂订阅由钢厂自行选择。保持高质量评级、完善企业画像，有助于被更多钢厂选入数据池。<a href="visibility.html">企业画像 ›</a></div>
+    </div>
+  </div>
+
+  <!-- 开票与收款账户 -->
+  <div class="card" id="acct">
+    <div class="card-title"><span>开票与收款账户</span><span class="demo-param">发票类型与税务处理待财务与法务确定（N-17）</span></div>
+    <div class="grid c2" style="margin-bottom:0">
+      <div class="acct">
+        <h4><el-icon><CreditCard /></el-icon>对公收款账户<el-tag size="small" type="success" effect="plain" style="margin-left:auto">户名与认证主体一致</el-tag></h4>
+        <dl class="kv" style="grid-template-columns:88px 1fr">
+          <dt>户名</dt><dd><b>{{ acct.name }}</b></dd>
+          <dt>认证主体</dt><dd>{{ acct.name }}（统一社会信用代码 9132 **** **** 5K7R）</dd>
+          <dt>开户行</dt><dd>{{ acct.bank }}</dd>
+          <dt>账号</dt><dd class="num">{{ acct.no }}</dd>
+          <dt>最近变更</dt><dd>{{ acct.changed }}</dd>
+        </dl>
+        <div class="row between mt12">
+          <span class="small muted">平台只向与认证企业主体同名的对公账户付款，不支持个人账户或第三方账户。</span>
+          <el-button size="small" @click="openAcct"><el-icon><Edit /></el-icon>修改账户</el-button>
+        </div>
+      </div>
+      <div class="acct">
+        <h4><el-icon><Tickets /></el-icon>开票信息（开给平台）</h4>
+        <dl class="kv" style="grid-template-columns:88px 1fr">
+          <dt>购买方</dt><dd>货袋子平台运营主体（名称、税号以结算单所附为准）</dd>
+          <dt>发票类型</dt><dd>增值税专用发票（电子）<span class="demo-param" style="margin-left:6px">示例</span></dd>
+          <dt>开票项目</dt><dd>信息技术服务 · 数据服务费</dd>
+          <dt>开票金额</dt><dd>与结算单应付金额一致（含税）</dd>
+          <dt>上传方式</dt><dd>在结算单上点击“上传发票”，支持 PDF、OFD</dd>
+        </dl>
+        <div class="small muted mt12">发票核对通过后排入最近一个付款批次（每月 10 日、25 日）。发票被退回时会注明原因，可重新上传。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid c2">
+    <div class="tip-box orange" style="margin-bottom:0"><b>不上架的企业不参与分成。</b>选择“不上架，只上传用于本企业对标”时，不会被任何钢厂订阅，也不产生收益。实名、匿名、只对指定钢厂可见三种上架方式都参与分成，规则相同。本企业当前为实名上架。<a href="visibility.html">名称可见性设置 ›</a></div>
+    <div class="tip-box orange" style="margin-bottom:0"><b>名额冻结期间不计提。</b>暂停上传，或连续 10 天没有有效上传时，订阅本企业的名额进入冻结，冻结的名额日不计入名额天数；恢复上传后解冻。2026-08 曾因暂停 2 天少计 44 个名额日。<a href="pause-exit.html">暂停与退出 ›</a></div>
+  </div>
+
+  <!-- 确认结算单 -->
+  <el-dialog v-model="dlg.confirm" title="确认结算单" width="560px">
+    <template v-if="cur">
+      <div class="small muted">{{ cur.no }} · 结算期间 {{ cur.m }}</div>
+      <div class="stm-sum">
+        <div><div class="l">计提合计</div><div class="v num">{{ $fmt(cur.amt) }}</div></div>
+        <div><div class="l">冲正</div><div class="v num">{{ cur.adj ? '−' + $fmt(-cur.adj) : '0' }}</div></div>
+        <div><div class="l">结转</div><div class="v num">{{ cur.carry > 0 ? '+' + $fmt(cur.carry) : '0' }}</div></div>
+        <div style="border-color:#a8d2ff;background:#f7fbff"><div class="l">应付金额（元）</div><div class="v num">{{ $fmt(cur.pay) }}</div></div>
+      </div>
+      <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="名额天数">{{ $fmt(monthOf(cur).days) }}</el-descriptions-item>
+        <el-descriptions-item label="订阅家数（月末）">{{ monthOf(cur).subs }} 家</el-descriptions-item>
+        <el-descriptions-item label="质量系数">{{ monthOf(cur).q.toFixed(2) }}</el-descriptions-item>
+        <el-descriptions-item label="丰富度系数">{{ monthOf(cur).r.toFixed(2) }}</el-descriptions-item>
+      </el-descriptions>
+      <div class="tip-box small mt12" style="margin-bottom:0">确认后进入“待开票”：请按应付金额向平台开具发票并上传，发票核对通过后对公付款到 <b>{{ acct.name }}</b>（{{ acct.bank }}，尾号 {{ acct.no.slice(-4) }}）。确认截止 {{ cur.due }}，逾期未处理视为确认。</div>
+    </template>
+    <template #footer>
+      <el-button @click="dlg.confirm = false">取消</el-button>
+      <el-button @click="dlg.confirm = false; open('dispute', cur)">提出异议</el-button>
+      <el-button type="primary" @click="doConfirm">确认无误</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 提出异议 -->
+  <el-dialog v-model="dlg.dispute" title="对结算单提出异议" width="560px">
+    <template v-if="cur">
+      <div class="small muted mb12">{{ cur.no }} · 结算期间 {{ cur.m }} · 应付金额 {{ $fmt(cur.pay) }} 元</div>
+      <el-form label-width="88px">
+        <el-form-item label="异议项">
+          <el-checkbox-group v-model="disp.items">
+            <el-checkbox value="名额天数">名额天数</el-checkbox>
+            <el-checkbox value="质量系数">质量系数</el-checkbox>
+            <el-checkbox value="丰富度系数">丰富度系数</el-checkbox>
+            <el-checkbox value="冲正">冲正</el-checkbox>
+            <el-checkbox value="其他">其他</el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+        <el-form-item label="说明"><el-input v-model="disp.text" type="textarea" :rows="3" placeholder="请说明你认为有误的地方和依据"></el-input></el-form-item>
+        <el-form-item label="附件"><el-button size="small" @click="$info('原型演示：选择文件上传')"><el-icon><Upload /></el-icon>上传材料</el-button><span class="small muted" style="margin-left:8px">选填</span></el-form-item>
+      </el-form>
+      <div class="tip-box small" style="margin-bottom:0">提出异议后，该结算单暂停后续流程，平台在 5 个工作日内答复；其他月份的结算不受影响。平台核对时只查看台账与质量指标，如需查看明细须另行取得你的授权。</div>
+    </template>
+    <template #footer>
+      <el-button @click="dlg.dispute = false">取消</el-button>
+      <el-button type="primary" :disabled="!disp.items.length || !disp.text.trim()" @click="doDispute">提交异议</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 上传发票 -->
+  <el-dialog v-model="dlg.invoice" title="上传发票" width="560px">
+    <template v-if="cur">
+      <el-descriptions :column="1" border size="small">
+        <el-descriptions-item label="结算单">{{ cur.no }}（{{ cur.m }}）</el-descriptions-item>
+        <el-descriptions-item label="应开票金额"><b>{{ $fmt(cur.pay) }}.00 元</b>（含税）</el-descriptions-item>
+        <el-descriptions-item label="购买方">货袋子平台运营主体（名称、税号见结算单附件）</el-descriptions-item>
+      </el-descriptions>
+      <el-form label-width="88px" class="mt16">
+        <el-form-item label="发票号码"><el-input v-model="inv.no" placeholder="20 位数电发票号码"></el-input></el-form-item>
+        <el-form-item label="开票日期"><el-date-picker v-model="inv.date" type="date" value-format="YYYY-MM-DD" style="width:100%"></el-date-picker></el-form-item>
+        <el-form-item label="发票文件">
+          <el-button @click="inv.file = '恒运钢贸_数据服务费_' + cur.m + '.pdf'"><el-icon><Upload /></el-icon>选择文件</el-button>
+          <span v-if="inv.file" style="margin-left:10px"><el-icon style="vertical-align:-2px;color:#18a058"><CircleCheck /></el-icon> {{ inv.file }}</span>
+          <span v-else class="small muted" style="margin-left:10px">PDF 或 OFD，不超过 5 MB</span>
+        </el-form-item>
+      </el-form>
+      <div class="tip-box small" style="margin-bottom:0">销售方须为 <b>{{ acct.name }}</b>，与认证主体、收款账户户名一致。核对通过后进入“待付款”。</div>
+    </template>
+    <template #footer>
+      <el-button @click="dlg.invoice = false">取消</el-button>
+      <el-button type="primary" :disabled="!inv.no || !inv.file" @click="doInvoice">提交发票</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 查看发票 -->
+  <el-dialog v-model="dlg.invoiceView" title="发票信息" width="520px">
+    <template v-if="cur">
+      <el-descriptions :column="1" border size="small">
+        <el-descriptions-item label="结算单">{{ cur.no }}（{{ cur.m }}）</el-descriptions-item>
+        <el-descriptions-item label="发票号码">{{ cur.invNo }}</el-descriptions-item>
+        <el-descriptions-item label="开票金额">{{ $fmt(cur.pay) }}.00 元</el-descriptions-item>
+        <el-descriptions-item label="核对结果"><el-tag size="small" type="success">核对通过</el-tag> {{ cur.invAt }}</el-descriptions-item>
+        <el-descriptions-item label="预计付款">{{ cur.payPlan }}</el-descriptions-item>
+      </el-descriptions>
+      <div class="small muted mt12">{{ cur.invNote }}</div>
+    </template>
+    <template #footer><el-button type="primary" @click="dlg.invoiceView = false">关闭</el-button></template>
+  </el-dialog>
+
+  <!-- 付款凭证 -->
+  <el-dialog v-model="dlg.voucher" title="付款凭证" width="520px">
+    <template v-if="cur">
+      <div class="voucher">
+        <div class="small muted" style="text-align:center">对公付款回单（示意）</div>
+        <div class="amt num">¥ {{ $fmt(cur.pay) }}.00</div>
+        <div class="ok"><el-icon style="vertical-align:-2px"><CircleCheckFilled /></el-icon> 付款成功</div>
+        <el-descriptions :column="1" border size="small">
+          <el-descriptions-item label="结算单">{{ cur.no }}（{{ cur.m }}）</el-descriptions-item>
+          <el-descriptions-item label="付款日期">{{ cur.paidAt }}</el-descriptions-item>
+          <el-descriptions-item label="付款方">货袋子平台运营主体对公账户</el-descriptions-item>
+          <el-descriptions-item label="收款方">{{ acct.name }} · {{ acct.bank }} · 尾号 {{ acct.no.slice(-4) }}</el-descriptions-item>
+          <el-descriptions-item label="银行流水号">{{ cur.flow }}</el-descriptions-item>
+          <el-descriptions-item label="对应发票">{{ cur.invNo }}</el-descriptions-item>
+        </el-descriptions>
+      </div>
+    </template>
+    <template #footer>
+      <el-button @click="$demo('付款回单 PDF 已生成')"><el-icon><Download /></el-icon>下载回单</el-button>
+      <el-button type="primary" @click="dlg.voucher = false">关闭</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 异议进度 -->
+  <el-dialog v-model="dlg.progress" title="异议处理进度" width="560px">
+    <template v-if="cur">
+      <div class="small muted mb12">{{ cur.no }} · 结算期间 {{ cur.m }} · 应付金额 {{ $fmt(cur.pay) }} 元</div>
+      <el-timeline>
+        <el-timeline-item v-for="t in cur.track" :key="t.at + t.t" :timestamp="t.at" placement="top" :type="t.type"><b>{{ t.who }}</b>：{{ t.t }}</el-timeline-item>
+      </el-timeline>
+    </template>
+    <template #footer>
+      <el-button @click="withdraw">撤回异议并确认结算单</el-button>
+      <el-button type="primary" @click="dlg.progress = false">关闭</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 冻结原因与申诉 -->
+  <el-dialog v-model="dlg.freeze" title="冻结原因与申诉" width="580px">
+    <template v-if="cur">
+      <el-alert type="warning" show-icon :closable="false" :title="'结算单 ' + cur.no + ' 的待付金额 ' + $fmt(cur.pay) + ' 元已冻结'"></el-alert>
+      <el-descriptions :column="1" border size="small" class="mt12">
+        <el-descriptions-item label="冻结时间">2026-11-10</el-descriptions-item>
+        <el-descriptions-item label="冻结原因">平台季度复核发现 2026-07-21 至 07-25 的日销量较前后各两周均值高出约 2.4 倍，触发数据真实性核查。核查期间该期待付金额暂不支付。</el-descriptions-item>
+        <el-descriptions-item label="影响范围">仅 2026-07 期结算单；其他月份的计提、结算、付款照常进行</el-descriptions-item>
+        <el-descriptions-item label="可能的结果">核查无异常：解冻并进入正常流程。查实造假：该期分成不予支付，并可按协议追回相关期间已付分成</el-descriptions-item>
+        <el-descriptions-item label="申诉状态"><el-tag size="small" :type="appealed ? 'warning' : 'info'">{{ appealed ? '申诉处理中' : '未申诉' }}</el-tag><span v-if="appealed" class="small muted" style="margin-left:8px">{{ appealAt }} 提交，平台将在 10 个工作日内答复</span></el-descriptions-item>
+      </el-descriptions>
+      <el-form v-if="!appealed" label-position="top" class="mt12">
+        <el-form-item label="申诉说明"><el-input v-model="appealText" type="textarea" :rows="3" placeholder="例如：该时段为某工程项目集中提货，可提供合同或出库汇总作为佐证"></el-input></el-form-item>
+      </el-form>
+      <div class="tip-box small" style="margin-bottom:0">核查人员默认看不到你的明细数据。如需查看，会发起明细访问工单，由你授权后限时查看，记录见 <a href="ledger.html">数据使用透明账本</a>。</div>
+    </template>
+    <template #footer>
+      <el-button @click="dlg.freeze = false">关闭</el-button>
+      <el-button v-if="!appealed" type="primary" :disabled="!appealText.trim()" @click="doAppeal">提交申诉</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 结算单明细 -->
+  <el-dialog v-model="dlg.stm" title="结算单明细" width="620px">
+    <template v-if="cur">
+      <div class="row between"><b class="num">{{ cur.no }}</b><el-tag size="small" :type="tagType(cur.st)">{{ cur.st }}</el-tag></div>
+      <div class="stm-sum">
+        <div><div class="l">计提合计</div><div class="v num">{{ $fmt(cur.amt) }}</div></div>
+        <div><div class="l">冲正</div><div class="v num">{{ cur.adj ? '−' + $fmt(-cur.adj) : '0' }}</div></div>
+        <div><div class="l">结转</div><div class="v num">{{ cur.carry ? (cur.carry > 0 ? '+' : '−') + $fmt(Math.abs(cur.carry)) : '0' }}</div></div>
+        <div style="border-color:#a8d2ff;background:#f7fbff"><div class="l">应付金额（元）</div><div class="v num">{{ $fmt(cur.pay) }}</div></div>
+      </div>
+      <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="结算期间">{{ cur.m }}</el-descriptions-item>
+        <el-descriptions-item label="出单日期">{{ cur.issue }}</el-descriptions-item>
+        <el-descriptions-item label="名额天数">{{ $fmt(monthOf(cur).days) }}</el-descriptions-item>
+        <el-descriptions-item label="订阅家数（月末）">{{ monthOf(cur).subs }} 家</el-descriptions-item>
+        <el-descriptions-item label="日分成基数">400 ÷ 30 ≈ 13.33 元/名额·日</el-descriptions-item>
+        <el-descriptions-item label="分成比例">20%</el-descriptions-item>
+        <el-descriptions-item label="质量系数">{{ monthOf(cur).q.toFixed(2) }}</el-descriptions-item>
+        <el-descriptions-item label="丰富度系数">{{ monthOf(cur).r.toFixed(2) }}</el-descriptions-item>
+        <el-descriptions-item label="冲正说明" :span="2">{{ monthOf(cur).adjNote || '无' }}</el-descriptions-item>
+        <el-descriptions-item label="当前进度" :span="2">{{ cur.prog }}</el-descriptions-item>
+      </el-descriptions>
+      <div class="tip-box small mt12" style="margin-bottom:0">结算单按名额日台账汇总，只列订阅家数与名额天数，<b>不列钢厂名称，不按钢厂拆分金额</b>。</div>
+    </template>
+    <template #footer>
+      <el-button @click="$demo('结算单 PDF 已生成')"><el-icon><Download /></el-icon>下载结算单</el-button>
+      <el-button type="primary" @click="dlg.stm = false">关闭</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 修改收款账户：二次验证 -->
+  <el-dialog v-model="dlg.acct" title="修改收款账户" width="600px">
+    <el-steps :active="acctStep" align-center finish-status="success" style="margin-bottom:20px">
+      <el-step title="二次验证"></el-step>
+      <el-step title="填写新账户"></el-step>
+      <el-step title="提交核验"></el-step>
+    </el-steps>
+    <template v-if="acctStep === 0">
+      <el-alert type="warning" show-icon :closable="false" title="修改收款账户属于敏感操作，需要验证企业管理员身份。"></el-alert>
+      <el-form label-width="110px" class="mt16">
+        <el-form-item label="管理员手机">138****5620<el-button size="small" style="margin-left:12px" :disabled="acctForm.sent" @click="acctForm.sent = true; $demo('验证码已发送（原型演示，输入任意 6 位数字）')">{{ acctForm.sent ? '已发送（58 秒）' : '获取验证码' }}</el-button></el-form-item>
+        <el-form-item label="短信验证码"><el-input v-model="acctForm.code" maxlength="6" placeholder="6 位数字" style="width:180px"></el-input></el-form-item>
+        <el-form-item label="登录密码"><el-input v-model="acctForm.pwd" type="password" show-password placeholder="再次输入登录密码" style="width:260px"></el-input></el-form-item>
+      </el-form>
+    </template>
+    <template v-else-if="acctStep === 1">
+      <el-form label-width="110px">
+        <el-form-item label="户名"><el-input :model-value="acct.name" disabled></el-input><div class="small muted">户名须与认证企业主体一致，不可修改。企业更名请先办理认证变更。</div></el-form-item>
+        <el-form-item label="开户行"><el-input v-model="acctForm.bank" placeholder="开户行全称，精确到支行"></el-input></el-form-item>
+        <el-form-item label="银行账号"><el-input v-model="acctForm.no" placeholder="对公账号"></el-input></el-form-item>
+        <el-form-item label="开户证明"><el-button size="small" @click="acctForm.file = true"><el-icon><Upload /></el-icon>上传开户许可证或基本存款账户信息</el-button><el-icon v-if="acctForm.file" style="margin-left:8px;color:#18a058"><CircleCheck /></el-icon></el-form-item>
+      </el-form>
+    </template>
+    <template v-else>
+      <el-result icon="success" title="已提交，等待核验" sub-title="平台将向新账户打入一笔小额验证款，由你回填金额完成核验；核验通过后新账户生效。">
+        <template #extra><div class="small muted" style="line-height:1.8;text-align:left">核验期间继续使用原账户。<br>变更已通知本企业全部管理员（站内信、短信），并写入操作日志。<br>账户变更生效后 3 个工作日内不安排付款，防止账户被冒用。</div></template>
+      </el-result>
+    </template>
+    <template #footer>
+      <el-button @click="dlg.acct = false">{{ acctStep === 2 ? '关闭' : '取消' }}</el-button>
+      <el-button v-if="acctStep === 0" type="primary" :disabled="acctForm.code.length !== 6 || !acctForm.pwd" @click="acctStep = 1">验证并继续</el-button>
+      <el-button v-if="acctStep === 1" type="primary" :disabled="!acctForm.bank || !acctForm.no || !acctForm.file" @click="submitAcct">提交核验</el-button>
+    </template>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  /* 示例参数：目录价 400 元/名额·月、分成比例 20%；计提 = 名额天数 × 400/30 × 20% × 质量系数 × 丰富度系数，四舍五入到元 */
+  const BASE = 400 / 30, RATE = 0.2;
+  const rawOf = (m) => m.days * BASE * RATE * m.q * m.r;
+  const MONTHS = [
+    { m: '2025-10', subs: 12, days: 186, q: 1.00, r: 1.00, adj: 0, note: '首月：2025-10-13 起陆续被订阅；不足起付金额，结转下期' },
+    { m: '2025-11', subs: 16, days: 442, q: 1.00, r: 1.00, adj: 0, note: '上期结转的 496 元并入本期结算单，应付 1,675 元' },
+    { m: '2025-12', subs: 19, days: 576, q: 1.00, r: 1.02, adj: 0, note: '' },
+    { m: '2026-01', subs: 20, days: 612, q: 1.10, r: 1.02, adj: 0, note: '质量评级升为 A' },
+    { m: '2026-02', subs: 20, days: 560, q: 1.10, r: 1.02, adj: 0, note: '' },
+    { m: '2026-03', subs: 21, days: 640, q: 1.10, r: 1.03, adj: 0, note: '' },
+    { m: '2026-04', subs: 21, days: 630, q: 1.10, r: 1.03, adj: -48, adjNote: '上游订单部分退款，冲回 16 个名额日的已计提金额', note: '' },
+    { m: '2026-05', subs: 22, days: 676, q: 1.10, r: 1.04, adj: 0, note: '' },
+    { m: '2026-06', subs: 22, days: 660, q: 1.10, r: 1.04, adj: 0, note: '' },
+    { m: '2026-07', subs: 22, days: 682, q: 1.10, r: 1.04, adj: 0, note: '' },
+    { m: '2026-08', subs: 22, days: 638, q: 1.10, r: 1.04, adj: 0, note: '08-09、08-10 暂停上传，名额冻结 2 天，少计 44 个名额日' },
+    { m: '2026-09', subs: 23, days: 675, q: 1.10, r: 1.04, adj: 0, note: '09-16 起新增 1 家订阅' },
+    { m: '2026-10', subs: 21, days: 700, q: 1.10, r: 1.05, adj: 0, note: '10-22、10-29 各有 1 家到期未续' },
+    { m: '2026-11', subs: 23, days: 690, q: 1.10, r: 1.05, adj: 0, cur: true, note: '11-01 起新增 2 家订阅；按 23 家 × 30 天预计' },
+  ];
+  MONTHS.forEach((m) => { m.amt = Math.round(rawOf(m)); });
+  const no = (m) => 'ST-' + m.replace('-', '') + '-00321';
+  const S = (m, st, extra) => {
+    const mo = MONTHS.find((x) => x.m === m);
+    const carry = extra.carry || 0;
+    const pay = st === '已结转' ? 0 : mo.amt + mo.adj + carry;
+    const d = new Date(m + '-01T00:00:00'); d.setMonth(d.getMonth() + 1);
+    const issue = d.getFullYear() + '-' + STP.pad(d.getMonth() + 1) + '-05';
+    return Object.assign({ m, no: no(m), amt: mo.amt, adj: mo.adj, carry, pay, st, issue, due: issue.slice(0, 8) + '20' }, extra);
+  };
+  const paid = (m, at, flow, inv, extra) => S(m, '已付款', Object.assign({ paidAt: at, flow, invNo: inv, prog: at + ' 已付款到账' }, extra || {}));
+  const STMS = [
+    S('2026-10', '待确认', { prog: '请在 2026-11-30 前确认或提出异议', due: '2026-11-30' }),
+    S('2026-09', '有异议', { prog: '2026-10-12 提出异议，平台已答复，待你回复', track: [
+      { at: '2026-10-05', who: '平台', t: '生成结算单，应付金额 2,059 元', type: 'info' },
+      { at: '2026-10-12 10:26', who: '陈海峰（企业管理员）', t: '对“丰富度系数”提出异议：我司自 2026-09-08 起已补齐流向地字段，选填字段填报率已达上一档，9 月应按 1.05 计。', type: 'warning' },
+      { at: '2026-10-19 16:40', who: '平台结算专员', t: '答复：丰富度系数按上月末的评定结果适用。2026-08 月末填报率为 72%，对应 1.04；2026-09 月末为 76%，自 2026-10 起按 1.05 计。如无其他疑问，请撤回异议并确认。', type: 'primary' },
+      { at: '2026-11-20 09:15', who: '陈海峰（企业管理员）', t: '补充说明：请确认规则文本中“按上月末评定”的表述位置。', type: 'warning' },
+      { at: '2026-11-24', who: '平台结算专员', t: '处理中，预计 2026-11-27 前答复。', type: 'info' }] }),
+    S('2026-08', '待开票', { prog: '2026-09-08 已确认，等待上传发票' }),
+    S('2026-07', '已冻结', { prog: '2026-08-07 已确认；2026-11-10 因数据核查冻结，申诉处理中' }),
+    S('2026-06', '待付款', { prog: '发票 2026-11-18 核对通过，排入 2026-11-25 付款批次', invNo: '26322000000418205563', invAt: '2026-11-18', payPlan: '2026-11-25 付款批次', invNote: '首次上传的发票购买方税号有误，已于 2026-11-06 退回；2026-11-17 重新上传。' }),
+    paid('2026-05', '2026-07-25', 'BK20260725003318', '26322000000217640912'),
+    paid('2026-04', '2026-07-25', 'BK20260725003317', '26322000000217640897'),
+    paid('2026-03', '2026-04-25', 'BK20260425002106', '26322000000109523471'),
+    paid('2026-02', '2026-04-25', 'BK20260425002105', '26322000000109523466'),
+    paid('2026-01', '2026-04-25', 'BK20260425002104', '26322000000109523458'),
+    paid('2025-12', '2026-01-25', 'BK20260125000742', '26322000000004718830'),
+    paid('2025-11', '2026-01-25', 'BK20260125000741', '26322000000004718826', { carry: 496 }),
+    S('2025-10', '已结转', { carry: -496, prog: '计提 496 元，不足起付金额 500 元，已结转到 2025-11 期' }),
+  ];
+  const TAG = { 待确认: 'primary', 待开票: 'warning', 待付款: 'warning', 已付款: 'success', 有异议: 'danger', 已冻结: 'danger', 已结转: 'info', 计提中: 'primary' };
+
+  STP.mount({
+    data() {
+      return {
+        months: MONTHS, stms: STMS, stFilter: 'all',
+        dlg: { confirm: false, dispute: false, invoice: false, invoiceView: false, voucher: false, progress: false, freeze: false, stm: false, acct: false },
+        cur: null,
+        disp: { items: [], text: '' },
+        inv: { no: '', date: '2026-11-24', file: '' },
+        appealed: true, appealAt: '2026-11-14', appealText: '',
+        acct: { name: '苏州恒运钢铁贸易有限公司', bank: '江南商业银行苏州工业园区支行', no: '3205 0188 **** **** 6718', changed: '2025-09-19 首次登记，未变更过' },
+        acctStep: 0, acctForm: { sent: false, code: '', pwd: '', bank: '', no: '', file: false },
+        fills: [{ t: '流向地', v: 71 }, { t: '客户类型', v: 88 }, { t: '下游行业', v: 75 }],
+        rules: [
+          ['分成基数', '目录价 400 元/名额·月', '日分成基数 = 400 ÷ 30，约 13.33 元/名额·日（计算时不先取整），与钢厂实际享受的折扣无关，你的收益不随折扣波动。'],
+          ['分成比例', '20%', '分成基数中分给被订阅企业的比例。'],
+          ['质量系数', 'A 1.10 · B 1.00 · C 0.85', '按上月末的质量评级适用。'],
+          ['丰富度系数', '1.00 – 1.10', '由选填字段填报率（最高 +0.07）与是否全量上传（+0.03）决定，按上月末评定结果适用。'],
+          ['资格门槛', '评级不低于 C，且当月有效上传不少于 20 天', '不满足的月份不计提。'],
+          ['结算周期', '月结', '次月 5 日出结算单。'],
+          ['起付金额', '500 元', '应付金额不足 500 元时结转到下期，不作废。'],
+          ['支付方式', '开票后对公付款', '你确认结算单并开票后，平台付款到与认证主体同名的对公账户。'],
+          ['关联方订阅', '不分成', '钢厂订阅自己关联贸易公司的名额不计提。'],
+        ],
+      };
+    },
+    computed: {
+      monthsDesc() { return this.months.slice().reverse(); },
+      curMonth() { return this.months.find((m) => m.cur); },
+      egs() { return this.months.filter((x) => x.m === '2026-10' || x.cur).map((m) => Object.assign({ raw: rawOf(m) }, m)); },
+      pending() { return this.stms.filter((s) => s.st === '待确认' || s.st === '有异议'); },
+      pendingAmt() { return this.pending.reduce((a, s) => a + s.pay, 0); },
+      pendingList() { return this.pending.length ? this.pending.map((s) => s.m + ' ' + s.st).join('，') : '没有待处理的结算单'; },
+      settledAmt() { return this.stms.filter((s) => ['待开票', '待付款', '已付款', '已冻结'].includes(s.st)).reduce((a, s) => a + s.pay, 0); },
+      paidAmt() { return this.stms.filter((s) => s.st === '已付款').reduce((a, s) => a + s.pay, 0); },
+      frozen() { return this.stms.find((s) => s.st === '已冻结'); },
+      todoCount() { return this.stms.filter((s) => ['待确认', '待开票'].includes(s.st)).length; },
+      stmList() { return this.stFilter === 'todo' ? this.stms.filter((s) => ['待确认', '待开票'].includes(s.st)) : this.stms; },
+      chart() {
+        const o = STP.chart.line({
+          x: MONTHS.map((m) => m.m), y2: '家', yName: '元', smooth: false, grid: { top: 40, right: 44 },
+          series: [
+            { name: '计提金额', type: 'bar', unit: '元', barMaxWidth: 26, data: MONTHS.map((m) => m.cur ? { value: m.amt, itemStyle: { color: '#a9c8f5', borderColor: '#2f6fde', borderType: 'dashed', borderWidth: 1 } } : m.amt), itemStyle: { borderRadius: [3, 3, 0, 0] } },
+            { name: '月末订阅家数', unit: '家', yAxisIndex: 1, data: MONTHS.map((m) => m.subs), showSymbol: true, lineStyle: { width: 2 } }],
+        });
+        o.color = ['#2f6fde', '#f59f00']; o.legend.right = undefined; o.legend.left = 'center';
+        o.yAxis[0].scale = false; o.yAxis[1].scale = false; o.yAxis[1].min = 0; o.yAxis[1].max = 30;
+        o.xAxis.axisLabel = Object.assign({}, o.xAxis.axisLabel, { formatter: (v) => v.slice(2) });
+        return o;
+      },
+    },
+    methods: {
+      jump(id) { const el = document.getElementById(id); if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 68, behavior: 'smooth' }); },
+      tagType(st) { return TAG[st] || 'info'; },
+      stOf(row) { if (row.cur) return '计提中'; const s = this.stms.find((x) => x.m === row.m); return s ? s.st : '—'; },
+      monthOf(s) { return this.months.find((m) => m.m === s.m); },
+      open(type, row) {
+        this.cur = row;
+        if (type === 'dispute') this.disp = { items: [], text: '' };
+        if (type === 'invoice') this.inv = { no: '', date: '2026-11-24', file: '' };
+        this.dlg[type] = true;
+      },
+      doConfirm() { const s = this.cur; s.st = '待开票'; s.prog = '2026-11-24 已确认，等待上传发票'; this.dlg.confirm = false; this.$demo('已确认 ' + s.m + ' 结算单，请开票后上传发票'); },
+      doDispute() {
+        const s = this.cur; s.st = '有异议'; s.prog = '2026-11-24 提出异议（' + this.disp.items.join('、') + '），平台将在 5 个工作日内答复';
+        s.track = [{ at: s.issue, who: '平台', t: '生成结算单，应付金额 ' + STP.fmt(s.pay) + ' 元', type: 'info' }, { at: '2026-11-24 14:30', who: '陈海峰（企业管理员）', t: '对“' + this.disp.items.join('、') + '”提出异议：' + this.disp.text, type: 'warning' }];
+        this.dlg.dispute = false; this.$demo('异议已提交，该结算单暂停后续流程');
+      },
+      withdraw() { const s = this.cur; s.st = '待开票'; s.prog = '2026-11-24 撤回异议并确认，等待上传发票'; this.dlg.progress = false; this.$demo('已撤回异议并确认 ' + s.m + ' 结算单'); },
+      doInvoice() {
+        const s = this.cur; s.st = '待付款'; s.invNo = this.inv.no; s.invAt = '待核对'; s.payPlan = '核对通过后排入最近的付款批次（每月 10 日、25 日）'; s.invNote = '发票已提交，平台将在 3 个工作日内核对。';
+        s.prog = '2026-11-24 已上传发票，待平台核对后付款'; this.dlg.invoice = false; this.$demo('发票已提交，核对通过后安排付款');
+      },
+      doAppeal() { this.appealed = true; this.appealAt = '2026-11-24'; this.dlg.freeze = false; this.$demo('申诉已提交，平台将在 10 个工作日内答复'); },
+      openAcct() { this.acctStep = 0; this.acctForm = { sent: false, code: '', pwd: '', bank: '', no: '', file: false }; this.dlg.acct = true; },
+      submitAcct() { this.acctStep = 2; this.acct.changed = '2026-11-24 提交变更，核验中（核验通过前仍使用当前账户）'; },
+    },
+  });
+})();
+</script>
+</body>
+</html>

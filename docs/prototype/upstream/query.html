@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>多维查询 · 上游钢厂端 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.q-wrap { display: grid; grid-template-columns: 292px minmax(0, 1fr); gap: 14px; align-items: start; }
+.q-side .el-form-item { margin-bottom: 10px; }
+.q-side .el-form-item__label { font-size: 12px; color: #6b7787; line-height: 22px; height: 22px; }
+.cross td, .cross th { padding: 6px 8px !important; font-size: 12.5px; }
+.cross td.sec { background: #fbfbfd; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="upstream" active="query" title="多维查询" watermark
+  desc="按时间、地区、品类、规格、品牌等维度自由组合查询销量与库存。所有结果均经聚合引擎做披露判定：不满足最小贡献企业数或优势度条件的单元格屏蔽，企业数只给区间。">
+  <template #actions>
+    <el-select v-model="scheme" style="width:230px" @change="loadScheme">
+      <template #prefix><el-icon><Collection /></el-icon></template>
+      <el-option v-for="s in schemes" :key="s.k" :label="s.t" :value="s.k" />
+    </el-select>
+    <el-button @click="saveDlg = true"><el-icon><Star /></el-icon>保存方案</el-button>
+    <el-button type="primary" @click="exportDlg = true"><el-icon><Download /></el-icon>导出结果</el-button>
+  </template>
+
+  <sample-note :region="q.regionMode" :price="hasPrice"></sample-note>
+  <el-alert v-if="coarseSel.length" type="info" show-icon :closable="false" style="margin-bottom:12px">
+    <template #title>所选品类中的 <b>{{ coarseSel.join('、') }}</b> 样本较稀疏，最细披露粒度为“地区到省、时间到旬”。这些品类不提供地级市下钻与日、周粒度；按日、周查询时，它们与其他品类合并披露，不单独成行、成列。<a href="javascript:;" @click="grainDlg = true">查看各品类可查粒度</a>。</template>
+  </el-alert>
+
+  <el-alert v-if="q.regionMode==='流向地'" type="info" show-icon :closable="false" style="margin-bottom:12px">
+    <template #title>流向地为下游选填字段，当前数据池销量的流向地填报覆盖率为 <b>71.4%</b>。按地区展开时只统计已填报流向地的销量，各地区合计小于全口径销量；按品类、按时间展开且未筛选地区时仍为全口径。库存与可销天数始终按仓库所在地统计。</template>
+  </el-alert>
+
+  <div class="q-wrap">
+    <!-- 左侧：维度与指标面板 -->
+    <div class="card q-side" style="margin-bottom:0">
+      <el-form label-position="top" size="small">
+        <div class="side-panel-title" style="margin-top:0">时间</div>
+        <el-form-item label="时间粒度">
+          <el-radio-group v-model="f.grain"><el-radio-button v-for="g in ['日','周','旬','月']" :key="g" :label="g" :value="g" /></el-radio-group>
+        </el-form-item>
+        <el-form-item label="统计区间（最新可查：2026-11-23）">
+          <el-date-picker v-model="f.range" type="daterange" value-format="YYYY-MM-DD" range-separator="至" style="width:100%" :clearable="false" />
+        </el-form-item>
+
+        <div class="side-panel-title">筛选（仅支持层级选择与多选包含）</div>
+        <el-form-item label="销量地区口径">
+          <el-radio-group v-model="f.regionMode"><el-radio-button label="仓库所在地" value="仓库所在地" /><el-radio-button label="流向地" value="流向地" /></el-radio-group>
+        </el-form-item>
+        <el-form-item label="地区（省 / 地级市）">
+          <el-cascader v-model="f.regions" :options="regionOpts" :props="{multiple:true}" collapse-tags collapse-tags-tooltip clearable placeholder="全国" style="width:100%" />
+        </el-form-item>
+        <el-form-item>
+          <template #label>品类（大类 / 品名）<a href="javascript:;" style="margin-left:8px;font-weight:400" @click="grainDlg = true">各品类可查粒度</a></template>
+          <el-cascader v-model="f.cats" :options="catOpts" :props="{multiple:true}" collapse-tags collapse-tags-tooltip clearable placeholder="全部品类" style="width:100%" />
+        </el-form-item>
+        <el-form-item label="品牌">
+          <el-radio-group v-model="f.brand"><el-radio-button label="全部" value="全部" /><el-radio-button label="本厂（东岳）" value="本厂" /><el-radio-button label="其他品牌" value="其他" /></el-radio-group>
+        </el-form-item>
+
+        <div class="side-panel-title">行 / 列布局</div>
+        <el-form-item label="行维度（可逐级下钻）">
+          <el-select v-model="f.rowDim" style="width:100%">
+            <el-option label="仓库所在地 / 流向地（省 → 市）" value="region" />
+            <el-option label="品类（大类 → 品名 → 材质 / 规格段）" value="cat" />
+            <el-option label="时间（按所选粒度）" value="time" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="列维度">
+          <el-select v-model="f.colDim" style="width:100%">
+            <el-option label="指标（多指标并列）" value="metric" />
+            <el-option label="大类（交叉表，单指标）" value="cat" :disabled="f.rowDim!=='region'" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="f.colDim==='metric'" label="指标">
+          <el-checkbox-group v-model="f.metrics" style="display:grid;grid-template-columns:1fr 1fr">
+            <el-checkbox v-for="m in metricList" :key="m.k" :value="m.k" :disabled="m.price && !singleProduct">
+              <el-tooltip v-if="m.price && !singleProduct" content="价格类指标需先在“品类”中选定单一品名（跨品名均价无意义）" placement="right"><span>{{ m.t }}</span></el-tooltip>
+              <span v-else>{{ m.t }}</span>
+            </el-checkbox>
+          </el-checkbox-group>
+          <div v-if="!priceOpen" class="small muted" style="line-height:1.5;margin-top:4px"><el-icon style="vertical-align:-2px"><Lock /></el-icon> 价格类指标暂未开放（平台法务闸口关闭）</div>
+        </el-form-item>
+        <el-form-item v-else label="交叉表指标">
+          <el-radio-group v-model="f.crossMetric"><el-radio-button label="销量" value="sales" /><el-radio-button label="库存量" value="stock" /></el-radio-group>
+        </el-form-item>
+
+        <div class="side-panel-title">可用维度</div>
+        <div class="row" style="gap:6px">
+          <span class="pivot-chip row" v-for="d in ['时间','仓库所在地','流向地','大类','品名','材质','规格段','品牌（本厂 / 其他）','客户类型','下游行业']" :key="d">{{ d }}</span>
+          <el-tooltip content="为防止反推，平台不提供“按企业”维度，也不支持按企业筛选或排除" placement="top"><span class="pivot-chip disabled">企业（不提供）</span></el-tooltip>
+          <el-tooltip content="筛选不支持“排除某项”，避免用“全部 − 排除项”做差分" placement="top"><span class="pivot-chip disabled">排除筛选（不提供）</span></el-tooltip>
+        </div>
+        <div class="row mt16">
+          <el-button type="primary" size="default" :loading="loading" @click="run" style="flex:1"><el-icon><Search /></el-icon>查询</el-button>
+          <el-button size="default" @click="reset">重置</el-button>
+        </div>
+      </el-form>
+    </div>
+
+    <!-- 右侧：结果 -->
+    <div>
+      <el-alert v-if="res.excluded.length" type="warning" show-icon :closable="false">
+        <template #title>所选 {{ res.selCount }} 个地区中有 <b>{{ res.excluded.length }}</b> 项（{{ res.excluded.join('、') }}）因样本不足未计入求和。只有完整选中上级地区时，才按上级地区整体计算。</template>
+      </el-alert>
+      <div class="card" v-loading="loading" style="min-height:520px">
+        <div class="card-title">
+          <span>
+            <el-breadcrumb separator=">" style="display:inline-flex;font-size:14px">
+              <el-breadcrumb-item><a href="javascript:;" @click="drillTo(0)">{{ rootName }}</a></el-breadcrumb-item>
+              <el-breadcrumb-item v-for="(p,i) in path" :key="p"><a href="javascript:;" @click="drillTo(i+1)">{{ p }}</a></el-breadcrumb-item>
+            </el-breadcrumb>
+            <small>{{ res.range[0] }} 至 {{ res.range[1] }}（{{ res.days }} 天）· {{ q.grain }}粒度 · {{ q.brand==='全部' ? '全部品牌' : q.brand==='本厂' ? '本厂品牌（东岳）' : '其他品牌（合并）' }}</small>
+          </span>
+          <span class="right">
+            <el-radio-group v-model="view" size="small"><el-radio-button value="table"><el-icon><Grid /></el-icon> 表格</el-radio-button><el-radio-button value="chart"><el-icon><Histogram /></el-icon> 图表</el-radio-button></el-radio-group>
+          </span>
+        </div>
+
+        <!-- 多指标表 -->
+        <template v-if="q.colDim==='metric'">
+          <el-table v-show="view==='table'" :data="res.rows" border size="small" :row-class-name="rowCls">
+            <el-table-column :label="res.dimName" min-width="150" fixed>
+              <template #default="{row}">
+                <template v-if="row.merged"><el-tooltip placement="top" :content="'合并成员：' + row.members.join('、') + '。这些成员单独不满足披露条件，为防止用合计倒推，合并为一行披露。'"><span>其他<span class="merged-row-tag">合并披露</span></span></el-tooltip></template>
+                <template v-else-if="row.total"><b>合计</b></template>
+                <a v-else-if="row.child" href="javascript:;" @click="drill(row)">{{ row.name }} <el-icon style="vertical-align:-2px"><ArrowRight /></el-icon></a>
+                <el-tooltip v-else-if="row.lock" placement="top" content="该品类暂不提供此粒度"><span>{{ row.name }} <span class="level-tag lock">{{ row.lock }}</span></span></el-tooltip>
+                <span v-else>{{ row.name }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column v-if="on('sales')" label="销量(吨)" align="right" min-width="96"><template #default="{row}"><v-num :v="row.sales" :tip="row.tip" /></template></el-table-column>
+            <el-table-column v-if="on('nSales')" label="销量贡献企业数" align="center" width="118"><template #default="{row}"><span v-if="row.total" class="muted">—</span><contrib-tag v-else :n="row.sales===null ? 0 : row.nSales" /></template></el-table-column>
+            <el-table-column v-if="on('share')" label="销量占比" align="right" width="82"><template #default="{row}"><v-num :v="row.share" :d="1" suffix="%" /></template></el-table-column>
+            <el-table-column v-if="on('avg')" label="日均销量(吨)" align="right" min-width="100"><template #default="{row}"><v-num :v="row.avg" /></template></el-table-column>
+            <el-table-column v-if="on('mom')" align="right" width="96"><template #header>销量环比<el-tooltip placement="top" content="与上一个等长区间比较：按日展开时为前一日，按周为前 7 天，按旬、月为上一旬、上月（当月未结束时与上月同样天数比较）。聚合看板的“昨日销量”为避开周内波动，按上周同日比较，两处数值不同属口径差异。合计行 = 各行本期销量合计 ÷ 各行上期销量合计 − 1，同比同理"><el-icon style="vertical-align:-2px;margin-left:2px"><QuestionFilled /></el-icon></el-tooltip></template><template #default="{row}"><v-num :v="row.mom" :d="1" suffix="%" signed tip="分子或分母被屏蔽，比率类指标同步屏蔽" /></template></el-table-column>
+            <el-table-column v-if="on('yoy')" label="销量同比" align="right" width="86"><template #default="{row}"><v-num :v="row.yoy" :d="1" suffix="%" signed tip="分子或分母被屏蔽，比率类指标同步屏蔽" /></template></el-table-column>
+            <el-table-column v-if="on('stock')" label="期末库存(吨)" align="right" min-width="104"><template #default="{row}"><v-num :v="row.stock" /></template></el-table-column>
+            <el-table-column v-if="on('nStock')" label="库存贡献企业数" align="center" width="118"><template #default="{row}"><span v-if="row.total" class="muted">—</span><contrib-tag v-else :n="row.stock===null ? 0 : row.nStock" /></template></el-table-column>
+            <el-table-column v-if="on('days')" align="right" width="92"><template #header>可销天数<el-tooltip placement="top" content="期末库存 ÷ 统计区间内的日均销量。期末库存为统计区间最后一天的日末库存；库存与这里用的销量都按仓库所在地统计，与聚合看板一致"><el-icon style="vertical-align:-2px;margin-left:2px"><QuestionFilled /></el-icon></el-tooltip></template><template #default="{row}"><v-num :v="row.days" :d="1" tip="分子或分母被屏蔽，比率类指标同步屏蔽" /></template></el-table-column>
+            <el-table-column v-if="pOn('price')" label="加权均价(元/吨)" align="right" width="112"><template #default="{row}"><v-num :v="row.price" tip="有价企业样本不足，或该行销量已屏蔽，价格不予披露" /></template></el-table-column>
+            <el-table-column v-if="pOn('pchg')" label="均价涨跌" align="right" width="82"><template #default="{row}"><v-num :v="row.pchg" signed tip="任一期被屏蔽，涨跌不予展示" /></template></el-table-column>
+            <el-table-column v-if="pOn('cover')" label="价格覆盖率" align="center" width="128"><template #default="{row}"><cover-tag :r="row.price===null ? null : row.cover" /></template></el-table-column>
+            <el-table-column v-if="pOn('nPrice')" label="有价企业数" align="center" width="104"><template #default="{row}"><span v-if="row.total" class="muted">—</span><contrib-tag v-else :n="row.price===null ? 0 : row.nPrice" /></template></el-table-column>
+          </el-table>
+          <ve-chart v-if="view==='chart'" :option="chartOption" height="460px"></ve-chart>
+        </template>
+
+        <!-- 交叉表 -->
+        <template v-else>
+          <table v-show="view==='table'" class="plain-table cross">
+            <thead><tr><th>{{ q.regionMode }} ＼ 大类</th><th class="r" v-for="c in res.cols" :key="c">{{ c }}</th><th class="r">行合计</th></tr></thead>
+            <tbody>
+              <tr v-for="r in res.cross" :key="r.name" :class="{merged: r.merged, total: r.total}">
+                <td class="nowrap"><template v-if="r.merged"><el-tooltip :content="'合并成员：' + r.members.join('、')" placement="top"><span>其他<span class="merged-row-tag">合并披露</span></span></el-tooltip></template><template v-else>{{ r.name }}</template></td>
+                <td class="r" v-for="(c,i) in r.cells" :key="i" :class="{sec: c.sec}">
+                  <mask-cell v-if="c.v===null" :tip="c.sec ? '样本不足，不予披露（含为防止用合计倒推而追加屏蔽的单元格）' : '样本不足，不予披露'"></mask-cell>
+                  <el-tooltip v-else-if="!r.total" placement="top" :content="'贡献企业数：' + $band(c.n) + ' 家'"><span class="num">{{ $fmt(c.v) }}</span></el-tooltip>
+                  <span v-else class="num">{{ $fmt(c.v) }}</span>
+                </td>
+                <td class="r"><mask-cell v-if="r.hide" tip="样本不足，不予披露"></mask-cell><b v-else class="num">{{ $fmt(r.sum) }}</b></td>
+              </tr>
+            </tbody>
+          </table>
+          <ve-chart v-if="view==='chart'" :option="crossChartOption" height="460px"></ve-chart>
+          <div class="tip-box small mt12">交叉表中，某行或某列若只有 1 个单元格被屏蔽，可用“合计 − 其余”倒推，因此引擎会<b>追加屏蔽</b>同行 / 同列中最小的可见单元格；页面不区分单元格是因何种原因被屏蔽。扩大数据池可降低屏蔽比例，<a href="directory.html">去企业名录选购 ›</a></div>
+        </template>
+
+        <div v-if="hasPrice" class="tip-box orange small mt12"><b>样本成交均价，不是市场报价。</b>口径：含税、自提、非暂估；只统计自愿上传价格的在池企业。价格门槛比销量更严（有价企业数 ≥ {{ $PV.kPrice }} 家，按有价销量计算优势度）；销量被屏蔽的行，价格一并屏蔽。不提供金额合计、有价销量、最高最低价。更多见 <a href="price.html">量价视图</a>。</div>
+        <div class="tbl-foot">
+          <span>共 {{ res.rowCount }} 行（页面最多展示 1,000 行，超出请使用导出）　|　命中单元格 <b>{{ res.cellCount }}</b> 个，其中屏蔽 <b>{{ res.maskCount }}</b> 个（{{ (res.maskCount / res.cellCount * 100).toFixed(1) }}%）</span>
+          <span><el-icon style="vertical-align:-2px"><Lock /></el-icon> 本次查询条件与命中、屏蔽单元格数已记入审计日志</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <el-dialog v-model="exportDlg" title="导出查询结果" width="560px">
+    <el-descriptions :column="1" border size="small">
+      <el-descriptions-item label="导出范围">当前查询结果，共 {{ res.rowCount }} 行</el-descriptions-item>
+      <el-descriptions-item label="文件格式"><el-radio-group v-model="expFmt"><el-radio value="xlsx">Excel</el-radio><el-radio value="csv">CSV</el-radio></el-radio-group></el-descriptions-item>
+      <el-descriptions-item label="今日导出配额">已用 3 / 20 次，已导出 1,286 / 200,000 行</el-descriptions-item>
+    </el-descriptions>
+    <div class="tip-box orange small mt12">导出内容与页面展示<b>完全一致</b>：同样的屏蔽、合并披露、追加屏蔽、吨位取整与口径说明。文件带水印（企业、账号、时间、导出编号）与使用条款页；导出记录写入审计日志（查询条件、行数、文件指纹）。</div>
+    <el-checkbox v-model="agree" class="mt12">我已阅读并同意使用条款：禁止再识别单家企业数据，禁止转售</el-checkbox>
+    <template #footer><el-button @click="exportDlg=false">取消</el-button><el-button type="primary" :disabled="!agree" @click="exportDlg=false; $demo('导出任务已提交，可在导出中心下载')">生成导出任务</el-button></template>
+  </el-dialog>
+
+  <el-dialog v-model="grainDlg" title="各品类可查粒度" width="760px">
+    <div class="small muted" style="margin-bottom:10px">平台按品类分批完成主数据标准化。标准化越深、样本越密的品类，可查询的粒度越细；超出的粒度不展示数值，界面提示“该品类暂不提供此粒度”。</div>
+    <table class="plain-table">
+      <thead><tr><th>大类</th><th>品类最细可查</th><th>地区最细</th><th>时间最细</th><th>品名</th></tr></thead>
+      <tbody><tr v-for="c in cats" :key="c.name">
+        <td><b>{{ c.name }}</b></td>
+        <td><span class="level-tag" :class="{lock: c.depth < 'L3'}">{{ c.depth >= 'L4' ? '规格段' : c.depth === 'L3' ? '材质' : '品名' }}</span></td>
+        <td>{{ c.geo === '市' ? '地级市' : '省' }}</td><td>{{ c.time }}</td>
+        <td class="muted small">{{ c.products.map((p) => p.name).join('、') }}</td>
+      </tr></tbody>
+    </table>
+    <div class="small muted mt12">粒度随标准化进度与样本量扩大而放开，由运营后台“全品类主数据工作台”统一配置，调整前公告。</div>
+    <template #footer><el-button type="primary" @click="grainDlg=false">知道了</el-button></template>
+  </el-dialog>
+
+  <el-dialog v-model="saveDlg" title="保存查询方案" width="480px">
+    <el-form label-width="96px">
+      <el-form-item label="方案名称"><el-input v-model="saveName" /></el-form-item>
+      <el-form-item label="其他"><el-checkbox>设为看板卡片</el-checkbox><el-checkbox>每周一 8:30 发送到邮箱</el-checkbox></el-form-item>
+    </el-form>
+    <div class="small muted">定时发送的内容同样经过聚合引擎，屏蔽与修约规则和页面一致。</div>
+    <template #footer><el-button @click="saveDlg=false">取消</el-button><el-button type="primary" @click="saveDlg=false; $demo('方案已保存')">保存</el-button></template>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const { hash, disclose, PV, chart, fmt } = STP;
+  const K = M.KPI;
+  const defaults = () => ({ grain: '日', range: ['2026-11-17', '2026-11-23'], regionMode: '仓库所在地', regions: [], cats: [], brand: '全部', rowDim: 'region', colDim: 'metric', crossMetric: 'sales', metrics: ['sales', 'nSales', 'share', 'avg', 'mom', 'stock', 'nStock', 'days'] });
+  const PRICE_KEYS = ['price', 'pchg', 'cover', 'nPrice'];
+  const jsCities = (names) => names.map((n) => ['江苏', n]);
+  const SCHEMES = {
+    default: { t: '分省销量与库存（默认）', f: {} },
+    east: { t: '华东重点城市 · 螺纹钢周报', f: { regions: jsCities(['苏州市', '无锡市', '南京市', '常州市', '宿迁市']).concat([['浙江', '杭州市'], ['浙江', '宁波市'], ['浙江', '金华市'], ['上海', '上海市']]), cats: [['建筑钢材', '螺纹钢']], metrics: ['sales', 'nSales', 'avg', 'mom', 'stock', 'days'] } },
+    cross: { t: '省 × 大类交叉表（近 7 日销量）', f: { colDim: 'cat' } },
+    spec: { t: '东岳品牌分规格动销', f: { rowDim: 'cat', brand: '本厂' } },
+    price: { t: '分省螺纹钢量价', price: true, f: { cats: [['建筑钢材', '螺纹钢']], metrics: ['sales', 'nSales', 'avg', 'price', 'pchg', 'cover', 'nPrice'] } },
+  };
+
+  STP.mount({
+    data() {
+      const f = defaults();
+      return {
+        f, q: JSON.parse(JSON.stringify(f)), path: [], view: 'table', loading: false, scheme: 'default',
+        cats: M.categories, grainDlg: false,
+        exportDlg: false, saveDlg: false, agree: false, expFmt: 'xlsx', saveName: '华东螺纹钢周报',
+        metricDefs: [
+          { k: 'sales', t: '销量' }, { k: 'stock', t: '期末库存' }, { k: 'avg', t: '日均销量' }, { k: 'days', t: '可销天数' },
+          { k: 'mom', t: '销量环比' }, { k: 'yoy', t: '销量同比' }, { k: 'share', t: '销量占比' }, { k: 'nSales', t: '销量企业数' },
+          { k: 'nStock', t: '库存企业数' }, { k: 'price', t: '加权均价', price: true }, { k: 'pchg', t: '均价涨跌', price: true }, { k: 'cover', t: '价格覆盖率', price: true }, { k: 'nPrice', t: '有价企业数', price: true }],
+        regionOpts: M.provinces.map((p) => ({ value: p.name, label: p.name, children: p.cities.map((c) => ({ value: c[0], label: c[0] })) })),
+        catOpts: M.categories.map((c) => ({ value: c.name, label: c.name, children: c.products.map((p) => ({ value: p.name, label: p.name })) })),
+      };
+    },
+    computed: {
+      singleProduct() { return this.f.cats.length === 1; },
+      singleProductQ() { return this.q.cats.length === 1; },
+      priceOpen() { return this.$state.gate === 'open'; },
+      schemes() { return Object.keys(SCHEMES).filter((k) => !SCHEMES[k].price || this.priceOpen).map((k) => ({ k, t: SCHEMES[k].t })); },
+      metricList() { return this.metricDefs.filter((m) => !m.price || this.priceOpen); },
+      hasPrice() { return this.priceOpen && this.singleProductQ && this.q.colDim === 'metric' && PRICE_KEYS.some((k) => this.q.metrics.indexOf(k) >= 0); },
+      /* 所选品类中披露粒度较粗（省、旬）的大类 */
+      coarseSel() { const names = []; this.q.cats.forEach((s) => { const c = M.categories.find((x) => x.name === s[0]); if (c && c.geo === '省' && names.indexOf(c.name) < 0) names.push(c.name); }); return names; },
+      allCoarse() { return this.q.cats.length > 0 && this.q.cats.every((s) => M.categories.find((x) => x.name === s[0]).geo === '省'); },
+      rootName() { return this.q.rowDim === 'region' ? (this.q.regions.length ? '所选地区' : '全国') : this.q.rowDim === 'cat' ? (this.q.cats.length ? '所选品类' : '全部品类') : '时间'; },
+      /* 聚合引擎的原型模拟：根据查询条件生成结果并做披露判定。
+         销量、库存、价格都取自与聚合看板、量价视图相同的拆分与序列，同一口径在各页数值一致 */
+      res() {
+        const q = this.q, path = this.path;
+        const r0 = q.range[0], r1 = q.range[1] > M.DATA_DATE ? M.DATA_DATE : q.range[1];
+        const days = Math.max(1, Math.round((new Date(r1) - new Date(r0)) / 864e5) + 1);
+        const seed = JSON.stringify([q.range, q.regionMode, q.brand, q.cats]);
+        const sum = (a) => a.reduce((x, y) => x + y, 0), pct = (a, b) => (b ? +((a / b - 1) * 100).toFixed(1) : null);
+        const dest = q.regionMode === '流向地', own = q.brand === '本厂', branded = q.brand !== '全部';
+        const fineTime = q.grain === '日' || q.grain === '周';
+        // 品类筛选
+        const selProducts = [];
+        M.categories.forEach((c) => c.products.forEach((p) => { if (!q.cats.length || q.cats.some((s) => s[0] === c.name && s[1] === p.name)) selProducts.push({ c, p, sh: c.share * p.share }); }));
+        const sel = q.cats.length ? selProducts : null;
+        const catF = sum(selProducts.map((s) => s.sh));
+        const brN = own ? 0.62 : 1;
+        const nF = M.nReg(catF);
+        const selCats = M.categories.filter((c) => selProducts.some((s) => s.c === c));
+        /* 统计区间内的销量：全口径每日销量加总后，按品类、品牌、地区逐级拆分 */
+        const total = M.salesBetween(K, 'real', r0, r1);
+        const ST = M.salesTree(total, q.regionMode, q.brand, sel), SW = dest ? M.salesTree(total, '仓库所在地', q.brand, sel) : ST;
+        /* 期末库存：统计区间最后一天的日末库存，始终按仓库所在地；拆分与聚合看板相同 */
+        const tree = M.stockTree(K.stock, 'real'), stockF = M.stockOn(K, 'real', r1) / K.stock;
+        const prodSt = (s) => tree.prods(s.c)[s.c.products.indexOf(s.p)];
+        const bsOwn = M.brandStock(tree, 'real'), provStAll = branded ? (own ? bsOwn : tree.provs.map((v, i) => v - bsOwn[i])) : tree.provs;
+        const S0 = Math.round(sum(provStAll) * (sel ? sum(selProducts.map(prodSt)) / K.stock : 1) * stockF);
+        const provSt = M.split(S0, provStAll);
+        // 地区选择
+        const selMap = {}; q.regions.forEach((r) => { (selMap[r[0]] = selMap[r[0]] || []).push(r[1]); });
+        const excluded = [];
+        const provs = M.provinces.map((p, i) => ({ p, i })).filter((x) => !q.regions.length || selMap[x.p.name]).map(({ p, i }) => {
+          const full = !q.regions.length || selMap[p.name].length === p.cities.length;
+          const cs = ST.cities(p), cw = SW.cities(p), ct = M.split(provSt[i], tree.cities(p));
+          /* 按品牌查询时，企业数只计经销本厂品牌的企业；“其他品牌”= 全部 − 本厂，本厂不可披露的地区同样不披露，防止相减倒推 */
+          const nn = (n) => (branded ? M.brandN(Math.round(n * nF), i) : Math.round(n * nF));
+          const cities = p.cities.map((c, j) => ({ name: c[0], n: nn(c[2]), sales: cs[j], salesWh: cw[j], st: ct[j] })).filter((c) => full || selMap[p.name].indexOf(c.name) >= 0);
+          if (!full) cities.forEach((c) => { if (c.n < PV.k) excluded.push(c.name); });
+          const used = full ? cities : cities.filter((c) => c.n >= PV.k), us = (k) => sum(used.map((c) => c[k]));
+          return { name: p.name, pv: p, i, full, cities, sales: full ? ST.provs[i] : us('sales'), salesWh: full ? SW.provs[i] : us('salesWh'), st: full ? provSt[i] : us('st'), n: full ? nn(p.ent) : Math.min(nn(p.ent), us('n')), dom: branded && i === 9, child: !p.muni };
+        }).filter((p) => p.full || p.cities.some((c) => c.n >= PV.k));
+        const regSel = q.regions.length > 0;
+        /* 所选地区、品类、品牌下的销量与库存合计：按品类、按时间展开时以它为总量 */
+        const gSales = regSel ? sum(provs.map((p) => p.sales)) : ST.total, gSalesWh = regSel ? sum(provs.map((p) => p.salesWh)) : SW.total, gStock = regSel ? sum(provs.map((p) => p.st)) : S0;
+        const whRatio = gSales ? gSalesWh / gSales : 1;
+        const regN = regSel ? Math.pow(sum(provs.map((p) => p.pv.share * (p.full ? 1 : sum(p.cities.map((c) => p.pv.cities.find((x) => x[0] === c.name)[1]))))), 0.4) : 1;
+        /* 价格：只在选定单一品名时提供，取值与量价视图一致 */
+        const one = this.singleProductQ ? selProducts[0] : null;
+        const onlyProv = one && provs.length === 1 && regSel && provs[0].full ? provs[0].name : '';
+        const pOpt = (o) => Object.assign({ grain: q.grain === '日' || q.grain === '周' ? (one.c.time === '旬' ? '旬' : q.grain) : q.grain }, o);
+        const pv = (cell, k) => (branded ? cell.price + M.brandOff(one.p.name, q.brand, k || 0) : cell.price);
+        const pFields = (cell) => { const pn = branded ? Math.round(cell.pn * (own ? 0.42 : 0.66)) : cell.pn; const ok = cell.show && pn >= PV.kPrice; return { nPrice: pn, cover: cell.cover, price: ok ? pv(cell) : null, pchg: ok && cell.chgShow !== false && !(cell.grain === '日' && cell.pn < 16) ? cell.chg : null }; };
+        const totalMom = pct(total, M.salesBetween(K, 'real', M.ymd(new Date(new Date(r0 + 'T00:00:00').getTime() - days * 864e5)), M.ymd(new Date(new Date(r0 + 'T00:00:00').getTime() - 864e5))));
+        const totalYoy = pct(total, M.yoyBetween(K, 'real', r0, r1));
+        const mk = (name, n, v, extra) => {
+          const h = hash(name + seed);
+          const sales = Math.round(v.sales), stock = Math.round(v.st);
+          return Object.assign({ name, n, nSales: n, nStock: n + (h % 3), sales, avg: Math.round(sales / days), avgWh: (v.salesWh == null ? sales * whRatio : v.salesWh) / days, stock, mom: +(totalMom + ((h >> 3) % 120) / 10 - 6).toFixed(1), yoy: +(totalYoy + ((h >> 5) % 100) / 10 - 5).toFixed(1), nPrice: 0, cover: null, price: null, pchg: null }, extra || {});
+        };
+        let raw = [], dimName = '';
+        if (q.rowDim === 'region') {
+          if (path.length === 0) { dimName = q.regionMode + '（省）'; raw = provs.map((p) => mk(p.name, p.n, p, Object.assign({ dom: p.dom }, this.allCoarse ? { lock: '仅到省' } : { child: p.child }, one ? pFields(M.priceOf(one.p.name, pOpt({ prov: p.name }))) : {}))); }
+          else { dimName = q.regionMode + '（地级市）'; const p = provs.find((x) => x.name === path[0]); raw = p.cities.map((c) => mk(c.name, c.n, c, Object.assign({ dom: p.dom }, one ? pFields(M.priceOf(one.p.name, pOpt({ prov: p.name, city: c.name }))) : {}))); }
+        } else if (q.rowDim === 'cat') {
+          const nc = (sh) => Math.round(M.nOf(sh) * regN * brN);
+          const catW = selCats.map((c) => sum(selProducts.filter((s) => s.c === c).map((s) => ST.prods(c)[c.products.indexOf(s.p)])));
+          const catSt = selCats.map((c) => sum(selProducts.filter((s) => s.c === c).map(prodSt)));
+          const cSales = M.split(gSales, catW), cStock = M.split(gStock, catSt);
+          const natCell = (o) => M.priceOf(one.p.name, pOpt(Object.assign(onlyProv ? { prov: onlyProv } : {}, o)));
+          if (path.length === 0) {
+            dimName = '大类';
+            /* 最细时间粒度为旬的大类，按日、周查询时不单独披露，并入“其他” */
+            raw = selCats.map((c, k) => mk(c.name, nc(sum(selProducts.filter((s) => s.c === c).map((s) => s.sh))), { sales: cSales[k], st: cStock[k] }, Object.assign({ child: true, dom: fineTime && c.time === '旬' && selCats.length > 1 }, one ? pFields(natCell({})) : {})));
+          } else {
+            const k = selCats.findIndex((c) => c.name === path[0]), c = selCats[k], ps = selProducts.filter((s) => s.c === c);
+            const pSales = M.split(cSales[k], ps.map((s) => ST.prods(c)[c.products.indexOf(s.p)])), pStock = M.split(cStock[k], ps.map(prodSt));
+            if (path.length === 1) { dimName = '品名'; raw = ps.map((s, j) => mk(s.p.name, nc(s.sh), { sales: pSales[j], st: pStock[j] }, Object.assign(s.c.depth >= 'L3' ? { child: true } : { lock: '仅到品名' }, one ? pFields(natCell({})) : {}))); }
+            else {
+              const j = ps.findIndex((x) => x.p.name === path[1]), s = ps[j];
+              const byBand = s.c.depth >= 'L4';
+              dimName = byBand ? '规格段' : '材质';
+              const names = byBand ? s.p.bands : s.p.materials, w = byBand ? s.p.bandShare : M.matShare(s.p);
+              const lSales = M.split(pSales[j], w), lStock = M.split(pStock[j], tree.leaf(s.c, s.p, names, w));
+              const prow = one ? M.priceRow(one.p.name, pOpt(onlyProv ? { prov: onlyProv } : {})) : [];
+              raw = names.map((b, i) => mk(b, nc(s.sh * w[i]), { sales: lSales[i], st: lStock[i] }, Object.assign(byBand ? {} : { lock: '仅到材质' }, one && prow[i] ? pFields(Object.assign({}, prow[i].cell, { show: prow[i].show })) : {})));
+            }
+          }
+        } else {
+          dimName = '时间（' + q.grain + '）';
+          const narrow = catF * (regSel ? gSales / Math.max(1, ST.total) : 1) < 0.03;
+          const nAll = Math.round(M.nOf(catF) * regN * brN);
+          const fT = gStock / (K.stock * stockF);
+          /* 各周期：日粒度逐日列出（最多 31 天），周、旬、月列出与统计区间有交集的周期，取数与聚合看板趋势相同 */
+          let per = [];
+          if (q.grain === '日') { const end = new Date(r1 + 'T00:00:00'); for (let i = Math.min(days, 31) - 1; i >= 0; i--) { const d = new Date(end); d.setDate(d.getDate() - i); const k = M.ymd(d), d0 = new Date(d); d0.setDate(d0.getDate() - 1); per.push({ label: k, from: k, to: k, len: 1, back: Math.round((new Date(M.DATA_DATE) - new Date(k)) / 864e5), sales: M.salesOn(K, 'real', d), prev: M.salesOn(K, 'real', d0), yoy: M.yoyOn(K, 'real', d), wd: d.getDay() }); } }
+          else {
+            const t = M.trendSeries(K, 'real', q.grain, 40);
+            /* 当月未结束：标注截至日期，环比与上月同期（同样天数）比较 */
+            const part = (i) => q.grain === '月' && i === t.x.length - 1;
+            t.x.forEach((x, i) => { const rg = t.ranges[i]; if (part(i)) t.sales[i - 1] = M.salesBetween(K, 'real', t.ranges[i - 1][0], t.ranges[i - 1][0].slice(0, 8) + rg[1].slice(8)); if (rg[1] >= r0 && rg[0] <= r1) per.push({ label: (q.grain === '周' ? rg[0] + ' 起 7 天' : q.grain === '旬' && x.indexOf('年') < 0 ? '2026 年 ' + x : part(i) ? x + '（截至 ' + rg[1].slice(5) + '）' : x), from: rg[0], to: rg[1], len: Math.round((new Date(rg[1]) - new Date(rg[0])) / 864e5) + 1, back: t.x.length - 1 - i, sales: t.sales[i], prev: i ? t.sales[i - 1] : null, yoy: t.yoy[i], wd: 1 }); });
+            if (!per.length) { const i = t.x.length - 1; per.push({ label: t.x[i], from: t.ranges[i][0], to: t.ranges[i][1], len: Math.round((new Date(t.ranges[i][1]) - new Date(t.ranges[i][0])) / 864e5) + 1, back: 0, sales: t.sales[i], prev: t.sales[i - 1], yoy: t.yoy[i], wd: 1 }); }
+          }
+          const cell = one ? M.priceOf(one.p.name, pOpt(onlyProv ? { prov: onlyProv } : {})) : null;
+          const trail = cell ? M.priceTrail(one.p.name, pOpt(onlyProv ? { prov: onlyProv } : {}), 60).reverse() : [];
+          raw = per.map((p) => {
+            const thinDay = q.grain === '日' && (p.wd === 0 || p.wd === 6);
+            /* 每个周期的销量按同一棵拆分树取数，与聚合看板趋势、量价视图的销量柱一致 */
+            const tp = M.salesTree(p.sales, q.regionMode, q.brand, sel).total;
+            const r = mk(p.label, thinDay && narrow ? 3 : nAll, { sales: regSel ? tp * gSales / Math.max(1, ST.total) : tp, st: M.stockOn(K, 'real', p.to) * fT });
+            r.avg = Math.round(r.sales / p.len); r.avgWh = r.sales * whRatio / p.len; r.time = true;
+            r.mom = pct(p.sales, p.prev); r.yoy = pct(p.sales, p.yoy);
+            if (cell) {
+              const k = p.back, pn = branded ? Math.round(cell.pn * (own ? 0.42 : 0.66)) : cell.pn;
+              const okAt = (kk) => cell.show && pn >= PV.kPrice && kk < trail.length && !(q.grain === '日' && cell.pn < 16 && [0, 6].indexOf(new Date(new Date(p.to + 'T00:00:00').getTime() - (kk - k) * 864e5).getDay()) >= 0);
+              r.nPrice = pn; r.cover = cell.cover;
+              r.price = okAt(k) ? trail[k] + (branded ? M.brandOff(one.p.name, q.brand, k) : 0) : null;
+              r.pchg = r.price !== null && okAt(k + 1) ? trail[k] - trail[k + 1] : null;
+            }
+            return r;
+          });
+        }
+        if (q.rowDim !== 'time' && totalMom !== null && totalYoy !== null) {
+          /* 各行的环比、同比由“本期 ÷ 上期（上年同期）− 1”得出：上期合计 = 本期合计 ÷ (1 + 合计环比)，按各行权重拆到行，各行加总后能还原合计行的环比、同比 */
+          const sAll = sum(raw.map((r) => r.sales));
+          const back = (tot, sh, span) => M.split(Math.round(sAll / (1 + tot / 100)), raw.map((r) => r.sales / (1 + (((hash(r.name + seed) >> sh) % span) / 10 - span / 20) / 100)));
+          const pvs = back(totalMom, 3, 120), ybs = back(totalYoy, 5, 100);
+          raw.forEach((r, i) => { r.prev = pvs[i]; r.yb = ybs[i]; r.mom = pct(r.sales, pvs[i]); r.yoy = pct(r.sales, ybs[i]); });
+        }
+        const sumRaw = (k) => raw.reduce((a, r) => a + (r[k] || 0), 0);
+        const tSales = sumRaw('sales'), tStock = sumRaw('stock'), tAvgWh = sumRaw('avgWh');
+        // 披露判定
+        let rows;
+        if (q.rowDim === 'time') {
+          rows = raw.map((r) => (r.n >= PV.k ? r : Object.assign(r, { sales: null, stock: null, avg: null, price: null, pchg: null, tip: '该日样本不足，不单独披露，仅并入更长周期（周、旬、月）展示' })));
+        } else {
+          rows = disclose(raw, ['sales', 'stock', 'avg', 'avgWh', 'prev', 'yb'], 'sales').rows;
+          rows.forEach((r) => { if (r.merged) { r.nSales = r.n; r.nStock = r.n; r.mom = pct(r.sales, r.prev); r.yoy = pct(r.sales, r.yb); r.price = null; r.pchg = null; r.cover = null; r.nPrice = 0; r.avg = Math.round(r.sales / days); } });
+          // 优势度示例（按品牌、按品类查询时）：个别成员销量因单家占比过高被屏蔽，至少成对出现，避免被合计倒推
+          if (branded && q.rowDim === 'cat') {
+            const cand = rows.filter((r) => !r.merged && r.n < 10);
+            const dom = cand.filter((r) => hash(r.name + 'dom') % 3 === 0);
+            if (dom.length === 1) { const o = cand.find((r) => r !== dom[0]); if (o) dom.push(o); else dom.length = 0; }
+            dom.forEach((r) => { r.sales = null; r.avg = null; });
+          }
+        }
+        rows.forEach((r) => {
+          const ms = r.sales === null;
+          /* 可销天数 = 期末库存 ÷ 区间日均销量，销量按仓库所在地计（与库存同口径） */
+          r.days = ms || r.stock === null || !r.avgWh ? null : +(r.stock / r.avgWh).toFixed(1);
+          r.share = ms ? null : +(r.sales / tSales * 100).toFixed(1);
+          if (ms) { r.mom = null; r.yoy = null; r.price = null; }
+          if (r.price === null) r.pchg = null;
+        });
+        const out = rows.slice();
+        if (q.rowDim !== 'time') {
+          const tc = one ? pFields(M.priceOf(one.p.name, pOpt(onlyProv ? { prov: onlyProv } : {}))) : {};
+          /* 按流向地分地区时，合计只含已填报流向地的销量，可销天数仍用仓库所在地口径的销量 */
+          out.push(Object.assign({ total: true, name: '合计', sales: tSales, avg: Math.round(tSales / days), stock: tStock, days: tAvgWh ? +(tStock / tAvgWh).toFixed(1) : null, share: 100, mom: sumRaw('prev') ? pct(tSales, sumRaw('prev')) : totalMom, yoy: sumRaw('yb') ? pct(tSales, sumRaw('yb')) : totalYoy, nPrice: 0 }, one ? { price: tc.price, pchg: tc.pchg, cover: tc.cover } : { price: null, pchg: null, cover: null }));
+        }
+        // 交叉表：行为披露后的地区行，行合计、列合计与多指标表一致
+        let cross = [], cols = [];
+        if (q.colDim === 'cat' && q.rowDim === 'region') {
+          const key = q.crossMetric;
+          /* 列：最细时间粒度为旬的大类按日、周查询时合并为一列；合并列至少含两个大类 */
+          let groups = selCats.map((c) => ({ name: c.name, cats: [c], coarse: fineTime && c.time === '旬' }));
+          const co = groups.filter((g) => g.coarse);
+          if (co.length && groups.length > 1) {
+            const keep = groups.filter((g) => !g.coarse);
+            if (co.length === 1 && keep.length) co.push(keep.pop());
+            groups = keep.concat([{ name: '其他（合并）', cats: co.reduce((a, g) => a.concat(g.cats), []), merged: true }]);
+          }
+          cols = groups.map((g) => g.name);
+          const wOf = (c) => (key === 'sales' ? sum(selProducts.filter((s) => s.c === c).map((s) => ST.prods(c)[c.products.indexOf(s.p)])) : sum(selProducts.filter((s) => s.c === c).map(prodSt)));
+          const shOf = (g) => sum(selProducts.filter((s) => g.cats.indexOf(s.c) >= 0).map((s) => s.sh));
+          const src = rows.filter((r) => !r.total);
+          const rowTot = src.map((r) => (key === 'sales' ? Math.round(raw.filter((x) => (r.merged ? r.members.indexOf(x.name) >= 0 : x.name === r.name)).reduce((a, x) => a + x.sales, 0)) : r.stock));
+          const colTot = M.split(sum(rowTot), groups.map((g) => sum(g.cats.map(wOf))));
+          const grid = M.split2(rowTot, colTot);
+          const lines = src.map((r, i) => ({ name: r.name, merged: r.merged, members: r.members, hide: key === 'sales' && r.sales === null, cells: groups.map((g, j) => { const n = Math.round(r.n * Math.pow(shOf(g) / catF, 0.3) * 0.95); return { v: grid[i][j], n, raw: grid[i][j] }; }), sum: rowTot[i] }));
+          lines.forEach((l) => l.cells.forEach((c) => { if (c.n < PV.k || l.hide) c.v = null; }));
+          // 追加屏蔽：行或列中只有 1 个屏蔽单元格时，再屏蔽最小的可见单元格
+          for (let it = 0; it < 6; it++) {
+            let changed = false;
+            lines.forEach((l) => { const m = l.cells.filter((c) => c.v === null); if (m.length === 1) { const v = l.cells.filter((c) => c.v !== null).sort((a, b) => a.raw - b.raw)[0]; if (v) { v.v = null; v.sec = true; changed = true; } } });
+            groups.forEach((c, j) => { const col = lines.map((l) => l.cells[j]); const m = col.filter((x) => x.v === null); if (m.length === 1) { const v = col.filter((x) => x.v !== null).sort((a, b) => a.raw - b.raw)[0]; if (v) { v.v = null; v.sec = true; changed = true; } } });
+            if (!changed) break;
+          }
+          cross = lines.concat([{ name: '列合计', total: true, cells: colTot.map((v) => ({ v })), sum: sum(rowTot) }]);
+        }
+        const isCross = cross.length > 0;
+        const cellCount = isCross ? (cross.length - 1) * cols.length : rows.length * q.metrics.filter((m) => ['sales', 'stock', 'avg', 'days', 'mom', 'yoy', 'share', 'price', 'pchg'].indexOf(m) >= 0 && ((m !== 'price' && m !== 'pchg') || (one && this.priceOpen))).length;
+        const maskCount = isCross ? cross.reduce((a, l) => a + l.cells.filter((c) => c.v === null).length, 0) : rows.reduce((a, r) => a + q.metrics.filter((m) => ['sales', 'stock', 'avg', 'days', 'mom', 'yoy', 'share', 'price', 'pchg'].indexOf(m) >= 0 && ((m !== 'price' && m !== 'pchg') || (one && this.priceOpen)) && r[m] === null).length, 0);
+        return { rows: out, dimName, days, range: [r0, r1], excluded, selCount: q.regions.length, cross, cols, rowCount: isCross ? cross.length - 1 : rows.length, cellCount: Math.max(1, cellCount), maskCount };
+      },
+      chartOption() {
+        const rows = this.res.rows.filter((r) => !r.total);
+        const isTime = this.q.rowDim === 'time';
+        const o = chart.line({
+          x: rows.map((r) => (r.merged ? '其他(合并)' : r.name)), yName: '销量（吨）', y2: '期末库存（吨）',
+          series: [{ name: '销量', type: 'bar', data: rows.map((r) => r.sales), unit: '吨', barMaxWidth: 26, itemStyle: { borderRadius: [3, 3, 0, 0] } }, { name: '期末库存', data: rows.map((r) => r.stock), yAxisIndex: 1, unit: '吨', color: '#ff7a45', showSymbol: true, smooth: isTime }],
+        });
+        o.xAxis.axisLabel = { color: '#6b7787', rotate: rows.length > 12 ? 40 : 0, interval: 0 };
+        o.yAxis.forEach((y) => { y.scale = false; });
+        return o;
+      },
+      crossChartOption() {
+        const lines = this.res.cross.filter((l) => !l.total);
+        const o = chart.bar({ x: lines.map((l) => (l.merged ? '其他(合并)' : l.name)), stack: true, unit: '吨', series: this.res.cols.map((c, j) => ({ name: c, data: lines.map((l) => l.cells[j].v) })) });
+        o.xAxis.axisLabel = { color: '#6b7787', rotate: 40, interval: 0 };
+        return o;
+      },
+    },
+    methods: {
+      on(k) { return this.q.metrics.indexOf(k) >= 0; },
+      pOn(k) { return this.priceOpen && this.singleProductQ && this.on(k); },
+      rowCls({ row }) { return row.total ? 'total-row' : row.merged ? 'merged-row' : ''; },
+      run() {
+        this.loading = true;
+        if (this.f.rowDim !== 'region' && this.f.colDim === 'cat') this.f.colDim = 'metric';
+        if (this.f.cats.length !== 1 || !this.priceOpen) this.f.metrics = this.f.metrics.filter((m) => PRICE_KEYS.indexOf(m) < 0);
+        const fc = this.f.cats;
+        if (fc.length && fc.every((c) => M.categories.find((x) => x.name === c[0]).geo === '省') && (this.f.grain === '日' || this.f.grain === '周')) { this.f.grain = '旬'; this.$info('所选品类最细时间粒度为旬，已按旬查询'); }
+        setTimeout(() => { this.q = JSON.parse(JSON.stringify(this.f)); this.path = []; this.loading = false; }, 500);
+      },
+      reset() { this.f = defaults(); this.scheme = 'default'; this.run(); },
+      loadScheme(k) { this.f = Object.assign(defaults(), JSON.parse(JSON.stringify(SCHEMES[k].f))); this.run(); },
+      drill(row) { this.path = this.path.concat([row.name]); },
+      drillTo(i) { this.path = this.path.slice(0, i); },
+    },
+  });
+})();
+</script>
+</body>
+</html>

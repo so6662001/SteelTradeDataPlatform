@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>全品类主数据工作台 · 平台运营后台 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.lv-row .level-tag { margin: 0 3px 0 0; padding: 0 5px; }
+.md-wrap { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 16px; align-items: start; }
+.md-tree { border: 1px solid var(--stp-border); border-radius: 6px; padding: 8px 6px; max-height: 560px; overflow: auto; }
+.md-tree .el-tree-node__content { height: 30px; }
+.md-tree .node { display: flex; align-items: center; justify-content: space-between; flex: 1; min-width: 0; font-size: 13px; padding-right: 6px; }
+.md-tree .node .other { color: var(--stp-sub); }
+.scope-col h4 { margin: 0 0 8px; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.scope-col ul { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.9; color: #4a5568; }
+.alias-tags .el-tag { margin: 0 4px 4px 0; }
+.pend-item { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-bottom: 1px dashed var(--stp-border); font-size: 13px; }
+.pend-item:last-child { border-bottom: none; }
+.pend-item .bd { flex: 1; min-width: 0; line-height: 1.6; }
+.pend-item .bd span { display: block; color: var(--stp-sub); font-size: 12px; }
+.impact { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 12px 0; }
+.impact div { border: 1px solid var(--stp-border); border-radius: 6px; padding: 10px 12px; }
+.impact span { font-size: 12px; color: var(--stp-sub); }
+.impact b { display: block; font-size: 18px; margin-top: 4px; }
+.conf { display: inline-block; min-width: 44px; text-align: right; font-weight: 600; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="admin" active="master-category" title="全品类主数据工作台"
+  desc="全品类接入、分级标准化：各大类的标准化深度决定该品类可聚合和可下钻的层级；披露粒度按品类单独配置。这里维护品类树、牌号与别名库、规格模板、兼容性规则、计量换算，并处理待映射队列。">
+  <template #actions>
+    <el-button @click="$demo('主数据字典已导出（版本 MD-2026.11.3）')"><el-icon><Download /></el-icon>导出字典</el-button>
+    <el-button type="primary" @click="$demo('字典版本 MD-2026.11.3 已下发，ERP 端可通过字典接口比对版本')"><el-icon><Promotion /></el-icon>发布字典版本</el-button>
+  </template>
+
+  <div class="grid c5">
+    <stat-card label="标准品类映射率" :value="96.3" :d="1" unit="%" icon="Files" tip="能映射到平台标准品名的入库行数占比（全品类加权）"><span>较上周 <b class="up">+0.4%</b></span></stat-card>
+    <stat-card label="待映射积压" :value="backlogTotal" unit="项" icon="List" tip="无法自动映射、待平台或企业确认的原始值；未映射数据不参与聚合"><span>高置信度可批量确认 <b>{{ highConf }}</b>（示例）</span></stat-card>
+    <stat-card label="达到上线门槛的大类" :value="passCount" unit="/ 8 个" icon="CircleCheck" tip="按品类设标准映射率门槛；未达标的品类只开放到品名级"><span>门槛为<b>示例参数</b>，待业务方确定</span></stat-card>
+    <stat-card label="字典规模：标准品名" :value="126" unit="个" icon="Collection"><span>牌号 <b>1,482</b></span><span>别名 <b>18,640</b></span><span>规格段方案 <b>41</b> 套</span></stat-card>
+    <stat-card label="长尾归口“其他品名”占比" :value="2.1" :d="1" unit="%" icon="Box" tip="各大类“其他品名”归口项的入库行数占比（全品类加权）。归口项参与大类级聚合，不开放下钻"><span>最高：不锈钢 <b>11.2%</b></span></stat-card>
+  </div>
+
+  <!-- 全品类总览 -->
+  <div class="card">
+    <div class="card-title">
+      <span>全品类总览<small>每个大类一行；深度分级：L1 大类、L2 品名、L3 材质、L4 规格段、L5 单规格</small></span>
+      <span class="right muted small"><span class="level-tag" style="margin-left:0">L3</span> 已达到　<span class="level-tag lock" style="margin-left:0">L4</span> 未达到，不开放下钻</span>
+    </div>
+    <el-table :data="cats" size="small" border>
+      <el-table-column label="大类" width="92"><template #default="{row}"><b>{{ row.name }}</b></template></el-table-column>
+      <el-table-column label="当前标准化深度" width="170">
+        <template #default="{row}">
+          <div class="lv-row"><span v-for="(l, i) in levels" :key="l.k" class="level-tag" :class="{lock: i + 1 > row.depth}">{{ l.k }}</span></div>
+          <div class="small muted" style="margin-top:3px">到{{ levels[row.depth - 1].t }}<span v-if="row.backfill" style="color:#d98200"> · 历史数据回补重算中</span></div>
+        </template>
+      </el-table-column>
+      <el-table-column label="目标深度" width="62" align="center"><template #default="{row}"><span class="level-tag" style="margin-left:0">L{{ row.target }}</span></template></el-table-column>
+      <el-table-column label="最细披露粒度（地区 / 时间 / 规格）" min-width="160">
+        <template #default="{row}">
+          {{ row.geo === '市' ? '地级市' : '省' }} / {{ row.time }} / {{ levels[row.spec - 1].t }}
+          <el-tag v-if="row.pending" size="small" type="warning" style="margin-left:4px">变更待复核</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="映射率" width="120">
+        <template #default="{row}">
+          <el-progress :percentage="row.map" :stroke-width="6" :color="row.map >= row.th ? '#18a058' : '#e5484d'" :format="p => p.toFixed(1) + '%'" />
+        </template>
+      </el-table-column>
+      <el-table-column label="待映射积压" width="84" align="right"><template #default="{row}"><a href="javascript:;" @click="qCat = row.name" class="num">{{ row.backlog }}</a> 项</template></el-table-column>
+      <el-table-column label="“其他品名”占比" width="96" align="right"><template #default="{row}"><span class="num" :style="{color: row.other >= 5 ? '#b26a00' : ''}">{{ row.other.toFixed(1) }}%</span></template></el-table-column>
+      <el-table-column label="上线门槛" width="104">
+        <template #default="{row}">
+          <el-tooltip :content="'映射率门槛 ' + row.th + '%（示例参数，待业务方确定）。' + (row.map >= row.th ? '已达标。' : '未达标的品类只开放到品名级。')" placement="top">
+            <span><el-tag size="small" :type="row.map >= row.th ? 'success' : 'danger'">{{ row.map >= row.th ? '达标' : '未达标' }}</el-tag><div class="muted small" style="margin-top:2px">门槛 {{ row.th }}%</div></span>
+          </el-tooltip>
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="232" align="center">
+        <template #default="{row}">
+          <el-button link type="primary" @click="openGrain(row)">披露粒度</el-button>
+          <el-button link type="primary" :disabled="row.depth >= 5" @click="openDepth(row)">提升深度</el-button>
+          <el-button link type="primary" @click="openSplit(row)">拆分归口</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+    <div class="tbl-foot">
+      <span>规格层级的开放与该品类的标准化深度挂钩：未完成规格段标准化的品类不开放规格段下钻；上游下钻到未开放层级时提示“该品类暂不提供此粒度”。各大类上线时的深度为初步判断，以主数据评审为准。</span>
+    </div>
+  </div>
+
+  <div class="grid c2">
+    <!-- 受理范围 -->
+    <div class="card">
+      <div class="card-title"><span>品类受理范围</span><span class="right"><el-tag type="warning" size="small" effect="plain">边界待确认</el-tag><el-button size="small" @click="$info('原型演示：受理范围的调整需经主数据评审，并提前公告')">维护范围</el-button></span></div>
+      <div class="grid c2" style="margin-bottom:10px">
+        <div class="scope-col">
+          <h4><el-icon style="color:#18a058"><CircleCheck /></el-icon>受理</h4>
+          <ul><li>钢材成品：建筑钢材、热轧板卷、中厚板、冷轧及涂镀、管材、型钢、优特钢</li><li>含不锈钢</li><li>暂时无法归类的钢材成品归入各大类“其他品名”</li></ul>
+        </div>
+        <div class="scope-col">
+          <h4><el-icon style="color:#e5484d"><CircleClose /></el-icon>不受理</h4>
+          <ul><li>钢坯及原料：钢坯、生铁、废钢、铁合金、铁矿石、焦炭</li><li>有色金属：铜、铝、锌等</li><li>深加工件：钢结构件、紧固件、机加工件</li></ul>
+        </div>
+      </div>
+      <div class="tip-box orange small">范围外商品<b>拒收</b>并提示：逐行返回 REJECTED，批次返回业务状态类错误码“商品不在受理范围内”。近 7 日范围外拒收 2.4 万行，涉及 318 家企业，主要为钢坯与废钢。受理边界为建议方案，<b>待业务方确认</b>。</div>
+    </div>
+    <!-- 待复核 -->
+    <div class="card">
+      <div class="card-title"><span>待复核的变更<small>披露粒度、标准化深度、归口项拆分须另一人复核后生效</small></span></div>
+      <div v-if="!pendings.length" class="empty-block">暂无待复核的变更</div>
+      <div class="pend-item" v-for="p in pendings" :key="p.id">
+        <el-tag size="small" :type="p.status === '待复核' ? 'warning' : p.status === '已驳回' ? 'info' : 'success'">{{ p.status }}</el-tag>
+        <div class="bd"><b>{{ p.type }}</b>　{{ p.content }}<span>{{ p.id }} · 提交人 {{ p.by }} · {{ p.time }}<template v-if="p.reviewer"> · 复核人 {{ p.reviewer }}</template></span></div>
+        <template v-if="p.status === '待复核'">
+          <template v-if="p.by !== me">
+            <el-button size="small" type="primary" plain @click="approve(p, me)">复核通过</el-button>
+            <el-button size="small" @click="reject(p)">驳回</el-button>
+          </template>
+          <template v-else>
+            <el-tooltip content="提交人不可复核本人提交的变更" placement="top"><span><el-button size="small" disabled>复核</el-button></span></el-tooltip>
+            <el-button size="small" link type="primary" @click="approve(p, '赵启明')">原型：模拟赵启明复核</el-button>
+          </template>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  <!-- 主数据维护 -->
+  <div class="card">
+    <div class="card-title">
+      <span>主数据维护<small>当前：{{ sel.cat.name }} › {{ sel.prod.name }}（{{ sel.cat.name }}当前深度 L{{ selCat.depth }}）</small></span>
+      <span class="right"><el-button size="small" @click="$demo('已新增标准品名（草稿），评审通过后生效')"><el-icon><Plus /></el-icon>新增品名</el-button></span>
+    </div>
+    <div class="md-wrap">
+      <div>
+        <el-input v-model="treeKw" size="small" placeholder="搜索品名" clearable class="mb8"><template #prefix><el-icon><Search /></el-icon></template></el-input>
+        <div class="md-tree">
+          <el-tree ref="tree" :data="tree" node-key="id" :default-expanded-keys="['建筑钢材']" :current-node-key="'建筑钢材/螺纹钢'" highlight-current :filter-node-method="filterNode" @node-click="pick">
+            <template #default="{ data }">
+              <span class="node"><span :class="{other: data.other}">{{ data.label }}</span><span v-if="data.depth" class="level-tag">L{{ depthOf(data.label) }}</span><span v-else-if="data.other" class="muted small">长尾归口</span></span>
+            </template>
+          </el-tree>
+        </div>
+      </div>
+      <div>
+        <el-tabs v-model="mdTab">
+          <el-tab-pane name="material" label="材质（牌号）与别名库">
+            <el-table :data="detail.materials" size="small" border>
+              <el-table-column label="标准牌号" width="110"><template #default="{row}"><b>{{ row.std }}</b></template></el-table-column>
+              <el-table-column prop="steel" label="钢种（归并）" width="160" />
+              <el-table-column label="别名（用于自动匹配）" min-width="230">
+                <template #default="{row}">
+                  <span class="alias-tags"><el-tag v-for="a in row.alias" :key="a" size="small" type="info" closable @close="row.alias.splice(row.alias.indexOf(a), 1)">{{ a }}</el-tag></span>
+                  <el-button link type="primary" size="small" @click="addAlias(row)"><el-icon><Plus /></el-icon>别名</el-button>
+                </template>
+              </el-table-column>
+              <el-table-column label="国标" width="116" prop="gb" />
+              <el-table-column label="美标" width="100" prop="astm" />
+              <el-table-column label="日标" width="88" prop="jis" />
+              <el-table-column label="欧标" width="96" prop="en" />
+            </el-table>
+            <div class="tip-box small mt12">多标准牌号对照用于把国标、美标、日标、欧标的不同写法归并到统一钢种，为近似对应关系，以主数据评审为准。“—”表示无直接对应牌号。经确认的映射自动写入别名库。</div>
+          </el-tab-pane>
+
+          <el-tab-pane name="spec" label="规格属性模板与规格段方案">
+            <div class="grid c-3-2" style="margin-bottom:0">
+              <div>
+                <div class="small muted mb8">规格属性模板（{{ sel.prod.name }}）：接口优先采用结构化规格属性，否则从规格文本解析</div>
+                <el-table :data="detail.attrs" size="small" border>
+                  <el-table-column prop="name" label="属性" width="90" />
+                  <el-table-column prop="unit" label="单位" width="70" />
+                  <el-table-column prop="range" label="取值范围" min-width="150" />
+                  <el-table-column label="必填" width="60" align="center"><template #default="{row}">{{ row.req ? '是' : '否' }}</template></el-table-column>
+                  <el-table-column prop="parse" label="文本解析示例" min-width="150" />
+                </el-table>
+              </div>
+              <div>
+                <div class="small muted mb8">规格段方案：聚合披露的默认规格粒度</div>
+                <div class="card tight" style="margin-bottom:0">
+                  <div class="row"><el-tag v-for="b in sel.prod.bands" :key="b" :type="selCat.depth >= 4 ? 'primary' : 'info'" effect="plain">{{ b }}</el-tag></div>
+                  <div class="kv mt12">
+                    <dt>方案版本</dt><dd>V1.{{ sel.prod.bands.length }}（{{ selCat.depth >= 4 ? '已启用' : '已起草，未启用' }}）</dd>
+                    <dt>评审状态</dt><dd>{{ selCat.depth >= 4 ? '已通过品类业务人员评审' : '待评审' }}</dd>
+                    <dt>下钻开放</dt><dd>{{ selCat.depth >= 4 ? '已对上游开放规格段下钻' : '不开放：该大类当前深度 L' + selCat.depth }}</dd>
+                  </div>
+                  <div class="row mt12"><el-button size="small" @click="$info('原型演示：编辑分段点，变更前给出影响评估，变更后触发重算')">编辑分段点</el-button></div>
+                </div>
+              </div>
+            </div>
+          </el-tab-pane>
+
+          <el-tab-pane name="compat" label="兼容性规则">
+            <el-table :data="detail.compat" size="small" border>
+              <el-table-column prop="prod" label="品名" width="130" />
+              <el-table-column prop="mat" label="材质" width="130" />
+              <el-table-column prop="range" label="规格取值范围" min-width="220" />
+              <el-table-column label="判定" width="120"><template #default="{row}"><el-tag size="small" :type="row.ok ? 'success' : 'danger'">{{ row.ok ? '合法组合' : '不合法组合' }}</el-tag></template></el-table-column>
+              <el-table-column prop="use" label="不符合时的处理" min-width="200" />
+            </el-table>
+            <div class="tip-box small mt12">兼容性规则维护品名、材质、规格属性之间的合法组合，用于映射推荐（缩小候选范围）和质量校验（不兼容的行标记失败或进入待映射队列）。</div>
+          </el-tab-pane>
+
+          <el-tab-pane name="unit" label="计量单位与理论重量换算">
+            <el-table :data="detail.units" size="small" border>
+              <el-table-column prop="prod" label="品名" width="140" />
+              <el-table-column prop="unit" label="常用计量单位" width="130" />
+              <el-table-column prop="formula" label="理论重量换算规则" min-width="340" />
+              <el-table-column label="换算启用" width="110"><template #default><el-tag size="small" type="info">一期未启用</el-tag></template></el-table-column>
+            </el-table>
+            <div class="tip-box orange small mt12">聚合统一用吨。一期要求下游上传重量；二期起对只有支数、米数、张数的数据按理论重量换算，并在明细中标记“换算重量”。是否允许平台换算<b>待业务方确定</b>。</div>
+          </el-tab-pane>
+
+          <el-tab-pane name="rules" label="分品类质量规则集">
+            <el-table :data="detail.rules" size="small" border>
+              <el-table-column prop="rule" label="规则" min-width="190" />
+              <el-table-column prop="def" :label="sel.cat.name + '默认值'" min-width="170" />
+              <el-table-column :label="sel.prod.name + '取值'" min-width="170"><template #default="{row}"><span v-if="row.own">{{ row.own }} <el-tag size="small" type="warning" effect="plain">单独设置</el-tag></span><span v-else class="muted">继承大类</span></template></el-table-column>
+              <el-table-column prop="lv" label="不通过的处理" width="150" />
+            </el-table>
+            <div class="small muted mt8">未单独配置的品名继承大类规则。阈值、启停与严重级别在 <a href="quality.html">数据质量监控 › 校验规则配置</a> 中维护；价格合理区间在 <a href="price-control.html">价格数据管控</a> 中维护。</div>
+          </el-tab-pane>
+        </el-tabs>
+      </div>
+    </div>
+  </div>
+
+  <!-- 待映射队列 -->
+  <div class="card">
+    <div class="card-title">
+      <span>待映射队列<small>按大类分组；待映射数据不参与聚合，确认后写入别名库并自动回补</small></span>
+      <span class="right">
+        <el-select v-model="qCat" size="small" style="width:140px" clearable placeholder="全部大类"><el-option v-for="c in cats" :key="c.name" :label="c.name + '（' + c.backlog + '）'" :value="c.name" /></el-select>
+        <el-checkbox v-model="qHigh" size="small">只看置信度不低于 90%</el-checkbox>
+        <el-button size="small" type="primary" :disabled="!qSel.length" @click="confirmMap(qSel)"><el-icon><Check /></el-icon>批量确认（{{ qSel.length }}）</el-button>
+      </span>
+    </div>
+    <el-table ref="qTable" :data="queueRows" size="small" border :span-method="qSpan" @selection-change="s => qSel = s">
+      <el-table-column label="大类" width="110"><template #default="{row}"><b>{{ row.cat }}</b><div class="small muted">积压 {{ backlogOf(row.cat) }} 项</div></template></el-table-column>
+      <el-table-column type="selection" width="42" />
+      <el-table-column label="类型" width="70"><template #default="{row}">{{ row.kind }}</template></el-table-column>
+      <el-table-column label="原始值" min-width="170"><template #default="{row}"><span class="code">{{ row.raw }}</span></template></el-table-column>
+      <el-table-column label="出现企业数" width="100" align="right"><template #default="{row}"><span class="num">{{ row.ents }}</span> 家</template></el-table-column>
+      <el-table-column label="影响行数" width="110" align="right"><template #default="{row}"><span class="num">{{ $fmt(row.rows) }}</span></template></el-table-column>
+      <el-table-column label="系统推荐标准值" min-width="210">
+        <template #default="{row}"><b>{{ row.rec }}</b><span v-if="row.note" class="muted small">　{{ row.note }}</span></template>
+      </el-table-column>
+      <el-table-column label="置信度" width="92" align="right"><template #default="{row}"><span class="conf num" :style="{color: row.conf >= 0.9 ? '#18a058' : row.conf >= 0.75 ? '#b26a00' : '#e5484d'}">{{ Math.round(row.conf * 100) }}%</span></template></el-table-column>
+      <el-table-column label="操作" width="130" align="center">
+        <template #default="{row}"><el-button link type="primary" @click="confirmMap([row])">确认</el-button><el-button link type="primary" @click="$info('原型演示：改选其他标准值，或退回企业确认')">改选</el-button></template>
+      </el-table-column>
+      <template #empty><div class="empty-block">该条件下没有待映射项</div></template>
+    </el-table>
+    <div class="tbl-foot">
+      <span>原型展示 {{ queue.length }} 条示例（全平台积压 {{ $fmt(backlogTotal) }} 项）。队列只展示原始值、出现企业数与影响行数，不展示来源企业名称与数值。置信度不低于 95% 的映射自动生效，不进入本队列（优特钢、不锈钢为 97%；阈值可配置）。</span>
+    </div>
+  </div>
+
+  <!-- 变更日志 -->
+  <div class="card">
+    <div class="card-title"><span>主数据变更日志<small>增删改、启停、版本号、生效时间全部留痕</small></span></div>
+    <el-table :data="logs" size="small" border>
+      <el-table-column prop="time" label="时间" width="140" />
+      <el-table-column prop="by" label="操作人" width="90" />
+      <el-table-column prop="obj" label="对象" width="190" />
+      <el-table-column prop="what" label="变更内容" min-width="300" />
+      <el-table-column prop="impact" label="影响评估" min-width="200" />
+      <el-table-column prop="ver" label="字典版本" width="120" />
+      <el-table-column label="状态" width="90"><template #default="{row}"><el-tag size="small" :type="row.st === '已生效' ? 'success' : 'warning'">{{ row.st }}</el-tag></template></el-table-column>
+    </el-table>
+  </div>
+
+  <!-- 配置披露粒度 -->
+  <el-dialog v-model="grainDlg" :title="'配置披露粒度 · ' + (cur ? cur.name : '')" width="580px">
+    <template v-if="cur">
+      <el-form label-width="110px">
+        <el-form-item label="最细地区">
+          <el-radio-group v-model="gf.geo"><el-radio-button value="市" label="地级市" /><el-radio-button value="省" label="省" /></el-radio-group>
+        </el-form-item>
+        <el-form-item label="最细时间">
+          <el-radio-group v-model="gf.time"><el-radio-button value="日" label="日" /><el-radio-button value="旬" label="旬" /><el-radio-button value="月" label="月" /></el-radio-group>
+        </el-form-item>
+        <el-form-item label="最细规格层级">
+          <el-radio-group v-model="gf.spec">
+            <el-radio-button v-for="(l, i) in levels.slice(1)" :key="l.k" :value="i + 2" :label="l.t" :disabled="i + 2 > cur.depth" />
+          </el-radio-group>
+          <div class="small muted" style="line-height:1.6;margin-top:4px">受标准化深度约束：{{ cur.name }}当前为 L{{ cur.depth }}，高于该深度的层级不可选。单规格仅在满足披露门槛时展示。</div>
+        </el-form-item>
+        <el-form-item label="变更原因"><el-input v-model="gf.reason" type="textarea" :rows="2" placeholder="如：该品类在地级市的屏蔽率过高，调整为按省披露" /></el-form-item>
+      </el-form>
+      <div class="tip-box blue small">样本稀疏的品类默认更粗（如地区到省、时间到旬），以降低屏蔽率。披露粒度属于关键配置：<b>提交后须由另一人复核方可生效</b>，变更留痕，并在生效前向上游公告。价格指标的粒度不得比量指标更细。</div>
+    </template>
+    <template #footer><el-button @click="grainDlg = false">取消</el-button><el-button type="primary" :disabled="!gf.reason || !grainChanged" @click="submitGrain">提交复核</el-button></template>
+  </el-dialog>
+
+  <!-- 提升标准化深度 -->
+  <el-dialog v-model="depthDlg" :title="'提升标准化深度 · ' + (cur ? cur.name : '')" width="620px">
+    <template v-if="cur">
+      <div class="row" style="justify-content:center;gap:16px;margin:4px 0 6px">
+        <span class="level-tag" style="font-size:14px;line-height:26px;padding:0 12px;margin:0">L{{ cur.depth }} {{ levels[cur.depth - 1].t }}</span>
+        <el-icon><Right /></el-icon>
+        <span class="level-tag" style="font-size:14px;line-height:26px;padding:0 12px;margin:0;background:#f0faf4;color:#1b7a47;border-color:#cfe9da">L{{ cur.depth + 1 }} {{ levels[cur.depth].t }}</span>
+      </div>
+      <div class="small muted" style="text-align:center">提升后，上游可在该大类下钻到{{ levels[cur.depth].t }}（仍受披露粒度配置与披露门槛约束）</div>
+      <div class="impact">
+        <div><span>受影响企业数</span><b class="num">{{ $fmt(cur.ents) }} 家</b></div>
+        <div><span>需回补重算的历史数据量</span><b class="num">{{ $fmt(cur.hist) }} 万行</b></div>
+        <div><span>预计回补重算时长</span><b class="num">约 {{ Math.max(2, Math.round(cur.hist / 9000)) }} 小时</b></div>
+      </div>
+      <table class="plain-table">
+        <thead><tr><th>前置条件</th><th style="width:230px">当前情况</th><th class="c" style="width:80px">结果</th></tr></thead>
+        <tbody>
+          <tr v-for="c in depthChecks" :key="c.t"><td>{{ c.t }}</td><td>{{ c.v }}</td><td class="c"><el-tag size="small" :type="c.ok ? 'success' : 'danger'">{{ c.ok ? '满足' : '不满足' }}</el-tag></td></tr>
+        </tbody>
+      </table>
+      <div class="tip-box green small mt12">深度提升生效后，系统<b>自动对历史数据回补并重算</b>：按新的{{ levels[cur.depth].t }}字典重新映射历史明细，重算企业日粒度事实层与聚合结果；回补期间该大类维持原深度对外提供，完成后一次切换。提交后须另一人复核。</div>
+    </template>
+    <template #footer><el-button @click="depthDlg = false">取消</el-button><el-button type="primary" :disabled="!depthOk" @click="submitDepth">{{ depthOk ? '提交复核' : '前置条件未满足' }}</el-button></template>
+  </el-dialog>
+
+  <!-- 拆分归口项 -->
+  <el-dialog v-model="splitDlg" :title="'拆分归口项 · ' + (cur ? cur.name : '') + ' › 其他品名'" width="660px">
+    <template v-if="cur">
+      <div class="small muted mb8">“其他品名”占{{ cur.name }}入库行数的 {{ cur.other.toFixed(1) }}%。下列为归口项中出现最多的原始品名，选择一项拆出为新的标准品名：</div>
+      <el-table :data="splitCands" size="small" border highlight-current-row @current-change="r => r && pickSplit(r)">
+        <el-table-column label="" width="46" align="center"><template #default="{row}"><el-radio :model-value="sf.raw" :value="row.raw" @change="pickSplit(row)">&nbsp;</el-radio></template></el-table-column>
+        <el-table-column prop="raw" label="归口项中的原始品名" min-width="170" />
+        <el-table-column label="出现企业数" width="110" align="right"><template #default="{row}"><span class="num">{{ row.ents }}</span> 家</template></el-table-column>
+        <el-table-column label="占该大类行数" width="120" align="right"><template #default="{row}"><span class="num">{{ row.pct }}%</span></template></el-table-column>
+        <el-table-column prop="alias" label="相近写法" min-width="170" />
+      </el-table>
+      <el-form label-width="110px" class="mt16">
+        <el-form-item label="新标准品名"><el-input v-model="sf.name" placeholder="请选择上方原始品名，或直接输入" /></el-form-item>
+        <el-form-item label="规格属性模板"><el-select v-model="sf.tpl" style="width:100%"><el-option v-for="p in cur.products" :key="p.name" :label="'沿用“' + p.name + '”的模板（' + p.attrs + '）'" :value="p.name" /><el-option label="新建模板" value="new" /></el-select></el-form-item>
+      </el-form>
+      <div class="impact" v-if="sf.raw">
+        <div><span>受影响企业数</span><b class="num">{{ sf.ents }} 家</b></div>
+        <div><span>需回补的数据量</span><b class="num">{{ $fmt(Math.round(cur.hist * sf.pct / 100)) }} 万行</b></div>
+        <div><span>新品名初始深度</span><b>L2 品名</b></div>
+      </div>
+      <div class="tip-box small">拆出后，归口项内匹配的历史数据自动回补到新品名并重算；新品名可单独下钻，“其他品名”仍只参与大类级聚合，不开放下钻。提交后须另一人复核。</div>
+    </template>
+    <template #footer><el-button @click="splitDlg = false">取消</el-button><el-button type="primary" :disabled="!sf.name" @click="submitSplit">提交复核</el-button></template>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const LEVELS = [{ k: 'L1', t: '大类' }, { k: 'L2', t: '品名' }, { k: 'L3', t: '材质' }, { k: 'L4', t: '规格段' }, { k: 'L5', t: '单规格' }];
+  /* 与“数据质量监控 › 分品类质量看板”一致的示例值；门槛为示例参数 */
+  const META = {
+    建筑钢材: { target: 5, map: 98.4, th: 95, backlog: 38, other: 0.4, ents: 9862, hist: 182400 },
+    热轧板卷: { target: 4, map: 97.8, th: 95, backlog: 64, other: 0.9, ents: 6415, hist: 103500 },
+    中厚板: { target: 4, map: 96.5, th: 95, backlog: 92, other: 2.6, ents: 3208, hist: 49300 },
+    冷轧及涂镀: { target: 4, map: 94.6, th: 92, backlog: 148, other: 3.8, ents: 2946, hist: 44400 },
+    管材: { target: 4, map: 92.1, th: 90, backlog: 236, other: 6.4, ents: 2731, hist: 39400 },
+    型钢: { target: 4, map: 95.8, th: 92, backlog: 87, other: 2.9, ents: 2514, hist: 34500 },
+    优特钢: { target: 3, map: 89.4, th: 88, backlog: 342, other: 8.7, ents: 1376, hist: 29600 },
+    不锈钢: { target: 3, map: 87.2, th: 88, backlog: 239, other: 11.2, ents: 642, hist: 9900 },
+  };
+  const cats = M.categories.map((c) => {
+    const depth = +c.depth.slice(1);
+    return Object.assign({ name: c.name, depth, geo: c.geo, time: c.time, spec: Math.min(depth, 4), products: c.products, pending: false, backfill: false }, META[c.name]);
+  });
+
+  /* 牌号：钢种、别名、国标、美标、日标、欧标（近似对应） */
+  const STD = {
+    HRB400E: ['热轧带肋钢筋 400 级（抗震）', ['三级螺纹', '抗震螺纹', 'HRB400', 'Ⅲ级抗震', '400E'], 'HRB400E', 'A615 Gr.60', 'SD390', 'B500B'],
+    HRB500E: ['热轧带肋钢筋 500 级（抗震）', ['四级螺纹', 'HRB500', '500E'], 'HRB500E', 'A615 Gr.75', 'SD490', 'B500C'],
+    HPB300: ['热轧光圆钢筋', ['一级钢', '光圆', '圆钢 300'], 'HPB300', 'A615 Gr.40', 'SR295', '—'],
+    Q195: ['碳素结构钢', ['Q195L', '195'], 'Q195', 'A283 Gr.B', 'SS330', 'S185'],
+    Q235B: ['碳素结构钢', ['Q235', '普碳', 'A3', '235B'], 'Q235B', 'A36', 'SS400', 'S235JR'],
+    Q355B: ['低合金高强度结构钢', ['Q345B', '16Mn', '低合金', '355B'], 'Q355B', 'A572 Gr.50', 'SM490A', 'S355JR'],
+    Q390B: ['低合金高强度结构钢', ['Q390', '390B'], 'Q390B', 'A572 Gr.55', '—', '—'],
+    SPHC: ['热轧低碳钢（冲压用）', ['SPHC-P', '酸洗基料', '热轧冲压'], 'Q195 / 08Al', 'A1011 CS', 'SPHC', 'DD11'],
+    DC01: ['冷轧低碳钢', ['DC01-A', '冷板 01', 'St12'], 'DC01', 'A1008 CS', 'SPCC', 'DC01'],
+    SPCC: ['冷轧低碳钢（与 DC01 归并）', ['SPCC-SD', 'SPCC-1B', '冷轧一般用'], 'DC01', 'A1008 CS', 'SPCC', 'DC01'],
+    'DX51D+Z': ['热镀锌低碳钢', ['DX51D', '镀锌 51D', 'DX51D+Z80'], 'DX51D+Z', 'A653 CS', 'SGCC', 'DX51D+Z'],
+    SGCC: ['热镀锌低碳钢（与 DX51D+Z 归并）', ['SGCC-Z', '白铁皮', 'SGCC-Z80'], 'DX51D+Z', 'A653 CS', 'SGCC', 'DX51D+Z'],
+    'TDC51D+Z': ['彩涂板（热镀锌基板）', ['彩钢', 'CGCC', '彩涂 51D'], 'TDC51D+Z', 'A755', 'CGCC', '—'],
+    '20#': ['优质碳素结构钢', ['20 号钢', '20', 'S20C', '1020'], '20', '1020', 'S20C', 'C22E'],
+    '45#': ['优质碳素结构钢', ['45 号钢', '45', 'S45C', '1045', 'C45'], '45', '1045', 'S45C', 'C45E'],
+    '40Cr': ['合金结构钢', ['40 铬', '5140', 'SCr440', '41Cr4'], '40Cr', '5140', 'SCr440', '41Cr4'],
+    '42CrMo': ['合金结构钢', ['42 铬钼', '4140', 'SCM440', '42CrMo4', '42CrMoA'], '42CrMo', '4140', 'SCM440', '42CrMo4'],
+    GCr15: ['高碳铬轴承钢', ['轴承钢 15', '52100', 'SUJ2', '100Cr6'], 'GCr15', '52100', 'SUJ2', '100Cr6'],
+    '20CrMnTi': ['合金结构钢（渗碳齿轮钢）', ['20 铬锰钛', '20CrMnTiH', '18CrMnTi'], '20CrMnTi', '—', '—', '—'],
+    304: ['奥氏体不锈钢', ['SUS304', '06Cr19Ni10', '0Cr18Ni9', '304 2B', '1.4301'], '06Cr19Ni10', '304', 'SUS304', '1.4301'],
+    201: ['奥氏体不锈钢（铬锰系）', ['SUS201', '12Cr17Mn6Ni5N', '201 J1', 'J4'], '12Cr17Mn6Ni5N', '201', 'SUS201', '1.4372'],
+    '316L': ['奥氏体不锈钢（含钼）', ['SUS316L', '022Cr17Ni12Mo2', '00Cr17Ni14Mo2', '1.4404'], '022Cr17Ni12Mo2', '316L', 'SUS316L', '1.4404'],
+  };
+  const SPEC = {
+    螺纹钢: [['直径', 'mm', '6–50（枚举）', 'Φ20×9m → 直径 20'], ['长度', 'm', '6–12', 'Φ20×9m → 长度 9']],
+    盘螺: [['直径', 'mm', '6–12（枚举）', 'Φ8 盘螺 → 直径 8']],
+    高线: [['直径', 'mm', '5.5–14', 'Φ6.5 → 直径 6.5']],
+    热轧卷板: [['厚度', 'mm', '1.2–25.4', '5.75×1500×C → 厚度 5.75'], ['宽度', 'mm', '900–2,150', '5.75×1500×C → 宽度 1500']],
+    热轧带钢: [['厚度', 'mm', '1.5–12', '2.5×355 → 厚度 2.5'], ['宽度', 'mm', '145–850', '2.5×355 → 宽度 355']],
+    普碳中厚板: [['厚度', 'mm', '6–400', '20×2200×10000 → 厚度 20'], ['宽度', 'mm', '1,500–4,800', '→ 宽度 2200'], ['长度', 'mm', '3,000–18,000', '→ 长度 10000']],
+    低合金中厚板: [['厚度', 'mm', '6–400', '30×2500×L → 厚度 30'], ['宽度', 'mm', '1,500–4,800', '→ 宽度 2500'], ['长度', 'mm', '3,000–18,000', 'L 表示不定尺']],
+    冷轧卷板: [['厚度', 'mm', '0.2–3.0', '1.0×1250×C → 厚度 1.0'], ['宽度', 'mm', '700–2,080', '→ 宽度 1250']],
+    镀锌板卷: [['厚度', 'mm', '0.25–3.0', '0.8×1250 Z80 → 厚度 0.8'], ['宽度', 'mm', '700–1,850', '→ 宽度 1250'], ['锌层', 'g/m²', '40–275', 'Z80 → 锌层 80']],
+    彩涂板卷: [['厚度', 'mm', '0.2–1.2', '0.5×1000 → 厚度 0.5'], ['宽度', 'mm', '700–1,250', '→ 宽度 1000'], ['涂层', '枚举', 'PE、SMP、HDP、PVDF', '海蓝 PE → 涂层 PE']],
+    焊管: [['外径', 'mm', '21.3–610', 'DN100×4.0 → 外径 114.3'], ['壁厚', 'mm', '1.5–16', '→ 壁厚 4.0']],
+    镀锌管: [['外径', 'mm', '21.3–219', 'DN50×3.5 → 外径 60.3'], ['壁厚', 'mm', '2.0–6.0', '→ 壁厚 3.5']],
+    无缝管: [['外径', 'mm', '10–914', 'Φ108×6 → 外径 108'], ['壁厚', 'mm', '2–100', '→ 壁厚 6']],
+    方矩管: [['边长', 'mm', '20–500', '100×100×4 → 边长 100×100'], ['壁厚', 'mm', '1.5–16', '→ 壁厚 4']],
+    'H 型钢': [['型号', '枚举', 'HW、HM、HN 系列，国标、日标、欧标对照', 'HN400×200 → HN 系列']],
+    工字钢: [['型号', '枚举', '10#–63#', '25a → 25#']],
+    槽钢: [['型号', '枚举', '5#–40#', '16a → 16#']],
+    角钢: [['型号', '枚举', '2#–25#，等边与不等边', '∠50×5 → 5#']],
+    碳结钢: [['直径', 'mm', '12–600', 'Φ80 → 直径 80'], ['交货状态', '枚举', '热轧、退火、调质（选填）', '—']],
+    合结钢: [['直径', 'mm', '12–600', 'Φ120 调质 → 直径 120'], ['交货状态', '枚举', '热轧、退火、调质（选填）', '调质']],
+    轴承钢: [['直径', 'mm', '12–300', 'Φ40 → 直径 40'], ['交货状态', '枚举', '热轧、球化退火（选填）', '—']],
+    齿轮钢: [['直径', 'mm', '12–300', 'Φ60 → 直径 60']],
+    不锈钢冷轧卷板: [['厚度', 'mm', '0.3–3.0', '1.0×1219×C 2B → 厚度 1.0'], ['宽度', 'mm', '1,000–1,524', '→ 宽度 1219'], ['表面', '枚举', '2B、BA、No.4、HL（选填）', '2B'], ['边部状态', '枚举', '切边、毛边（选填）', '—']],
+    不锈钢热轧卷板: [['厚度', 'mm', '3.0–14', '4.0×1500×C No.1 → 厚度 4.0'], ['宽度', 'mm', '1,250–2,000', '→ 宽度 1500'], ['表面', '枚举', 'No.1（选填）', 'No.1']],
+  };
+  const UNIT = (p, c) => {
+    const n = p.name;
+    if (/螺纹钢|盘螺|高线|碳结钢|合结钢|轴承钢|齿轮钢/.test(n)) return ['吨、件（捆）', '每米重量（kg）= 0.00617 × 直径² ；直径单位 mm。' + (n === '螺纹钢' ? '理计与磅计并存，上传结算重量并带计重方式标识' : '')];
+    if (/不锈钢/.test(n)) return ['吨、卷、张', '重量（kg）= 密度 × 厚度 × 宽度 × 长度；304、201 取 7.93，316L 取 7.98（g/cm³）'];
+    if (/卷板|带钢|中厚板|板卷/.test(n)) return ['吨、卷、张', '重量（kg）= 7.85 × 厚度(mm) × 宽度(m) × 长度(m)' + (/镀锌|彩涂/.test(n) ? '；另加镀层、涂层重量' : '')];
+    if (n === '方矩管') return ['吨、支', '每米重量（kg）= 0.0157 × 壁厚 ×（边长A + 边长B − 2.8584 × 壁厚）'];
+    if (/管/.test(n)) return ['吨、支、米', '每米重量（kg）= 0.02466 × 壁厚 ×（外径 − 壁厚）' + (n === '镀锌管' ? '；镀锌管乘以镀层系数' : '')];
+    return ['吨、支', '按型号查理论重量表（kg/m）× 长度；国标、日标、欧标型号分别维护'];
+  };
+  const SPLIT = {
+    建筑钢材: [['精轧螺纹钢', 86, 0.2, 'PSB830、精轧螺纹'], ['圆钢（建筑用）', 64, 0.1, '建筑圆钢、光圆棒'], ['钢绞线', 31, 0.1, '预应力钢绞线']],
+    热轧板卷: [['花纹板卷', 214, 0.4, '花纹板、扁豆形花纹'], ['酸洗板卷', 168, 0.3, '酸洗卷、SPHC 酸洗'], ['开平板', 97, 0.2, '热轧开平、定尺板']],
+    中厚板: [['容器板', 286, 1.1, '锅炉板、Q345R、压力容器板'], ['船板', 174, 0.8, 'CCS-A、AH36'], ['桥梁板', 92, 0.4, 'Q345qD、桥梁钢']],
+    冷轧及涂镀: [['镀铝锌板卷', 312, 1.6, '覆铝锌、AZ150、DX51D+AZ'], ['电工钢', 148, 1.2, '硅钢、无取向硅钢'], ['镀锡板', 76, 0.5, '马口铁、SPTE']],
+    管材: [['螺旋管', 412, 2.4, '螺旋钢管、螺旋焊管'], ['直缝埋弧焊管', 236, 1.7, 'LSAW、直缝钢管'], ['不锈钢复合管', 58, 0.6, '复合钢管'], ['热扩管', 44, 0.5, '热扩无缝']],
+    型钢: [['扁钢', 198, 1.2, '热轧扁钢、扁铁'], ['钢板桩', 67, 0.8, '拉森钢板桩'], ['矿用钢', 41, 0.5, 'U 型钢、矿工钢']],
+    优特钢: [['弹簧钢', 186, 2.6, '60Si2Mn、65Mn'], ['模具钢', 142, 2.2, 'Cr12MoV、H13'], ['工具钢', 98, 1.5, 'T8、T10'], ['易切削钢', 53, 0.9, 'Y15、1215']],
+    不锈钢: [['不锈钢管', 164, 4.1, '304 无缝管、不锈钢焊管'], ['不锈钢中厚板', 121, 3.3, '304 中板、No.1 中厚板'], ['不锈钢棒', 88, 2.4, '304 圆钢、不锈圆棒']],
+  };
+  const Q = (cat, kind, raw, ents, rows, rec, conf, note) => ({ cat, kind, raw, ents, rows, rec, conf, note: note || '' });
+  const queue = [
+    Q('建筑钢材', '材质', 'HRB400E抗震', 146, 28640, 'HRB400E', 0.94), Q('建筑钢材', '品名', '盘圆', 58, 9120, '高线', 0.82),
+    Q('热轧板卷', '材质', 'Q235B-1', 92, 15480, 'Q235B', 0.93), Q('热轧板卷', '品名', '热卷开平板', 97, 11260, '热轧卷板', 0.74, '或拆分为“开平板”'),
+    Q('中厚板', '品名', '普板', 121, 18300, '普碳中厚板', 0.93), Q('中厚板', '品名', '锅炉板 Q345R', 86, 7940, '其他品名', 0.58, '建议拆分“容器板”'),
+    Q('冷轧及涂镀', '材质', 'SGCC-Z80', 133, 20150, 'SGCC', 0.94), Q('冷轧及涂镀', '品名', '白铁皮', 74, 8830, '镀锌板卷', 0.88), Q('冷轧及涂镀', '品名', '覆铝锌板', 112, 13760, '其他品名', 0.61, '建议拆分“镀铝锌板卷”'),
+    Q('管材', '品名', '热镀锌钢管', 208, 31400, '镀锌管', 0.93), Q('管材', '品名', '流体管 20#', 95, 10220, '无缝管', 0.86), Q('管材', '品名', '螺旋钢管', 164, 22600, '其他品名', 0.66, '建议拆分“螺旋管”'),
+    Q('型钢', '品名', 'H钢 Q355B', 117, 14980, 'H 型钢', 0.92), Q('型钢', '品名', '日标槽钢', 49, 5360, '槽钢', 0.84, '日标型号对照'),
+    Q('优特钢', '材质', 'S45C', 138, 16720, '45#', 0.95, '日标 → 国标对照'), Q('优特钢', '材质', 'SCM440', 104, 11890, '42CrMo', 0.96, '日标 → 国标对照'), Q('优特钢', '材质', '4140', 77, 8450, '42CrMo', 0.9, '美标 → 国标对照'), Q('优特钢', '品名', '弹簧钢 60Si2Mn', 83, 9670, '其他品名', 0.55, '建议拆分“弹簧钢”'),
+    Q('不锈钢', '材质', '06Cr19Ni10', 96, 7280, '304', 0.96, '国标 → 统一钢种'), Q('不锈钢', '材质', 'SUS304 2B', 141, 12340, '304', 0.95, '日标 → 统一钢种'), Q('不锈钢', '材质', '316', 52, 3150, '316L', 0.71, '需人工确认是否低碳'), Q('不锈钢', '品名', '不锈钢管 304', 88, 6410, '其他品名', 0.6, '建议拆分“不锈钢管”'),
+  ];
+
+  let seq = 3;
+  STP.mount({
+    data() {
+      const self = this;
+      return {
+        me: '林若彤', levels: LEVELS, cats, queue,
+        sel: { cat: M.categories[0], prod: M.categories[0].products[0] }, mdTab: 'material', treeKw: '',
+        tree: M.categories.map((c) => ({ id: c.name, label: c.name, depth: true, children: c.products.map((p) => ({ id: c.name + '/' + p.name, label: p.name, cat: c.name })).concat([{ id: c.name + '/其他', label: '其他品名', other: true, cat: c.name }]) })),
+        matCache: {},
+        qCat: '', qHigh: false, qSel: [],
+        cur: null, grainDlg: false, gf: { geo: '市', time: '日', spec: 4, reason: '' },
+        depthDlg: false, splitDlg: false, sf: { raw: '', name: '', tpl: '', ents: 0, pct: 0 },
+        pendings: [
+          { id: 'MDC-1124-002', type: '披露粒度', cat: '管材', content: '管材：最细地区 地级市 → 省（原因：地级市层级屏蔽率 57%）', by: '赵启明', time: '2026-11-24 09:26', status: '待复核', reviewer: '', apply() { const c = cats.find((x) => x.name === '管材'); const r = self.cats.find((x) => x.name === c.name); r.geo = '省'; r.pending = false; } },
+        ],
+        logs: [
+          { time: '2026-11-24 09:26', by: '赵启明', obj: '管材 · 披露粒度', what: '最细地区：地级市 → 省', impact: '影响 438 个数据池中的 291 个', ver: '—', st: '待复核' },
+          { time: '2026-11-21 16:40', by: '赵启明', obj: '型钢 · 标准化深度', what: 'L3 材质 → L4 规格段；启用 H 型钢、工字钢、槽钢、角钢规格段方案', impact: '2,514 家企业，34,500 万行，回补 4 小时', ver: 'MD-2026.11.3', st: '已生效' },
+          { time: '2026-11-19 11:05', by: '林若彤', obj: '中厚板 · 其他品名', what: '拆分归口项：新增标准品名“低合金中厚板”', impact: '1,460 家企业，回补 20,700 万行', ver: 'MD-2026.11.2', st: '已生效' },
+          { time: '2026-11-18 09:12', by: '赵启明', obj: '不锈钢、优特钢 · 披露粒度', what: '最细地区到省、最细时间到旬（复核人 林若彤）', impact: '已提前 3 日向上游公告', ver: '—', st: '已生效' },
+          { time: '2026-11-15 14:30', by: '赵启明', obj: '优特钢 · 牌号对照', what: '新增 86 组国标、美标、日标、欧标牌号对照，别名 412 个', impact: '映射率 +1.8 个百分点', ver: 'MD-2026.11.1', st: '已生效' },
+        ],
+      };
+    },
+    computed: {
+      backlogTotal() { return this.cats.reduce((a, c) => a + c.backlog, 0); },
+      passCount() { return this.cats.filter((c) => c.map >= c.th).length; },
+      highConf() { return this.queue.filter((q) => q.conf >= 0.9).length; },
+      selCat() { return this.cats.find((c) => c.name === this.sel.cat.name); },
+      detail() {
+        const p = this.sel.prod, c = this.sel.cat, cc = this.selCat;
+        const key = c.name + '/' + p.name;
+        if (!this.matCache[key]) {
+          this.matCache[key] = p.materials.map((m) => { const s = STD[m] || [m, [], m, '—', '—', '—']; return { std: m, steel: s[0], alias: s[1].slice(), gb: s[2], astm: s[3], jis: s[4], en: s[5] }; });
+        }
+        const spec = SPEC[p.name] || p.attrs.split('、').map((a) => [a, 'mm', '—', '—']);
+        const rangeTxt = spec.map((s) => s[0] + ' ' + s[2] + (s[1] === '枚举' ? '' : ' ' + s[1])).join('；');
+        const compat = p.materials.map((m) => ({ prod: p.name, mat: m, range: rangeTxt, ok: true, use: '—' }));
+        const bad = c.name === '建筑钢材' ? 'Q355B' : c.name === '不锈钢' ? 'Q235B' : c.name === '优特钢' ? 'HRB400E' : 'HRB400E';
+        compat.push({ prod: p.name, mat: bad, range: '任意', ok: false, use: '该行校验失败，进入失败明细，提示企业核对品名或材质' });
+        compat.push({ prod: p.name, mat: p.materials[0], range: '超出上述取值范围', ok: false, use: '规格解析结果置空，进入待映射队列' });
+        const cap = { 建筑钢材: 500, 热轧板卷: 800, 中厚板: 600, 冷轧及涂镀: 400, 管材: 300, 型钢: 300, 优特钢: 200, 不锈钢: 120 }[c.name];
+        return {
+          materials: this.matCache[key],
+          attrs: spec.map((s) => ({ name: s[0], unit: s[1], range: s[2], req: s[2].indexOf('选填') < 0, parse: s[3] })),
+          compat,
+          units: c.products.map((x) => { const u = UNIT(x, c); return { prod: x.name, unit: u[0], formula: u[1] }; }),
+          rules: [
+            { rule: '单行吨位上限', def: cap + ' 吨', own: p === c.products[0] ? Math.round(cap * 1.2) + ' 吨' : '', lv: '该行标记失败' },
+            { rule: '规格属性取值范围', def: '按各品名规格模板', own: '', lv: '进入待映射队列' },
+            { rule: '品名与材质兼容性', def: '按兼容性规则', own: '', lv: '该行标记失败' },
+            { rule: '计量单位与重量齐全', def: '重量必填', own: /管|型钢|工字钢|槽钢|角钢/.test(p.name) ? '重量必填；支数选填' : '', lv: '该行标记失败' },
+            { rule: '销量相对自身近 30 日均值的突变', def: '超过 ' + (cc.depth >= 4 ? 5 : 8) + ' 倍', own: '', lv: '标记可疑并隔离' },
+            { rule: '自动映射生效的置信度', def: '不低于 95%', own: c.name === '优特钢' || c.name === '不锈钢' ? '不低于 97%' : '', lv: '低于阈值进入待映射队列' },
+          ],
+        };
+      },
+      queueRows() {
+        const order = this.cats.map((c) => c.name);
+        return this.queue.filter((q) => (!this.qCat || q.cat === this.qCat) && (!this.qHigh || q.conf >= 0.9)).sort((a, b) => order.indexOf(a.cat) - order.indexOf(b.cat));
+      },
+      grainChanged() { const c = this.cur, g = this.gf; return !!c && (c.geo !== g.geo || c.time !== g.time || c.spec !== g.spec); },
+      depthChecks() {
+        const c = this.cur; if (!c) return [];
+        const next = LEVELS[c.depth].t;
+        return [
+          { t: '映射率达到该大类门槛', v: c.map.toFixed(1) + '%（门槛 ' + c.th + '%，示例参数）', ok: c.map >= c.th },
+          { t: next + '字典与方案已通过品类评审', v: c.depth + 1 <= c.target ? '已评审（' + (c.depth === 2 ? '牌号字典与多标准对照' : c.depth === 3 ? '规格段方案 ' + c.products.length + ' 套' : '单规格字典') + '）' : '尚未评审', ok: c.depth + 1 <= c.target },
+          { t: '兼容性规则已配置', v: '已配置 ' + c.products.length + ' 组', ok: true },
+          { t: '待映射积压不超过 200 项', v: c.backlog + ' 项', ok: c.backlog <= 200 },
+        ];
+      },
+      depthOk() { return this.depthChecks.every((c) => c.ok); },
+      splitCands() { return this.cur ? SPLIT[this.cur.name].map((s) => ({ raw: s[0], ents: s[1], pct: s[2], alias: s[3] })) : []; },
+    },
+    watch: { treeKw(v) { this.$refs.tree.filter(v); } },
+    methods: {
+      depthOf(name) { return this.cats.find((c) => c.name === name).depth; },
+      backlogOf(name) { return this.cats.find((c) => c.name === name).backlog; },
+      filterNode(v, data) { return !v || data.label.indexOf(v) >= 0; },
+      pick(data) {
+        const c = M.categories.find((x) => x.name === (data.cat || data.label));
+        if (data.other) { this.openSplit(this.cats.find((x) => x.name === c.name)); return; }
+        this.sel = { cat: c, prod: data.cat ? c.products.find((p) => p.name === data.label) : c.products[0] };
+        this.$nextTick(() => { if (this.$refs.tree) this.$refs.tree.setCurrentKey(c.name + '/' + this.sel.prod.name); });
+      },
+      addAlias(row) {
+        ElementPlus.ElMessageBox.prompt('为标准牌号 ' + row.std + ' 添加别名', '添加别名', { confirmButtonText: '添加', cancelButtonText: '取消', inputPlaceholder: '企业 ERP 中的写法' })
+          .then(({ value }) => { if (value && row.alias.indexOf(value) < 0) { row.alias.push(value); this.$demo('别名已添加，自动匹配即时生效'); } }).catch(() => {});
+      },
+      qSpan({ row, column, rowIndex }) {
+        if (column.label !== '大类') return undefined;
+        const rows = this.queueRows;
+        if (rowIndex > 0 && rows[rowIndex - 1].cat === row.cat) return { rowspan: 0, colspan: 0 };
+        let n = 1; while (rows[rowIndex + n] && rows[rowIndex + n].cat === row.cat) n++;
+        return { rowspan: n, colspan: 1 };
+      },
+      confirmMap(rows) {
+        const list = rows.slice();
+        list.forEach((r) => { const i = this.queue.indexOf(r); if (i >= 0) this.queue.splice(i, 1); const c = this.cats.find((x) => x.name === r.cat); c.backlog = Math.max(0, c.backlog - 1); });
+        this.qSel = [];
+        this.logs.unshift({ time: '2026-11-24 14:' + (20 + seq), by: this.me, obj: '待映射队列', what: '确认映射 ' + list.length + ' 项：' + list.slice(0, 3).map((r) => r.raw + ' → ' + r.rec).join('；') + (list.length > 3 ? ' 等' : ''), impact: '写入别名库，相关数据自动回补并重算', ver: '—', st: '已生效' });
+        this.$demo('已确认 ' + list.length + ' 项映射，已写入别名库；相关待映射数据将自动回补并参与聚合');
+      },
+      submit(type, cat, content, impact, apply) {
+        const id = 'MDC-1124-00' + (seq++);
+        this.pendings.unshift({ id, type, cat: cat.name, content, by: this.me, time: '2026-11-24 14:' + (18 + seq), status: '待复核', reviewer: '', apply });
+        this.logs.unshift({ time: '2026-11-24 14:' + (18 + seq), by: this.me, obj: cat.name + ' · ' + type, what: content, impact, ver: '—', st: '待复核' });
+        cat.pending = true;
+        this.$demo('已提交复核（' + id + '），须由另一人复核后生效');
+      },
+      approve(p, who) {
+        p.apply(); p.status = '已生效'; p.reviewer = who;
+        const c = this.cats.find((x) => x.name === p.cat); if (c) c.pending = this.pendings.some((x) => x.cat === p.cat && x.status === '待复核');
+        const l = this.logs.find((x) => x.what === p.content || (x.obj.indexOf(p.cat) === 0 && x.st === '待复核')); if (l) { l.st = '已生效'; l.what += '（复核人 ' + who + '）'; }
+        this.$demo('复核通过，变更已生效并留痕');
+      },
+      reject(p) { p.status = '已驳回'; p.reviewer = this.me; const c = this.cats.find((x) => x.name === p.cat); if (c) c.pending = false; this.$demo('已驳回，已通知提交人'); },
+      openGrain(row) { this.cur = row; this.gf = { geo: row.geo, time: row.time, spec: row.spec, reason: '' }; this.grainDlg = true; },
+      submitGrain() {
+        const c = this.cur, g = Object.assign({}, this.gf);
+        const txt = (geo, time, spec) => (geo === '市' ? '地级市' : '省') + ' / ' + time + ' / ' + LEVELS[spec - 1].t;
+        this.submit('披露粒度', c, c.name + '：' + txt(c.geo, c.time, c.spec) + ' → ' + txt(g.geo, g.time, g.spec) + '（原因：' + g.reason + '）', '生效前向上游公告', () => { c.geo = g.geo; c.time = g.time; c.spec = g.spec; });
+        this.grainDlg = false;
+      },
+      openDepth(row) { this.cur = row; this.depthDlg = true; },
+      submitDepth() {
+        const c = this.cur, to = c.depth + 1;
+        this.submit('标准化深度', c, c.name + '：L' + c.depth + ' ' + LEVELS[c.depth - 1].t + ' → L' + to + ' ' + LEVELS[to - 1].t, STP.fmt(c.ents) + ' 家企业，' + STP.fmt(c.hist) + ' 万行，自动回补重算', () => { c.depth = to; c.backfill = true; });
+        this.depthDlg = false;
+      },
+      openSplit(row) { this.cur = row; this.sf = { raw: '', name: '', tpl: row.products[0].name, ents: 0, pct: 0 }; this.splitDlg = true; },
+      pickSplit(r) { this.sf.raw = r.raw; this.sf.name = r.raw.replace(/（.*）/, ''); this.sf.ents = r.ents; this.sf.pct = r.pct; },
+      submitSplit() {
+        const c = this.cur, s = Object.assign({}, this.sf);
+        this.submit('归口项拆分', c, c.name + '：从“其他品名”拆出新标准品名“' + s.name + '”', (s.ents || '—') + ' 家企业，回补后重算', () => { c.other = Math.max(0, +(c.other - s.pct).toFixed(1)); });
+        this.splitDlg = false;
+      },
+    },
+  });
+})();
+</script>
+</body>
+</html>

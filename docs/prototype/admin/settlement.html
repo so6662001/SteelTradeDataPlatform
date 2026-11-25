@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>分成结算 · 平台运营后台 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.el-descriptions__label { white-space: nowrap; }
+.sec-title { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; font-size: 14px; font-weight: 600; }
+.sec-title i { width: 4px; height: 14px; border-radius: 2px; background: var(--el-color-primary); display: inline-block; }
+.sec-title small { font-weight: 400; color: var(--stp-sub); font-size: 12px; }
+.sec-title.mt16 { margin-top: 18px; }
+.demo-tag { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 11px; line-height: 18px; background: #fff8eb; color: #9a6400; border: 1px solid #f3dfb8; font-weight: 400; }
+.filter-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.duty { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 8px; }
+.duty > div { background: #fff; border: 1px solid #f3dfb8; border-radius: 4px; padding: 6px 10px; font-size: 12px; line-height: 1.7; color: #4a5568; }
+.duty b { color: #1f2d3d; }
+.duty > div.on { border-color: #9ad6b4; background: #f3fbf6; }
+.duty .el-tag { margin-left: 8px; }
+.flow-line { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #4a5568; flex-wrap: wrap; }
+.flow-line span { padding: 2px 10px; border-radius: 12px; background: #eef4fb; color: #2b5d9b; }
+.neg { color: #e5484d; }
+.ok-t { color: #18a058; } .bad-t { color: #e5484d; }
+.stat.click { cursor: pointer; }
+.stat.click:hover { border-color: #a8d2ff; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="admin" :user="me" :role="roleOf(me)" active="settlement" title="分成结算"
+  desc="按结算周期汇总每日计提，生成结算单；下游确认并开票后，平台对公付款。结算数据只引用名额、订单和企业标识，不含任何企业上传的业务明细。">
+  <template #actions>
+    <el-dropdown trigger="click" @command="v => me = v">
+      <el-button><el-icon><UserFilled /></el-icon>原型状态 · 当前操作人：{{ me }}（{{ roleOf(me) }}）<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+      <template #dropdown><el-dropdown-menu>
+        <el-dropdown-item v-for="s in staff" :key="s.n" :command="s.n" :disabled="s.n===me">{{ s.n }}（{{ s.r }}）</el-dropdown-item>
+      </el-dropdown-menu></template>
+    </el-dropdown>
+    <el-button type="primary" @click="genDlg=true"><el-icon><DocumentAdd /></el-icon>生成结算单</el-button>
+  </template>
+
+  <div class="grid c6">
+    <stat-card label="2026-10 结算单数" :value="4186" unit="张" note="每家企业每期一张" tip="只为当期有计提、冲正或结转余额的下游企业生成结算单；已上架但当期没有被订阅的企业不生成"></stat-card>
+    <stat-card label="应付合计" :value="612.5" :d="1" unit="万元" tip="计提合计 6,149,236 − 冲正 18,421 + 上期结转转入 86,512 − 结转到下期 91,846 = 6,125,481 元。结算金额按月四舍五入到元。" note="6,125,481 元"></stat-card>
+    <div class="stat click" @click="tab='st'; sf.st='待审核'"><div class="label">待审核</div><div class="value num">{{ auditLeft }}<span class="unit">张</span></div><div class="foot"><span>审核后发布给下游确认</span></div></div>
+    <div class="stat click" @click="tab='pay'"><div class="label">待付款批次</div><div class="value num">{{ batches.filter(b => b.st==='待发起' || b.st==='待复核').length }}<span class="unit">个</span></div><div class="foot"><span>待发起 {{ batches.filter(b => b.st==='待发起').length }} · 待复核 {{ batches.filter(b => b.st==='待复核').length }}</span></div></div>
+    <div class="stat click" @click="tab='dispute'"><div class="label">异议与冻结</div><div class="value num">{{ disputeOpen + 4 }}<span class="unit">家</span></div><div class="foot"><span>异议 {{ disputeOpen }} · 冻结 4</span></div></div>
+    <div class="stat click" @click="tab='carry'"><div class="label">结转到下期</div><div class="value num">412<span class="unit">家</span></div><div class="foot"><span>合计 91,846 元</span></div></div>
+  </div>
+
+  <div class="tip-box orange small" style="margin-bottom:14px">
+    <b><el-icon style="vertical-align:-2px"><Lock /></el-icon> 职责分离：</b>分成规则修改、结算单审核、付款操作分别由不同角色完成，并各自双人复核；付款只能付到与认证主体一致的对公账户；收款账户变更有冷静期并通知企业。
+    <div class="duty">
+      <div><b>分成规则修改</b>　运营主管或财务提交，另一人复核　<a href="share-rules.html">分成规则与台账</a></div>
+      <div :class="{on: can('audit')}"><b>结算单审核</b>　财务（结算岗）审核，审核人记录在结算单上<el-tag v-if="can('audit')" size="small" type="success" disable-transitions>当前可审核</el-tag></div>
+      <div :class="{on: can('pay') || can('payReview')}"><b>付款操作</b>　财务（出纳岗）发起，财务主管复核后才提交银行<el-tag v-if="can('pay') || can('payReview')" size="small" type="success" disable-transitions>当前可{{ can('pay') ? '发起' : '复核' }}</el-tag></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <el-tabs v-model="tab">
+      <!-- ============ 结算单 ============ -->
+      <el-tab-pane label="结算单" name="st">
+        <div class="filter-bar">
+          <el-select v-model="sf.period" style="width:130px"><el-option label="2026-10" value="2026-10" /><el-option label="2026-09" value="2026-09" /></el-select>
+          <el-select v-model="sf.st" clearable placeholder="全部状态" style="width:150px"><el-option v-for="s in stStatus" :key="s" :label="s" :value="s" /></el-select>
+          <el-input v-model="sf.kw" clearable placeholder="下游企业 / 结算单号" style="width:240px"><template #prefix><el-icon><Search /></el-icon></template></el-input>
+          <span style="flex:1"></span>
+          <div class="flow-line"><span>生成</span>›<span>平台审核</span>›<span>下游确认</span>›<span>下游开票</span>›<span>平台付款</span></div>
+          <el-button :disabled="!auditLeft" @click="batchAudit"><el-icon><Finished /></el-icon>批量审核通过（{{ auditLeft }}）</el-button>
+        </div>
+        <el-table :data="stRows" border size="small">
+          <template #empty><el-empty description="没有符合条件的结算单" :image-size="70" /></template>
+          <el-table-column label="结算单号" width="146"><template #default="{row}"><a href="javascript:;" class="num" @click="openSt(row)">{{ row.id }}</a></template></el-table-column>
+          <el-table-column prop="period" label="期间" width="80" />
+          <el-table-column label="下游企业" min-width="210"><template #default="{row}">{{ row.ent }}</template></el-table-column>
+          <el-table-column label="计提合计" width="106" align="right"><template #default="{row}"><span class="num">{{ $fmt(row.acc) }}</span></template></el-table-column>
+          <el-table-column label="冲正" width="90" align="right"><template #default="{row}"><span class="num" :class="{neg: row.rev}">{{ row.rev ? $fmt(row.rev) : '0' }}</span></template></el-table-column>
+          <el-table-column label="上期结转" width="90" align="right"><template #default="{row}"><span class="num">{{ $fmt(row.carry) }}</span></template></el-table-column>
+          <el-table-column label="应付金额" width="106" align="right"><template #default="{row}"><b class="num">{{ $fmt(row.pay) }}</b></template></el-table-column>
+          <el-table-column label="状态" width="170">
+            <template #default="{row}"><el-tag size="small" :type="stType(row.st)" disable-transitions>{{ row.st }}</el-tag><div v-if="row.sub" class="small muted">{{ row.sub }}</div></template>
+          </el-table-column>
+          <el-table-column label="操作" width="76" align="center"><template #default="{row}"><el-button link type="primary" @click="openSt(row)">{{ row.st==='待审核' ? '审核' : '查看' }}</el-button></template></el-table-column>
+        </el-table>
+        <div class="tbl-foot"><span>当前显示 {{ stRows.length }} 张（原型示例数据）；金额单位：元，计提金额按月四舍五入到元。{{ sf.period }} 结算期共 {{ sf.period==='2026-10' ? '4,186' : '4,102' }} 张</span><el-pagination layout="prev, pager, next" :total="4186" :page-size="50" small background /></div>
+      </el-tab-pane>
+
+      <!-- ============ 异议处理 ============ -->
+      <el-tab-pane name="dispute">
+        <template #label>异议处理<el-badge v-if="disputeOpen" :value="disputeOpen" style="margin-left:6px" /></template>
+        <div class="tip-box blue small mb12">下游企业对结算单有异议时，结算单进入“有异议”状态，暂停开票与付款。答复时<b>不得披露订阅钢厂的名称，也不按钢厂拆分金额</b>，只说明名额日数、系数与规则版本。</div>
+        <el-table :data="disputes" border size="small">
+          <el-table-column label="下游企业" min-width="200"><template #default="{row}">{{ row.ent }}<div class="small muted num">{{ row.sid }}</div></template></el-table-column>
+          <el-table-column prop="period" label="期间" width="80" />
+          <el-table-column prop="text" label="异议内容" min-width="300" />
+          <el-table-column label="提出时间" width="140"><template #default="{row}"><span class="num">{{ row.t }}</span></template></el-table-column>
+          <el-table-column label="处理状态" width="190"><template #default="{row}"><el-tag size="small" :type="row.st==='待处理' ? 'danger' : row.st==='处理中' ? 'warning' : 'success'" disable-transitions>{{ row.st }}</el-tag><div v-if="row.by" class="small muted">{{ row.by }}</div></template></el-table-column>
+          <el-table-column label="操作" width="76" align="center"><template #default="{row}"><el-button link type="primary" @click="openDispute(row)">{{ row.st==='待处理' || row.st==='处理中' ? '处理' : '查看' }}</el-button></template></el-table-column>
+        </el-table>
+        <div class="small muted mt8">另有 4 家企业因涉嫌造假或反刷量命中被冻结待付金额，在<a href="share-rules.html">分成规则与台账 › 冻结与追回</a>处理。</div>
+      </el-tab-pane>
+
+      <!-- ============ 发票核对 ============ -->
+      <el-tab-pane label="发票核对" name="inv">
+        <div class="tip-box small mb12">下游确认结算单后上传发票。系统自动比对两项：<b>开票主体与企业认证主体是否一致</b>、<b>发票金额与应付金额是否一致</b>；两项都一致且人工核对通过后，结算单进入“待付款”。发票类型与税费承担方式待财务与法务确定（N-17）。</div>
+        <el-table :data="invRows" border size="small">
+          <el-table-column label="下游企业（认证主体）" min-width="200"><template #default="{row}">{{ row.ent }}<div class="small muted num">{{ row.sid }}</div></template></el-table-column>
+          <el-table-column label="发票号码" width="170"><template #default="{row}"><span class="num">{{ row.no }}</span></template></el-table-column>
+          <el-table-column label="开票主体" min-width="200"><template #default="{row}">{{ row.issuer }}<div class="small" :class="row.issuer===row.ent ? 'ok-t' : 'bad-t'">{{ row.issuer===row.ent ? '与认证主体一致' : '与认证主体不一致' }}</div></template></el-table-column>
+          <el-table-column label="发票金额" width="100" align="right"><template #default="{row}"><span class="num">{{ $fmt(row.amt, 2) }}</span></template></el-table-column>
+          <el-table-column label="应付金额" width="100" align="right"><template #default="{row}"><span class="num">{{ $fmt(row.pay, 2) }}</span><div class="small" :class="row.amt===row.pay ? 'ok-t' : 'bad-t'">{{ row.amt===row.pay ? '金额一致' : '相差 ' + $fmt(Math.abs(row.amt - row.pay), 2) }}</div></template></el-table-column>
+          <el-table-column label="上传时间" width="136"><template #default="{row}"><span class="num">{{ row.t }}</span></template></el-table-column>
+          <el-table-column label="核对结果" width="96"><template #default="{row}"><el-tag size="small" :type="row.st==='待核对' ? 'warning' : row.st==='通过' ? 'success' : 'danger'" disable-transitions>{{ row.st }}</el-tag></template></el-table-column>
+          <el-table-column label="操作" width="126" align="center">
+            <template #default="{row}">
+              <template v-if="row.st==='待核对'">
+                <el-tooltip :disabled="invOk(row)" content="开票主体或金额不一致，不能通过，请退回企业重开" placement="top"><span><el-button link type="success" :disabled="!invOk(row)" @click="checkInv(row, true)">通过</el-button></span></el-tooltip>
+                <el-button link type="danger" @click="checkInv(row, false)">退回</el-button>
+              </template>
+              <el-button v-else link type="primary" @click="$info('原型演示：查看已归档的发票影像')">查看发票</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
+
+      <!-- ============ 付款批次 ============ -->
+      <el-tab-pane name="pay">
+        <template #label>付款批次与付款记录<el-badge v-if="batches.filter(b => b.st==='待复核').length" :value="batches.filter(b => b.st==='待复核').length" style="margin-left:6px" /></template>
+        <el-alert type="warning" show-icon :closable="false">
+          <template #title>付款<b>只付到与认证主体一致的对公账户</b>。付款批次每月 10 日、25 日各一批。财务（出纳岗）发起付款后，须由<b>另一人（财务主管）复核</b>才会提交银行，发起人不能复核自己发起的批次；结算单审核人不参与付款。当前操作人：{{ me }}（{{ roleOf(me) }}）。</template>
+        </el-alert>
+        <el-table :data="batches" border size="small">
+          <el-table-column label="批次号" width="150"><template #default="{row}"><a href="javascript:;" class="num" @click="openBatch(row)">{{ row.id }}</a></template></el-table-column>
+          <el-table-column prop="period" label="结算期" min-width="190" />
+          <el-table-column label="笔数" width="80" align="right"><template #default="{row}"><span class="num">{{ $fmt(row.n) }}</span></template></el-table-column>
+          <el-table-column label="金额（元）" width="130" align="right"><template #default="{row}"><b class="num">{{ $fmt(row.amt, 2) }}</b></template></el-table-column>
+          <el-table-column label="发起" width="136"><template #default="{row}"><template v-if="row.by">{{ row.by }}<div class="small muted num">{{ row.byT }}</div></template><span v-else class="muted">—</span></template></el-table-column>
+          <el-table-column label="复核" width="136"><template #default="{row}"><template v-if="row.rv">{{ row.rv }}<div class="small muted num">{{ row.rvT }}</div></template><span v-else class="muted">—</span></template></el-table-column>
+          <el-table-column label="状态" width="150"><template #default="{row}"><el-tag size="small" :type="payType(row.st)" disable-transitions>{{ row.st }}</el-tag><div v-if="row.fail" class="small bad-t">失败 {{ row.fail }} 笔</div></template></el-table-column>
+          <el-table-column label="操作" width="170" align="center">
+            <template #default="{row}">
+              <el-tooltip v-if="row.st==='待发起'" :disabled="can('pay')" :content="need('pay')" placement="top"><span><el-button link type="primary" :disabled="!can('pay')" @click="startPay(row)">发起付款</el-button></span></el-tooltip>
+              <template v-else-if="row.st==='待复核'">
+                <el-tooltip :disabled="row.by!==me && can('payReview')" :content="row.by===me ? '发起人不能复核自己发起的批次，请切换操作人为财务主管秦海峰' : need('payReview')" placement="top"><span><el-button link type="success" :disabled="row.by===me || !can('payReview')" @click="reviewPay(row, true)">复核通过</el-button></span></el-tooltip>
+                <el-button link type="danger" :disabled="row.by===me || !can('payReview')" @click="reviewPay(row, false)">退回</el-button>
+              </template>
+              <el-button v-else-if="row.st==='部分失败'" link type="warning" @click="retry(row)">失败重付</el-button>
+              <el-button v-if="row.st==='已完成' || row.st==='部分失败'" link type="primary" @click="$info('原型演示：下载批次 ' + row.id + ' 的银行付款凭证（电子回单）')">付款凭证</el-button>
+              <el-button v-if="row.st!=='已完成' && row.st!=='部分失败'" link type="primary" @click="openBatch(row)">明细</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
+
+      <!-- ============ 冲正记录 ============ -->
+      <el-tab-pane label="冲正记录" name="rev">
+        <div class="tip-box small mb12">上游退款、订单取消、名额补偿导致名额日台账变化时，系统自动生成分成冲正。<b>未付部分</b>在当期或下一期结算单中直接扣减；<b>已付部分</b>不向企业追款，从该企业的后续结算中扣减。<span class="demo-tag">已付部分的处理方式待确认（N-23）</span></div>
+        <el-table :data="reversals" border size="small">
+          <el-table-column label="冲正单号" width="146"><template #default="{row}"><span class="num">{{ row.id }}</span></template></el-table-column>
+          <el-table-column label="来源" width="100"><template #default="{row}"><el-tag size="small" :type="row.src==='上游退款' ? 'danger' : row.src==='订单取消' ? 'warning' : 'primary'" disable-transitions>{{ row.src }}</el-tag></template></el-table-column>
+          <el-table-column label="关联订单" width="160"><template #default="{row}"><span class="num">{{ row.no }}</span></template></el-table-column>
+          <el-table-column label="下游企业" min-width="190"><template #default="{row}">{{ row.ent }}</template></el-table-column>
+          <el-table-column label="原计提期间" width="190"><template #default="{row}"><span class="num">{{ row.range }}</span></template></el-table-column>
+          <el-table-column label="名额日" width="70" align="right"><template #default="{row}"><span class="num">{{ row.days }}</span></template></el-table-column>
+          <el-table-column label="冲正金额" width="96" align="right"><template #default="{row}"><span class="num neg">{{ $fmt(row.amt) }}</span></template></el-table-column>
+          <el-table-column label="处理方式 / 状态" min-width="190"><template #default="{row}"><span class="dot" :class="row.done ? 'ok' : 'warn'"></span>{{ row.how }}</template></el-table-column>
+        </el-table>
+        <div class="tbl-foot"><span>2026-10 结算期冲正合计 <b class="neg num">-18,421</b> 元；当前显示 {{ reversals.length }} 条示例（首条属于 2026-11 结算期）。每条冲正可追溯到名额日台账的冲正行，见<a href="share-rules.html">分成规则与台账</a>；上游退款审核见<a href="billing.html">订单与计费</a>。</span></div>
+      </el-tab-pane>
+
+      <!-- ============ 结转管理 ============ -->
+      <el-tab-pane label="结转管理" name="carry">
+        <div class="filter-bar">
+          <span>起付金额 <b class="num">500</b> 元<span class="demo-tag" style="margin-left:6px">示例参数，待业务方确定</span></span>
+          <span class="muted small">应付金额低于起付金额的结算单不进入开票与付款，金额自动结转到下期，累计达到起付金额后一并结算。</span>
+          <span style="flex:1"></span>
+          <el-button @click="$demo('已向 412 家结转企业发送站内通知，说明结转金额与预计可结算期间')"><el-icon><Bell /></el-icon>通知结转企业</el-button>
+        </div>
+        <el-table :data="carries" border size="small">
+          <el-table-column label="下游企业" min-width="220"><template #default="{row}">{{ row.ent }}</template></el-table-column>
+          <el-table-column label="结转起始期间" width="120"><template #default="{row}"><span class="num">{{ row.from }}</span></template></el-table-column>
+          <el-table-column label="已结转期数" width="100" align="right"><template #default="{row}"><span class="num">{{ row.n }}</span></template></el-table-column>
+          <el-table-column label="2026-10 计提" width="120" align="right"><template #default="{row}"><span class="num">{{ $fmt(row.acc) }}</span></template></el-table-column>
+          <el-table-column label="累计结转金额" width="130" align="right"><template #default="{row}"><b class="num">{{ $fmt(row.total) }}</b></template></el-table-column>
+          <el-table-column label="距起付金额" min-width="200"><template #default="{row}"><el-progress :percentage="Math.round(row.total / 5)" :stroke-width="8" /></template></el-table-column>
+          <el-table-column label="预计可结算" width="120"><template #default="{row}">{{ row.eta }}</template></el-table-column>
+        </el-table>
+        <div class="tbl-foot"><span>2026-10 结算期共 412 家企业结转到下期，合计 91,846 元；当前显示 {{ carries.length }} 家示例。企业退出平台时，结转余额不受起付金额限制，一次性结清。</span></div>
+      </el-tab-pane>
+    </el-tabs>
+  </div>
+
+  <!-- 结算单详情 / 审核 -->
+  <el-dialog v-model="sd.show" :title="(sd.r && sd.r.st==='待审核' ? '审核结算单 ' : '结算单 ') + (sd.r ? sd.r.id : '')" width="680px">
+    <template v-if="sd.r">
+      <div class="row between mb12"><b style="font-size:15px">{{ sd.r.ent }}</b><el-tag :type="stType(sd.r.st)" disable-transitions>{{ sd.r.st }}</el-tag></div>
+      <table class="plain-table mb12">
+        <thead><tr><th style="width:110px">项目</th><th>依据</th><th class="r" style="width:110px">金额（元）</th></tr></thead>
+        <tbody>
+          <tr><td>计提合计</td><td><template v-if="sd.r.q">{{ sd.r.days }} 个生效名额日 × (400 ÷ 30) × 20% × 质量系数 {{ sd.r.grade }} {{ sd.r.q.toFixed(2) }} × 丰富度 {{ sd.r.r.toFixed(2) }}，四舍五入到元　规则版本 SR-V3</template><template v-else>当期不满足资格门槛</template></td><td class="r num">{{ $fmt(sd.r.acc) }}</td></tr>
+          <tr><td>冲正</td><td>{{ sd.r.revNote || '本期无冲正' }}</td><td class="r num" :class="{neg: sd.r.rev}">{{ $fmt(sd.r.rev) }}</td></tr>
+          <tr><td>上期结转转入</td><td>{{ sd.r.carry ? '上期应付低于起付金额，结转至本期' : '无' }}</td><td class="r num">{{ $fmt(sd.r.carry) }}</td></tr>
+          <tr class="total"><td>应付金额</td><td>{{ sd.r.st==='结转下期' ? '合计 ' + $fmt(sd.r.acc + sd.r.rev + sd.r.carry) + ' 元，低于起付金额 500 元，结转到 2026-11' : (sd.r.st==='已冻结' ? '冻结期间暂不付款' : '') }}</td><td class="r num">{{ $fmt(sd.r.pay) }}</td></tr>
+        </tbody>
+      </table>
+      <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="期末被订阅家数">{{ sd.r.subs }} 家（只统计家数）</el-descriptions-item>
+        <el-descriptions-item label="当期有效上传天数">{{ sd.r.up }} 天</el-descriptions-item>
+        <el-descriptions-item label="收款账户" :span="2">户名：{{ sd.r.ent }}（与认证主体一致）　对公账户尾号 {{ sd.r.acct }}</el-descriptions-item>
+        <el-descriptions-item v-if="sd.r.auditBy" label="审核人" :span="2">{{ sd.r.auditBy }}　{{ sd.r.auditT }}</el-descriptions-item>
+        <el-descriptions-item v-if="sd.r.ent===HY" label="该企业待结算" :span="2">合计 4,215 元：2026-09 结算单 2,059 元（有异议，处理中）+ 2026-10 结算单 2,156 元（待确认）</el-descriptions-item>
+        <el-descriptions-item v-if="sd.r.ent===HY" label="该企业其他期间" :span="2">2026-08 结算单 1,946 元（待开票）；2026-07 结算单 2,081 元（已冻结，申诉处理中）；2026-06 结算单 2,013 元（待付款，已列入批次 PB-20261125-01）</el-descriptions-item>
+      </el-descriptions>
+      <template v-if="sd.r.st==='待审核'">
+        <div class="sec-title mt16"><i></i>系统校验</div>
+        <ul class="step-list" style="border:1px solid var(--stp-border);border-radius:6px;padding:0 12px">
+          <li v-for="c in sd.r.checks" :key="c[1]" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed var(--stp-border);font-size:13px"><el-icon :style="{color: c[0] ? '#18a058' : '#f0a020', fontSize: '16px'}"><component :is="c[0] ? 'CircleCheckFilled' : 'WarningFilled'" /></el-icon>{{ c[1] }}</li>
+        </ul>
+        <div v-if="!can('audit')" class="tip-box orange small mt12">当前操作人 {{ me }}（{{ roleOf(me) }}）没有结算单审核权限。{{ need('audit') }}。</div>
+        <el-form label-width="84px" class="mt12"><el-form-item label="审核意见" style="margin-bottom:0"><el-input v-model="sd.note" placeholder="选填；退回重算时必填" /></el-form-item></el-form>
+      </template>
+      <div class="small muted mt12">日分成基数按 400 ÷ 30 计算，不先取整；质量系数与丰富度系数按上月末的评定结果适用。结算单只包含名额日数、系数、规则版本与金额，不包含企业上传的销量、库存、价格等业务明细；发布给下游时不显示订阅钢厂名称，也不按钢厂拆分金额。</div>
+    </template>
+    <template #footer>
+      <template v-if="sd.r && sd.r.st==='待审核'">
+        <el-button @click="sd.show=false">取消</el-button>
+        <el-button type="danger" plain :disabled="!can('audit')" @click="audit(false)">退回重算</el-button>
+        <el-button type="primary" :disabled="!can('audit')" @click="audit(true)">审核通过并发布给下游</el-button>
+      </template>
+      <el-button v-else type="primary" @click="sd.show=false">关闭</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 生成结算单 -->
+  <el-dialog v-model="genDlg" title="生成结算单" width="600px">
+    <el-form label-width="96px">
+      <el-form-item label="结算期间" required>
+        <el-radio-group v-model="gen.period">
+          <el-radio value="2026-10">2026-10（已生成，重新生成未发布部分）</el-radio>
+          <el-radio value="2026-11" disabled>2026-11（期间未结束，2026-12-01 后可生成）</el-radio>
+        </el-radio-group>
+      </el-form-item>
+      <el-form-item label="生成范围"><el-radio-group v-model="gen.scope"><el-radio value="pending">仅“待审核”的结算单（{{ auditLeft }} 张）</el-radio><el-radio value="one">指定企业</el-radio></el-radio-group></el-form-item>
+    </el-form>
+    <ul class="step-list" style="border:1px solid var(--stp-border);border-radius:6px;padding:2px 12px">
+      <li class="done"><span class="idx">1</span>按企业汇总期间内每日计提（每笔可追溯到名额日台账）</li>
+      <li class="done"><span class="idx">2</span>扣减期间内生成的冲正，加上期结转转入金额</li>
+      <li class="done"><span class="idx">3</span>应付低于起付金额 500 元的，自动结转到下期</li>
+      <li class="done"><span class="idx">4</span>涉及冻结的结算单标为“已冻结”，暂不进入确认与付款；该企业其他期间照常结算</li>
+      <li class="doing"><span class="idx">5</span>生成后状态为“待审核”，审核通过才发布给下游确认</li>
+    </ul>
+    <div class="tip-box small mt12">已发布给下游（待确认及之后状态）的结算单不可重新生成，只能通过冲正在后续期间调整。已结算期间不受规则变更影响。</div>
+    <template #footer><el-button @click="genDlg=false">取消</el-button><el-button type="primary" :disabled="gen.scope==='pending' && !auditLeft" @click="doGen">开始生成</el-button></template>
+  </el-dialog>
+
+  <!-- 异议处理 -->
+  <el-dialog v-model="dd.show" title="处理结算异议" width="640px">
+    <template v-if="dd.r">
+      <el-descriptions :column="2" border size="small" class="mb12">
+        <el-descriptions-item label="下游企业" :span="2">{{ dd.r.ent }}</el-descriptions-item>
+        <el-descriptions-item label="结算单"><span class="num">{{ dd.r.sid }}</span></el-descriptions-item>
+        <el-descriptions-item label="提出时间"><span class="num">{{ dd.r.t }}</span></el-descriptions-item>
+        <el-descriptions-item label="异议内容" :span="2">{{ dd.r.text }}</el-descriptions-item>
+        <el-descriptions-item label="系统核查" :span="2">{{ dd.r.check }}</el-descriptions-item>
+      </el-descriptions>
+      <template v-if="dd.r.st==='待处理' || dd.r.st==='处理中'">
+        <el-form label-width="84px">
+          <el-form-item label="处理结论"><el-radio-group v-model="dd.concl"><el-radio value="已答复，维持原结算单">维持原结算单</el-radio><el-radio value="已调整，重新生成">调整并重新生成</el-radio><el-radio value="处理中">需补充核查</el-radio></el-radio-group></el-form-item>
+          <el-form-item label="答复内容" required><el-input v-model="dd.reply" type="textarea" :rows="3" /></el-form-item>
+        </el-form>
+        <div class="tip-box orange small">答复对企业可见。请勿在答复中出现订阅钢厂的名称或按钢厂拆分的金额。</div>
+      </template>
+      <div v-else class="tip-box green small">处理结论：{{ dd.r.st }}。{{ dd.r.reply }}</div>
+    </template>
+    <template #footer>
+      <template v-if="dd.r && (dd.r.st==='待处理' || dd.r.st==='处理中')"><el-button @click="dd.show=false">取消</el-button><el-button type="primary" :disabled="!dd.reply.trim()" @click="doDispute">提交处理结果</el-button></template>
+      <el-button v-else type="primary" @click="dd.show=false">关闭</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 批次明细 -->
+  <el-drawer v-model="bd.show" :title="'付款批次 ' + (bd.b ? bd.b.id : '')" size="680px">
+    <template v-if="bd.b">
+      <el-descriptions :column="2" border size="small" class="mb12">
+        <el-descriptions-item label="结算期" :span="2">{{ bd.b.period }}</el-descriptions-item>
+        <el-descriptions-item label="笔数"><span class="num">{{ $fmt(bd.b.n) }}</span></el-descriptions-item>
+        <el-descriptions-item label="金额"><b class="num">{{ $fmt(bd.b.amt, 2) }}</b> 元</el-descriptions-item>
+        <el-descriptions-item label="发起">{{ bd.b.by ? bd.b.by + '　' + bd.b.byT : '尚未发起' }}</el-descriptions-item>
+        <el-descriptions-item label="复核">{{ bd.b.rv ? bd.b.rv + '　' + bd.b.rvT : '—' }}</el-descriptions-item>
+        <el-descriptions-item label="状态" :span="2"><el-tag size="small" :type="payType(bd.b.st)" disable-transitions>{{ bd.b.st }}</el-tag></el-descriptions-item>
+      </el-descriptions>
+      <div class="sec-title"><i></i>付款记录<small>显示前 {{ bd.lines.length }} 笔</small></div>
+      <el-table :data="bd.lines" border size="small">
+        <el-table-column label="收款户名（认证主体）" min-width="200"><template #default="{row}">{{ row.ent }}<div class="small muted">{{ row.sid }}</div></template></el-table-column>
+        <el-table-column label="对公账户" width="110"><template #default="{row}"><span class="num">尾号 {{ row.acct }}</span></template></el-table-column>
+        <el-table-column label="金额（元）" width="100" align="right"><template #default="{row}"><span class="num">{{ $fmt(row.amt, 2) }}</span></template></el-table-column>
+        <el-table-column label="状态" min-width="150"><template #default="{row}"><span class="dot" :class="row.st==='付款成功' ? 'ok' : row.st==='付款失败' ? 'err' : 'info'"></span>{{ row.st }}<div v-if="row.why" class="small bad-t">{{ row.why }}</div></template></el-table-column>
+      </el-table>
+      <div class="tip-box small mt12">收款户名必须与企业认证主体一致，否则该笔不进入批次。收款账户在付款前 7 天内发生过变更的，自动顺延到下一批次（冷静期，示例参数）。付款失败的记录修正账户后可“失败重付”，重付同样须复核。</div>
+    </template>
+  </el-drawer>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const STAFF = [{ n: '林若彤', r: '运营主管', can: ['dispute'] }, { n: '何志远', r: '财务 · 结算岗', can: ['audit', 'invoice', 'dispute'] }, { n: '陆婉清', r: '财务 · 出纳岗', can: ['pay'] }, { n: '秦海峰', r: '财务主管', can: ['payReview'] }];
+  const NEED = { audit: '结算单审核由财务（结算岗）完成，请切换操作人为何志远', invoice: '发票核对由财务（结算岗）完成，请切换操作人为何志远', dispute: '异议处理由运营主管或财务（结算岗）完成', pay: '付款由财务（出纳岗）发起，请切换操作人为陆婉清', payReview: '付款复核由财务主管完成，请切换操作人为秦海峰' };
+  let tick = 0;
+  const nowStr = () => { const m = 32 + (tick++) * 4; return '2026-11-24 ' + (14 + Math.floor(m / 60)) + ':' + STP.pad(m % 60); };
+  const warn = (m) => ElementPlus.ElMessage({ message: m, type: 'warning' });
+  const HY = '苏州恒运钢铁贸易有限公司';
+  const E = M.enterprises(46, 77).map((e) => e.name);
+  /* 仅用于付款批次明细的示例企业：不与上面各状态的企业重复 */
+  const X = E.slice(26).filter((n) => n.indexOf('恒运') < 0);
+  const FZ = '上海志诚物贸有限公司';
+  const BASE = 400 / 30, QC = { A: 1.1, B: 1, C: 0.85 };
+  const r2 = (v) => Math.round(v * 100) / 100;
+  let seq = 320;
+  const S = (ent, days, grade, r, rev, carry, st, ext) => {
+    /* 与下游“我的收益”同一口径：日分成基数按 400 ÷ 30 计算、不先取整，计提金额按月四舍五入到元 */
+    const q = QC[grade] || 0, acc = Math.round(days * BASE * 0.2 * q * r), sum = acc + rev + carry;
+    const o = { id: 'ST-202610-' + String(++seq).padStart(5, '0'), period: '2026-10', ent, days, grade, q, r, acc, rev, carry, st, pay: st === '结转下期' || st === '已冻结' ? 0 : sum, sub: '', revNote: '', subs: Math.max(1, Math.round(days / 31)), up: 27 + (M.hash(ent) % 5), acct: String(1000 + (M.hash(ent) % 9000)), auditBy: st === '待审核' ? '' : '何志远', auditT: st === '待审核' ? '' : '2026-11-05 10:30',
+      checks: [[1, '计提合计与名额日台账勾稽一致（' + days + ' 个生效名额日）'], [1, '资格门槛：质量评级 ' + grade + '，当期有效上传天数达标'], [1, rev ? '期间内冲正已计入' : '期间内无冲正'], [1, '企业未被冻结，收款账户户名与认证主体一致']] };
+    return Object.assign(o, ext);
+  };
+  const ST = [
+    S(HY, 700, 'A', 1.05, 0, 0, '待确认', { sub: '2026-11-05 已发布，确认截止 2026-11-30', subs: 21, up: 31, acct: '6718' }),
+    S(E[0], 1240, 'A', 1.1, -29, 0, '待审核', { revNote: '名额补偿冲正 9 个名额日（RV-20261028-0031）' }),
+    S(E[1], 152, 'B', 1.05, 0, 212, '待审核'),
+    S(E[2], 868, 'B', 1, 0, 0, '待审核', { checks: [[1, '计提合计与名额日台账勾稽一致（868 个生效名额日）'], [1, '资格门槛：质量评级 B，当期有效上传天数达标'], [0, '计提金额环比上期 +186%，超过 50% 的提示阈值：当期新增订阅 18 家，建议抽查台账'], [1, '企业未被冻结，收款账户户名与认证主体一致']] }),
+    S(E[3], 465, 'A', 1, 0, 0, '待开票', { sub: '企业已确认，待上传发票' }),
+    S(E[4], 930, 'B', 1.1, -59, 0, '待付款', { sub: '批次 PB-20261125-01', revNote: '上游订单取消冲正 20 个名额日（RV-20261019-0027）' }),
+    S(E[5], 310, 'C', 1.05, 0, 0, '待付款', { sub: '批次 PB-20261125-02' }),
+    S(E[6], 1116, 'A', 1.05, 0, 0, '已付款', { sub: '2026-11-10 付款成功' }),
+    S(E[7], 265, 'B', 1, 0, 0, '有异议', { sub: '认为名额天数少计', subs: 9 }),
+    S(FZ, 589, 'B', 1.05, 0, 0, '已冻结', { sub: '反刷量命中，核查中' }),
+    S(E[9], 93, 'B', 1, 0, 138, '结转下期', { sub: '低于起付金额 500 元' }),
+    S(E[10], 62, 'C', 1, 0, 0, '结转下期', { sub: '低于起付金额 500 元' })];
+  const ST09 = [Object.assign(S(HY, 675, 'A', 1.04, 0, 0, '有异议', { sub: '2026-10-12 提出异议，处理中', subs: 23, up: 30, acct: '6718' }), { id: 'ST-202609-00321', period: '2026-09', auditT: '2026-10-05 10:30' }),
+    Object.assign(S(E[6], 1080, 'A', 1.05, 0, 0, '已付款', { sub: '2026-10-25 付款成功' }), { id: 'ST-202609-00328', period: '2026-09', auditT: '2026-10-05 10:30' })];
+  const payOf = (ent, period) => { const x = ST.concat(ST09).find((t) => t.ent === ent && t.period === period); return x ? x.pay : 0; };
+
+  STP.mount({
+    data() {
+      return {
+        staff: STAFF, me: '林若彤', tab: 'st', HY,
+        sf: { period: '2026-10', st: '', kw: '' }, stStatus: ['待审核', '待确认', '待开票', '待付款', '已付款', '有异议', '已冻结', '结转下期'],
+        sts: ST.concat(ST09), auditOther: 211, sd: { show: false, r: null, note: '' },
+        genDlg: false, gen: { period: '2026-10', scope: 'pending' },
+        disputes: [
+          { ent: E[7], sid: 'ST-202610-00329', period: '2026-10', text: '认为 10 月 12 日至 18 日名额天数少计：本企业页面显示被订阅 9 家，结算单这 7 天按 7 家计提。', check: '台账显示 10-12 至 10-18 期间该企业有 2 个名额处于冻结状态（企业该期间无有效上传，10-19 恢复），冻结名额日不计提。', t: '2026-11-06 09:42', st: '待处理', by: '', reply: '' },
+          { ent: E[11], sid: 'ST-202610-01874', period: '2026-10', text: '质量系数应为 A 档 1.10，结算单按 B 档 1.00 计算。', check: '该企业质量评级于 2026-10-16 由 B 升为 A。质量系数按上月末的评级适用：2026-10 按 9 月末的 B 档计提，自 2026-11 起按 A 档，结算单金额无误。', t: '2026-11-06 14:15', st: '待处理', by: '', reply: '' },
+          { ent: E[12], sid: 'ST-202610-02650', period: '2026-10', text: '未收到 9 月结转金额，本期应付应包含上期结转。', check: '2026-09 结转 318 元已计入本期“上期结转转入”，结算单金额无误。', t: '2026-11-07 10:03', st: '待处理', by: '', reply: '' },
+          { ent: E[13], sid: 'ST-202610-04412', period: '2026-10', text: '当期有效上传天数统计为 19 天，企业自查为 21 天，因此被判定不满足资格门槛。', check: '有 2 天的上传批次因分片不完整未生效，企业已于 11-02 补传。是否按补传后的结果重算，需数据质量专员确认。', t: '2026-11-05 16:30', st: '处理中', by: '何志远 跟进中', reply: '' },
+          { ent: HY, sid: 'ST-202609-00321', period: '2026-09', text: '对“丰富度系数”提出异议：我司自 2026-09-08 起已补齐流向地字段，选填字段填报率已达上一档，9 月应按 1.05 计。', check: '丰富度系数按上月末的评定结果适用：2026-08 月末填报率 72%，对应 1.04；2026-09 月末 76%，自 2026-10 起按 1.05 计。已于 2026-10-19 16:40 答复；企业 2026-11-20 补充询问规则文本中“按上月末评定”的表述位置，预计 2026-11-27 前答复。', t: '2026-10-12 10:26', st: '处理中', by: '何志远 跟进中', reply: '' },
+          { ent: E[15], sid: 'ST-202609-03391', period: '2026-09', text: '认为质量系数 C 档应为 0.90。', check: '质量系数 C 档自 2026-07-01（规则版本 SR-V3）起为 0.85，已提前通知。', t: '2026-10-08 09:10', st: '已答复，维持原结算单', by: '何志远', reply: '已向企业说明规则版本与生效日期。' }],
+        dd: { show: false, r: null, concl: '已答复，维持原结算单', reply: '' },
+        invs: [
+          { ent: E[3], sid: 'ST-202610-00325', no: '26322000000312874501', issuer: E[3], amt: payOf(E[3], '2026-10'), pay: payOf(E[3], '2026-10'), t: '2026-11-23 10:12', st: '待核对' },
+          { ent: E[16], sid: 'ST-202610-05102', no: '26332000000087420963', issuer: E[16], amt: 2285, pay: 2285, t: '2026-11-23 09:40', st: '待核对' },
+          { ent: E[17], sid: 'ST-202610-06233', no: '26442000000190335217', issuer: E[17].replace('有限公司', '有限公司第一分公司'), amt: 918, pay: 918, t: '2026-11-22 16:05', st: '待核对' },
+          { ent: E[18], sid: 'ST-202610-08851', no: '26372000000245108836', issuer: E[18], amt: 1750, pay: 1706, t: '2026-11-22 11:48', st: '待核对' },
+          { ent: HY, sid: 'ST-202606-00321', no: '26322000000418205563', issuer: HY, amt: 2013, pay: 2013, t: '2026-11-17 14:20', st: '通过' }],
+        batches: [
+          { id: 'PB-20261125-02', period: '2026-10', n: 632, amt: 958206, by: '', byT: '', rv: '', rvT: '', st: '待发起', fail: 0 },
+          { id: 'PB-20261125-01', period: '2026-10（含以前期间补开票 36 笔）', n: 641, amt: 986413, by: '陆婉清', byT: '2026-11-24 10:20', rv: '', rvT: '', st: '待复核', fail: 0 },
+          { id: 'PB-20261110-01', period: '2026-10', n: 64, amt: 102385, by: '陆婉清', byT: '2026-11-10 09:30', rv: '秦海峰', rvT: '2026-11-10 11:02', st: '已完成', fail: 0 },
+          { id: 'PB-20261025-02', period: '2026-09', n: 1838, amt: 2788931, by: '陆婉清', byT: '2026-10-25 14:10', rv: '秦海峰', rvT: '2026-10-25 16:25', st: '部分失败', fail: 3 },
+          { id: 'PB-20261025-01', period: '2026-09', n: 2066, amt: 3112406, by: '陆婉清', byT: '2026-10-25 09:45', rv: '秦海峰', rvT: '2026-10-25 11:30', st: '已完成', fail: 0 }],
+        bd: { show: false, b: null, lines: [] },
+        reversals: [
+          { id: '待生成', src: '上游退款', no: 'DO-20260520-0015', ent: '涉及 96 个名额对应的下游企业', range: '2026-11-16 至 2026-11-23', days: 768, amt: -2130, how: '退款待审核，通过后生成', done: false },
+          { id: 'RV-20261028-0031', src: '名额补偿', no: 'DO-20260715-0022', ent: E[0], range: '2026-10-20 至 2026-10-28', days: 9, amt: -29, how: '未付，当期结算单已扣减', done: true },
+          { id: 'RV-20261019-0027', src: '订单取消', no: 'DO-20261012-0036', ent: E[4], range: '2026-10-12 至 2026-10-16', days: 20, amt: -59, how: '未付，当期结算单已扣减', done: true },
+          { id: 'RV-20261015-0024', src: '上游退款', no: 'DO-20260822-0027', ent: E[19], range: '2026-09-21 至 2026-09-30', days: 40, amt: -112, how: '已付，后续结算已扣减', done: true },
+          { id: 'RV-20261015-0023', src: '上游退款', no: 'DO-20260822-0027', ent: E[20], range: '2026-09-21 至 2026-09-30', days: 30, amt: -92, how: '已付，待后续结算扣减', done: false },
+          { id: 'RV-20261008-0019', src: '名额补偿', no: 'DO-20260409-0010', ent: E[21], range: '2026-10-01 至 2026-10-07', days: 7, amt: -19, how: '未付，当期结算单已扣减', done: true }],
+        carries: [
+          { ent: E[9], from: '2026-09', n: 2, acc: 248, total: 386, eta: '2026-11' }, { ent: E[10], from: '2026-10', n: 1, acc: 141, total: 141, eta: '2027-01' },
+          { ent: E[22], from: '2026-08', n: 3, acc: 152, total: 462, eta: '2026-11' }, { ent: E[23], from: '2026-10', n: 1, acc: 318, total: 318, eta: '2026-11' },
+          { ent: E[24], from: '2026-07', n: 4, acc: 75, total: 297, eta: '2027-01' }, { ent: E[25], from: '2026-09', n: 2, acc: 205, total: 422, eta: '2026-11' }],
+      };
+    },
+    computed: {
+      stRows() { const f = this.sf, kw = f.kw.trim(); return this.sts.filter((s) => s.period === f.period && (!f.st || s.st === f.st) && (!kw || (s.ent + s.id).indexOf(kw) >= 0)); },
+      auditLeft() { return this.auditOther + this.sts.filter((s) => s.st === '待审核').length; },
+      disputeOpen() { return this.disputes.filter((d) => d.st === '待处理' || d.st === '处理中').length; },
+      invRows() { return this.invs; },
+    },
+    methods: {
+      roleOf(n) { return STAFF.find((s) => s.n === n).r; },
+      can(k) { return STAFF.find((s) => s.n === this.me).can.indexOf(k) >= 0; },
+      need(k) { return NEED[k]; },
+      deny(k) { if (this.can(k)) return false; warn(NEED[k]); return true; },
+      stType(s) { return { 待审核: 'info', 待确认: 'warning', 待开票: 'warning', 待付款: 'primary', 已付款: 'success', 有异议: 'danger', 已冻结: 'danger', 结转下期: 'info' }[s]; },
+      payType(s) { return { 待发起: 'info', 待复核: 'warning', 付款中: 'primary', 已完成: 'success', 部分失败: 'danger' }[s]; },
+      openSt(r) { this.sd = { show: true, r, note: '' }; },
+      audit(pass) {
+        const r = this.sd.r;
+        if (this.deny('audit')) return;
+        if (!pass && !this.sd.note.trim()) return warn('退回重算时请填写审核意见');
+        if (pass) {
+          const sum = r.acc + r.rev + r.carry;
+          Object.assign(r, { auditBy: this.me, auditT: nowStr() }, sum < 500 ? { st: '结转下期', pay: 0, sub: '低于起付金额 500 元' } : { st: '待确认', sub: '已发布给下游确认' });
+          this.$demo(sum < 500 ? '审核通过。应付低于起付金额，已自动结转到下期' : '审核通过，结算单已发布给下游确认');
+        } else { r.sub = '已退回重算：' + this.sd.note; this.$demo('已退回重算，重新生成后仍为“待审核”'); }
+        this.sd.show = false;
+      },
+      batchAudit() {
+        if (this.deny('audit')) return;
+        ElementPlus.ElMessageBox.confirm('将对系统校验全部通过的结算单批量审核通过并发布给下游；存在校验提示的结算单会保留为“待审核”，需逐张处理。', '批量审核通过', { type: 'warning', confirmButtonText: '确认', cancelButtonText: '取消' }).then(() => {
+          const t = nowStr(); let kept = 0;
+          this.sts.filter((s) => s.st === '待审核').forEach((r) => {
+            if (r.checks.some((c) => !c[0])) { kept++; return; }
+            const sum = r.acc + r.rev + r.carry;
+            Object.assign(r, { auditBy: this.me, auditT: t }, sum < 500 ? { st: '结转下期', pay: 0, sub: '低于起付金额 500 元' } : { st: '待确认', sub: '已发布给下游确认' });
+          });
+          this.auditOther = 0;
+          this.$demo('批量审核完成' + (kept ? '；' + kept + ' 张存在校验提示，保留为待审核' : ''));
+        }).catch(() => {});
+      },
+      doGen() { if (this.deny('audit')) return; this.genDlg = false; this.$demo('结算单生成任务已提交：2026-10，' + (this.gen.scope === 'pending' ? '重新生成待审核的 ' + this.auditLeft + ' 张' : '指定企业') + '。完成后状态为“待审核”。'); },
+      openDispute(r) { this.dd = { show: true, r, concl: '已答复，维持原结算单', reply: '' }; },
+      doDispute() {
+        const d = this.dd, r = d.r;
+        if (this.deny('dispute')) return;
+        r.st = d.concl; r.by = this.me + (d.concl === '处理中' ? ' 跟进中' : ''); r.reply = d.reply;
+        const s = this.sts.find((x) => x.id === r.sid);
+        if (s && d.concl !== '处理中') { s.st = d.concl.indexOf('调整') >= 0 ? '待审核' : '待确认'; s.sub = d.concl.indexOf('调整') >= 0 ? '异议成立，已重新生成' : '异议已答复，待企业确认'; if (s.st === '待审核') { s.auditBy = ''; } }
+        d.show = false; this.$demo(d.concl === '处理中' ? '已记录，继续核查' : '处理结果已答复企业');
+      },
+      invOk(r) { return r.issuer === r.ent && r.amt === r.pay; },
+      checkInv(r, pass) {
+        if (this.deny('invoice')) return;
+        r.st = pass ? '通过' : '退回';
+        const s = this.sts.find((x) => x.id === r.sid);
+        if (s && pass) { s.st = '待付款'; s.sub = '发票已核对，待列入付款批次'; }
+        this.$demo(pass ? '发票核对通过并归档，结算单进入“待付款”' : '已退回企业，请按认证主体与应付金额重新开票');
+      },
+      startPay(b) {
+        if (this.deny('pay')) return;
+        ElementPlus.ElMessageBox.confirm('发起批次 ' + b.id + '：' + STP.fmt(b.n) + ' 笔，合计 ' + STP.fmt(b.amt, 2) + ' 元。发起后须由财务主管复核才会提交银行。', '发起付款', { type: 'warning', confirmButtonText: '确认发起', cancelButtonText: '取消' }).then(() => {
+          Object.assign(b, { st: '待复核', by: this.me, byT: nowStr() });
+          this.$demo('已发起，等待财务主管复核。发起人不能复核自己发起的批次。');
+        }).catch(() => {});
+      },
+      reviewPay(b, pass) {
+        if (b.by === this.me) return this.$info('发起人不能复核自己发起的批次');
+        if (this.deny('payReview')) return;
+        if (!pass) { Object.assign(b, { st: '待发起', by: '', byT: '' }); return this.$demo('已退回，批次恢复为“待发起”'); }
+        ElementPlus.ElMessageBox.confirm('复核通过后，批次 ' + b.id + ' 将提交银行付款：' + STP.fmt(b.n) + ' 笔，合计 ' + STP.fmt(b.amt, 2) + ' 元，全部付到与认证主体一致的对公账户。', '复核付款批次', { type: 'warning', confirmButtonText: '复核通过', cancelButtonText: '取消' }).then(() => {
+          Object.assign(b, { st: '付款中', rv: this.me, rvT: nowStr() });
+          this.$demo('复核通过，批次已提交银行，付款中');
+          setTimeout(() => {
+            b.st = '已完成';
+            this.sts.forEach((s) => { if (s.sub.indexOf(b.id) >= 0) { s.st = '已付款'; s.sub = '付款成功（原型演示）'; } });
+            this.$demo('批次 ' + b.id + ' 付款完成，' + STP.fmt(b.n) + ' 笔全部成功');
+          }, 2500);
+        }).catch(() => {});
+      },
+      retry(b) {
+        if (this.deny('pay')) return;
+        ElementPlus.ElMessageBox.confirm('将为批次 ' + b.id + ' 中失败的 ' + b.fail + ' 笔生成重付批次（企业已更正收款账户的才会进入），重付同样须另一人复核。', '失败重付', { confirmButtonText: '生成重付批次', cancelButtonText: '取消' }).then(() => {
+          const fl = this.batchLines(b).filter((l) => l.st === '付款失败'), amt = r2(fl.reduce((a, l) => a + l.amt, 0));
+          this.batches.unshift({ id: 'PB-20261125-03', period: '2026-09（失败重付）', n: b.fail, amt, by: this.me, byT: nowStr(), rv: '', rvT: '', st: '待复核', fail: 0, src: fl });
+          b.fail = 0; b.st = '已完成';
+          this.$demo('已生成重付批次 PB-20261125-03，等待财务主管复核');
+        }).catch(() => {});
+      },
+      openBatch(b) { this.bd = { show: true, b, lines: this.batchLines(b) }; },
+      batchLines(b) {
+        const stOf = () => (b.st === '已完成' || b.st === '部分失败' ? '付款成功' : b.st === '付款中' ? '银行处理中' : '待付款');
+        if (b.src) return b.src.map((l) => Object.assign({}, l, { st: stOf(), why: '' }));
+        /* 批次明细只列与结算单状态相符的企业：有对应结算单的取结算单号与应付金额，其余为示例行 */
+        const NAMES = { 'PB-20261125-01': [HY, E[4]].concat(X.slice(0, 4)), 'PB-20261125-02': [E[5]].concat(X.slice(4, 9)), 'PB-20261110-01': [E[6]].concat(X.slice(9, 14)), 'PB-20261025-02': X.slice(0, 6), 'PB-20261025-01': [E[6]].concat(X.slice(6, 11)) };
+        const period = b.period.slice(0, 7);
+        const lines = (NAMES[b.id] || []).slice(0, Math.min(6, b.n)).map((ent, i) => {
+          const failed = i < b.fail;
+          const st = this.sts.find((x) => x.ent === ent && x.period === period && x.pay > 0);
+          const hy = b.id === 'PB-20261125-01' && ent === HY;
+          return { ent, sid: hy ? 'ST-202606-00321' : st ? st.id : 'ST-' + period.replace('-', '') + '-' + String(1000 + (M.hash(ent + b.id) % 9000)).padStart(5, '0'), acct: ent === HY ? '6718' : String(1000 + (M.hash(ent) % 9000)), amt: hy ? 2013 : st ? st.pay : Math.round(500 + (M.hash(ent + b.id) % 250000) / 100),
+            st: failed ? '付款失败' : stOf(), why: failed ? ['银行退票：收款账户已销户', '银行退票：账户状态异常', '银行退票：开户行信息有误'][i] : '' };
+        });
+        return lines;
+      },
+    },
+  });
+})();
+</script>
+</body>
+</html>

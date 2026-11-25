@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>导出中心 · 上游钢厂端 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.exp-id { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: 12px; }
+.exp-fp { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: 12px; color: #5b6778; }
+.exp-cond { color: var(--stp-sub); font-size: 12px; line-height: 18px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.exp-time { line-height: 18px; font-size: 12.5px; }
+.exp-time span { display: block; color: var(--stp-sub); font-size: 12px; }
+.exp-tbl .el-table .cell { padding: 0 8px; }
+.exp-quota .el-progress { margin-top: 2px; width: 100%; }
+.exp-quota .stat .foot { display: block; }
+.terms-page { border: 1px solid #d9dee6; border-radius: 4px; background: #fff; padding: 16px 18px; font-size: 12.5px; line-height: 1.8; color: #3d4b5c; position: relative; overflow: hidden; }
+.terms-page h5 { margin: 0 0 6px; font-size: 14px; text-align: center; letter-spacing: 2px; }
+.terms-page ol { margin: 6px 0; padding-left: 20px; }
+.terms-page .wm { position: absolute; right: -30px; top: 46px; transform: rotate(-18deg); font-size: 12px; color: rgba(60, 80, 110, .16); white-space: nowrap; pointer-events: none; }
+.terms-page .foot { border-top: 1px dashed #d9dee6; margin-top: 8px; padding-top: 8px; color: var(--stp-sub); font-size: 12px; }
+.el-descriptions__label { white-space: nowrap; }
+.terms-list { margin: 0; padding-left: 20px; line-height: 1.9; font-size: 13px; color: #3d4b5c; }
+.rule-ul { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.9; color: #4a5568; }
+.drawer-sec { font-size: 14px; font-weight: 600; margin: 18px 0 10px; display: flex; align-items: center; gap: 6px; }
+.drawer-sec::before { content: ""; width: 3px; height: 14px; background: var(--el-color-primary); border-radius: 2px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="upstream" active="export" title="导出中心" watermark
+  desc="看板、多维查询、数据来源企业名单的导出任务都在这里生成和下载。导出内容与页面展示完全一致，不存在“导出能看到更细数据”的路径；每次导出与下载均记入审计日志。">
+  <template #actions>
+    <el-button @click="$go('pool.html')"><el-icon><OfficeBuilding /></el-icon>数据来源企业名单</el-button>
+    <el-button @click="$go('dashboard.html')"><el-icon><DataBoard /></el-icon>去看板导出</el-button>
+    <el-button type="primary" @click="$go('query.html')"><el-icon><Grid /></el-icon>去多维查询导出</el-button>
+  </template>
+
+  <div class="grid c4 exp-quota">
+    <div class="stat">
+      <div class="label">今日导出次数<el-tooltip content="按账号统计的日次数上限，由企业管理员在平台上限内设置；超限需企业管理员审批" placement="top"><el-icon><QuestionFilled /></el-icon></el-tooltip></div>
+      <div class="value num">{{ quota.times }}<span class="unit">/ {{ quota.maxTimes }} 次</span></div>
+      <div class="foot"><el-progress :percentage="quota.times / quota.maxTimes * 100" :show-text="false" :stroke-width="6" /><span>今日剩余 {{ quota.maxTimes - quota.times }} 次，每日 0 点重置</span></div>
+      <div class="ico"><el-icon><Download /></el-icon></div>
+    </div>
+    <div class="stat">
+      <div class="label">今日已导出行数<el-tooltip content="文件生成后按实际行数计入；超过单日行数上限需企业管理员审批" placement="top"><el-icon><QuestionFilled /></el-icon></el-tooltip></div>
+      <div class="value num">{{ $fmt(quota.rows) }}<span class="unit">/ {{ $fmt(quota.maxRows) }} 行</span></div>
+      <div class="foot"><el-progress :percentage="Math.max(1, quota.rows / quota.maxRows * 100)" :show-text="false" :stroke-width="6" /><span>单次导出超过 1,000 行时异步生成</span></div>
+      <div class="ico"><el-icon><Tickets /></el-icon></div>
+    </div>
+    <stat-card label="文件保留期" :value="7" unit="天" icon="Timer" tip="文件生成后保留 7 天，过期自动删除，可重新生成"><span>过期后文件删除，任务与审计记录保留</span></stat-card>
+    <stat-card label="待我审批" :value="0" unit="条" icon="Stamp" tip="成员导出超过日次数或行数上限时，由企业管理员审批"><span>超限导出申请由企业管理员审批</span></stat-card>
+  </div>
+
+  <el-alert type="info" show-icon :closable="false">
+    <template #title>导出内容与页面展示完全一致：同样的屏蔽（“—”）、合并披露、吨位修约与口径说明。数据来源企业名单的导出只含名单与画像字段，不含任何数值。</template>
+  </el-alert>
+
+  <div class="card exp-tbl">
+    <el-tabs v-model="tab">
+      <el-tab-pane name="all"><template #label>全部任务 <span class="muted small">&nbsp;{{ tasks.length }}</span></template></el-tab-pane>
+      <el-tab-pane name="mine"><template #label>我提交的 <span class="muted small">&nbsp;{{ mineCount }}</span></template></el-tab-pane>
+      <el-tab-pane name="approve"><template #label>待审批 <span class="muted small">&nbsp;0</span></template></el-tab-pane>
+    </el-tabs>
+
+    <template v-if="tab !== 'approve'">
+      <div class="row between mb12">
+        <div class="row">
+          <el-select v-model="f.src" placeholder="全部来源" clearable style="width:170px">
+            <el-option v-for="s in srcOptions" :key="s" :label="s" :value="s" />
+          </el-select>
+          <el-select v-model="f.status" placeholder="全部状态" clearable style="width:130px">
+            <el-option v-for="(v, k) in ST" :key="k" :label="v.t" :value="k" />
+          </el-select>
+          <el-input v-model="f.kw" placeholder="搜索导出编号或内容" clearable style="width:220px"><template #prefix><el-icon><Search /></el-icon></template></el-input>
+        </div>
+        <span class="muted small"><el-icon style="vertical-align:-2px"><Lock /></el-icon> 导出与下载记录写入审计日志：谁、何时、查询条件、行数、文件指纹</span>
+      </div>
+
+      <el-table :data="shown" size="default">
+        <el-table-column label="导出编号" width="146">
+          <template #default="{row}"><a href="javascript:;" class="exp-id" @click="openDetail(row)">{{ row.id }}</a></template>
+        </el-table-column>
+        <el-table-column label="导出内容" min-width="210">
+          <template #default="{row}">
+            <div><el-tag size="small" :type="SRC_TYPE[row.src]" effect="plain">{{ row.src }}</el-tag> {{ row.title }}</div>
+            <el-tooltip placement="top-start" :content="row.cond.join('；')"><div class="exp-cond">{{ row.cond.join('；') }}</div></el-tooltip>
+          </template>
+        </el-table-column>
+        <el-table-column label="格式" width="62"><template #default="{row}">{{ row.fmt }}</template></el-table-column>
+        <el-table-column label="行数" width="68" align="right">
+          <template #default="{row}"><span v-if="row.rows" class="num">{{ $fmt(row.rows) }}</span><span v-else-if="row.status === 'fail'" class="muted">—</span><el-tooltip v-else content="文件生成后显示实际行数" placement="top"><span class="muted">待生成</span></el-tooltip></template>
+        </el-table-column>
+        <el-table-column label="状态" width="124">
+          <template #default="{row}">
+            <template v-if="row.status === 'run'">
+              <div class="small" style="line-height:18px">生成中 <b class="num">{{ row.progress }}%</b></div>
+              <el-progress :percentage="row.progress" :show-text="false" :stroke-width="6" />
+            </template>
+            <el-tooltip v-else-if="row.status === 'fail'" placement="top" :content="row.failReason">
+              <el-tag type="danger" size="small">生成失败</el-tag>
+            </el-tooltip>
+            <el-tag v-else :type="ST[row.status].type" size="small" :effect="row.status === 'expired' ? 'plain' : 'light'">{{ ST[row.status].t }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="提交人" width="76"><template #default="{row}">{{ row.by }}<div v-if="row.byNote" class="muted small" style="line-height:16px">{{ row.byNote }}</div></template></el-table-column>
+        <el-table-column label="提交时间" width="98"><template #default="{row}"><div class="exp-time num">{{ row.at.slice(0, 10) }}<span>{{ row.at.slice(11) }}</span></div></template></el-table-column>
+        <el-table-column label="过期时间" width="98">
+          <template #default="{row}">
+            <div v-if="row.expire" class="exp-time num" :class="{muted: row.status === 'expired'}">{{ row.expire.slice(0, 10) }}<span>{{ row.expire.slice(11) }}{{ row.status === 'expired' ? ' 已过期' : '' }}</span></div>
+            <span v-else class="muted">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="文件指纹" width="112">
+          <template #default="{row}">
+            <el-tooltip v-if="row.fp" placement="top" content="SHA-256 前 12 位，完整指纹见详情；用于核对文件是否被改动"><span class="exp-fp">{{ row.fp.slice(0, 12) }}</span></el-tooltip>
+            <span v-else class="muted">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="128">
+          <template #default="{row}">
+            <el-button v-if="row.status === 'done'" link type="primary" @click="askDownload(row)">下载</el-button>
+            <el-button v-if="row.status === 'expired' || row.status === 'fail'" link type="primary" @click="regen(row)">重新生成</el-button>
+            <el-button link type="primary" @click="openDetail(row)">详情</el-button>
+          </template>
+        </el-table-column>
+        <template #empty><el-empty description="没有符合条件的导出任务" :image-size="80" /></template>
+      </el-table>
+      <div class="tbl-foot">
+        <span>共 {{ shown.length }} 条任务　|　文件生成后保留 7 天，过期后可重新生成（按当时的数据池成员与披露规则重新计算）</span>
+        <span>任务记录保留 180 天</span>
+      </div>
+    </template>
+
+    <template v-else>
+      <el-empty description="暂无待审批的导出申请" :image-size="110">
+        <div class="muted small" style="max-width:520px;line-height:1.8;margin:0 auto">
+          成员当日导出超过次数或行数上限时，需提交申请并说明用途，由企业管理员在这里审批。<br>审批通过的导出同样经过聚合引擎，内容与页面展示一致，并记入审计日志。
+        </div>
+        <el-button class="mt12" @click="tab = 'all'">查看全部任务</el-button>
+      </el-empty>
+    </template>
+  </div>
+
+  <div class="grid c3">
+    <div class="card">
+      <div class="card-title"><span>与页面完全一致</span></div>
+      <ul class="rule-ul">
+        <li>所有导出与页面走同一个聚合引擎，屏蔽单元格同样显示“—”，说明统一为“样本不足，不予披露”。</li>
+        <li>“其他（合并披露）”行、交叉表的追加屏蔽、吨位取整到 1 吨，与页面相同。</li>
+        <li>贡献企业数只给区间；文件首页带口径说明：“本数据池共 186 家企业，名单见数据来源企业名单页面”。</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title"><span>数据来源企业名单的导出</span></div>
+      <ul class="rule-ul">
+        <li>只含名单与画像字段：{{ listFields.join('、') }}。</li>
+        <li>不含任何数值，也不含任何由企业上传数据计算出的企业级结果。</li>
+        <li>名单只到数据池级别；单元格级别只给贡献企业数区间，不给企业名称。</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title"><span>水印、条款与配额</span></div>
+      <ul class="rule-ul">
+        <li>每个文件带水印（企业、账号、时间、导出编号）和使用条款页，下载前需确认条款。</li>
+        <li>配额按企业、按账号设置日次数与行数上限，超限需企业管理员审批。</li>
+        <li>合同含“禁止再识别”条款：不得通过任何方式推算单家企业数据，不得转售。</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 下载前：使用条款确认 -->
+  <el-dialog v-model="dlDlg" title="使用条款确认" width="600px">
+    <template v-if="dlTask">
+      <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="导出编号"><span class="exp-id">{{ dlTask.id }}</span></el-descriptions-item>
+        <el-descriptions-item label="文件">{{ fileName(dlTask) }}</el-descriptions-item>
+        <el-descriptions-item label="导出内容" :span="2">{{ dlTask.src }} · {{ dlTask.title }}（{{ $fmt(dlTask.rows) }} 行）</el-descriptions-item>
+      </el-descriptions>
+      <div class="tip-box orange mt12">
+        <ol class="terms-list">
+          <li v-for="t in termsOf(dlTask)" :key="t.h"><b>{{ t.h }}</b>{{ t.t }}</li>
+        </ol>
+      </div>
+      <el-checkbox v-model="dlAgree" class="mt12">我已阅读并同意以上使用条款（禁止再识别、禁止转售）</el-checkbox>
+      <div class="muted small">下载人 周立明（zhoulm）· 本次下载将记入审计日志</div>
+    </template>
+    <template #footer>
+      <el-button @click="dlDlg = false">取消</el-button>
+      <el-button type="primary" :disabled="!dlAgree" @click="doDownload"><el-icon><Download /></el-icon>确认并下载</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 详情抽屉 -->
+  <el-drawer v-model="drawer" size="640px" :title="cur ? '导出任务详情 · ' + cur.id : '导出任务详情'">
+    <template v-if="cur">
+      <div class="row between">
+        <div class="row">
+          <el-tag :type="ST[cur.status].type">{{ ST[cur.status].t }}<template v-if="cur.status === 'run'"> {{ cur.progress }}%</template></el-tag>
+          <el-tag :type="SRC_TYPE[cur.src]" effect="plain">{{ cur.src }}</el-tag>
+          <b>{{ cur.title }}</b>
+        </div>
+        <div>
+          <el-button v-if="cur.status === 'done'" type="primary" size="small" @click="askDownload(cur)"><el-icon><Download /></el-icon>下载</el-button>
+          <el-button v-if="cur.status === 'expired' || cur.status === 'fail'" type="primary" size="small" @click="regen(cur)"><el-icon><Refresh /></el-icon>重新生成</el-button>
+        </div>
+      </div>
+      <el-alert v-if="cur.status === 'fail'" class="mt12" type="error" show-icon :closable="false" :title="'生成失败：' + cur.failReason" />
+
+      <div class="drawer-sec">查询条件与结果</div>
+      <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="查询条件" :span="2">
+          <div v-for="c in cur.cond" :key="c">{{ c }}</div>
+        </el-descriptions-item>
+        <el-descriptions-item label="导出内容" :span="2">{{ cur.cols }}</el-descriptions-item>
+        <el-descriptions-item label="文件格式">{{ cur.fmt }}</el-descriptions-item>
+        <el-descriptions-item label="行数"><span v-if="cur.rows" class="num">{{ $fmt(cur.rows) }} 行</span><span v-else class="muted">待生成</span></el-descriptions-item>
+        <el-descriptions-item label="屏蔽单元格数" :span="2">
+          <template v-if="cur.src === '数据来源企业名单'"><span class="muted">不适用（名单不含数值）</span></template>
+          <template v-else-if="cur.cells">命中单元格 <b class="num">{{ $fmt(cur.cells) }}</b> 个，其中屏蔽 <b class="num">{{ $fmt(cur.masked) }}</b> 个（{{ (cur.masked / cur.cells * 100).toFixed(1) }}%），合并披露 <b class="num">{{ cur.merged }}</b> 行。屏蔽单元格在文件中显示为“—”，与页面一致。</template>
+          <span v-else class="muted">文件生成后统计</span>
+        </el-descriptions-item>
+        <el-descriptions-item label="提交人">{{ cur.by }}{{ cur.byNote ? '（' + cur.byNote + '）' : '' }}</el-descriptions-item>
+        <el-descriptions-item label="提交时间"><span class="num">{{ cur.at }}</span></el-descriptions-item>
+        <el-descriptions-item label="过期时间" :span="2"><span v-if="cur.expire" class="num">{{ cur.expire }}{{ cur.status === 'expired' ? '（已过期，文件已删除）' : '（保留 7 天）' }}</span><span v-else class="muted">生成后保留 7 天</span></el-descriptions-item>
+        <el-descriptions-item label="文件指纹" :span="2">
+          <span v-if="cur.fp" class="exp-fp" style="word-break:break-all">SHA-256：{{ cur.fp }}</span><span v-else class="muted">生成后计算</span>
+        </el-descriptions-item>
+      </el-descriptions>
+
+      <div class="drawer-sec">水印信息</div>
+      <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="企业">东岳钢铁集团有限公司</el-descriptions-item>
+        <el-descriptions-item label="账号">{{ cur.account }}</el-descriptions-item>
+        <el-descriptions-item label="时间"><span class="num">{{ cur.at }}</span></el-descriptions-item>
+        <el-descriptions-item label="导出编号"><span class="exp-id">{{ cur.id }}</span></el-descriptions-item>
+      </el-descriptions>
+      <div class="muted small mt8">水印写入每个工作表的页眉页脚与背景，CSV 文件写入首行注释与文件名。</div>
+
+      <div class="drawer-sec">使用条款页预览<span class="muted small" style="font-weight:400">文件的第一页</span></div>
+      <div class="terms-page">
+        <div class="wm">东岳钢铁 {{ cur.account }} {{ cur.at }} {{ cur.id }}</div>
+        <h5>数据使用条款</h5>
+        <ol>
+          <li v-for="t in termsOf(cur)" :key="t.h"><b>{{ t.h }}</b>{{ t.t }}</li>
+        </ol>
+        <div class="foot">
+          <template v-if="cur.src === '数据来源企业名单'">口径说明：本文件为数据池企业名单，共 186 家，只含名单与画像字段，不含任何数值。规模档、覆盖声明为企业自主申报并确认的信息。</template>
+          <template v-else>口径说明：数据日期截至 2026-11-23（T+1）；本数据池共 186 家企业，名单见数据来源企业名单页面；销量为销售出库减退货，库存为日末账面实物库存，吨位取整到 1 吨；“—”表示样本不足，不予披露；样本聚合数据，不代表全市场。</template>
+        </div>
+      </div>
+
+      <div class="drawer-sec">审计记录</div>
+      <el-timeline style="padding-left:2px">
+        <el-timeline-item v-for="(a, i) in cur.audit" :key="i" :timestamp="a.at" :type="a.type" placement="top">
+          <b>{{ a.t }}</b><span class="muted small">　{{ a.who }}</span>
+          <div v-if="a.d" class="muted small">{{ a.d }}</div>
+        </el-timeline-item>
+      </el-timeline>
+    </template>
+  </el-drawer>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const hex = (n) => ('00000000' + (n >>> 0).toString(16)).slice(-8);
+  const fpOf = (id) => Array.from({ length: 8 }, (_, i) => hex(M.hash(id + '#' + i))).join('');
+  const plus7 = (at) => STP.addDays(at.slice(0, 10), 7) + at.slice(10);
+  const ACC = { 周立明: 'zhoulm', 郑晓岚: 'zhengxl', 系统: 'zhoulm' };
+  const IP = { 周立明: '10.18.6.42', 郑晓岚: '10.18.6.77' };
+
+  const audit = (t) => {
+    const list = [{ at: t.at, t: t.src === '定时发送' ? '定时任务触发导出' : '提交导出任务', who: t.by === '系统' ? '系统 · 订阅人 周立明' : t.by + ' · ' + ACC[t.by] + ' · ' + IP[t.by], d: '记录查询条件：' + t.cond[0], type: 'primary' }];
+    if (t.status === 'queue') return list;
+    list.push({ at: t.at, t: '聚合引擎开始生成', who: '系统', d: '按数据池成员版本与披露规则计算，与页面同一引擎' });
+    if (t.status === 'run') return list;
+    if (t.status === 'fail') { list.push({ at: t.failAt, t: '生成失败', who: '系统', d: t.failReason, type: 'danger' }); return list; }
+    list.push({ at: t.doneAt, t: '文件生成完成', who: '系统', d: (t.cells ? '命中单元格 ' + STP.fmt(t.cells) + ' 个，屏蔽 ' + STP.fmt(t.masked) + ' 个；' : '') + '行数 ' + STP.fmt(t.rows) + '；文件指纹 ' + t.fp.slice(0, 12) + '…；已写入水印与使用条款页', type: 'success' });
+    if (t.src === '定时发送') list.push({ at: t.doneAt, t: '已发送到订阅邮箱', who: '系统', d: '收件人 1 位（周立明）；附件与导出中心文件一致' });
+    (t.downloads || []).forEach((d) => list.push({ at: d.at, t: '下载文件', who: d.who + ' · ' + ACC[d.who] + ' · ' + IP[d.who], d: '已确认使用条款（禁止再识别、禁止转售）', type: 'primary' }));
+    if (t.status === 'expired') list.push({ at: t.expire, t: '文件过期，已自动删除', who: '系统', d: '任务与审计记录继续保留', type: 'info' });
+    return list;
+  };
+
+  const VOL = '销量、期末库存、日均销量、可销天数、环比、贡献企业数区间';
+  const RAW = [
+    { id: 'EXP-20261124-0043', src: '多维查询', title: '分省 × 品名月度销量与库存', cond: ['时间：2025-12 至 2026-11（月粒度）', '地区：全国（按仓库所在地，省级）', '品类：全部大类 → 品名', '品牌：全部'], cols: VOL, fmt: 'CSV', rows: 0, status: 'queue', by: '郑晓岚', at: '2026-11-24 14:06' },
+    { id: 'EXP-20261124-0042', src: '聚合看板', title: '看板数据（概览、地区、品类、趋势、本厂品牌）', cond: ['数据日期：2026-11-23', '范围：概览指标、地区分布、品类结构、近 30 日趋势、本厂品牌视图', '地区口径：仓库所在地'], cols: '看板各卡片的指标与图表数据：' + VOL, fmt: 'Excel', rows: 486, status: 'run', progress: 62, by: '周立明', at: '2026-11-24 14:05' },
+    { id: 'EXP-20261124-0041', src: '多维查询', title: '华东重点城市 · 螺纹钢日度明细', cond: ['时间：2026-08-16 至 2026-11-23（日粒度）', '地区：苏州市、无锡市、南京市、常州市、杭州市、宁波市、上海市等 8 市（按仓库所在地）', '品类：建筑钢材 → 螺纹钢', '品牌：全部'], cols: VOL, fmt: 'Excel', rows: 800, cells: 4800, masked: 312, merged: 14, status: 'done', by: '周立明', at: '2026-11-24 10:42', doneAt: '2026-11-24 10:43', downloads: [{ who: '周立明', at: '2026-11-24 10:44' }] },
+    { id: 'EXP-20261123-0012', src: '定时发送', title: '华东螺纹钢周报（每周一 8:30）', cond: ['时间：2026-11-16 至 2026-11-22（周粒度）', '地区：江苏、浙江、上海 → 地级市', '品类：建筑钢材 → 螺纹钢', '品牌：本厂（东岳）、其他品牌'], cols: VOL, fmt: 'Excel', rows: 72, cells: 432, masked: 38, merged: 3, status: 'done', by: '系统', byNote: '定时发送', at: '2026-11-23 08:30', doneAt: '2026-11-23 08:30' },
+    { id: 'EXP-20261123-0092', price: true, src: '量价视图', title: '螺纹钢 HRB400E · 华东分省日度量价', cond: ['时间：2026-10-25 至 2026-11-23（日粒度）', '地区：华东各省（按仓库所在地）', '品名：螺纹钢 · 材质 HRB400E', '品牌：本厂（东岳）、其他品牌', '口径：含税、自提、非暂估'], cols: '销量、加权均价（取整到 10 元/吨）、涨跌额、涨跌幅、价格覆盖率区间、有价企业数区间', fmt: 'Excel', rows: 210, cells: 840, masked: 96, merged: 6, status: 'done', by: '周立明', at: '2026-11-23 15:30', doneAt: '2026-11-23 15:31', downloads: [{ who: '周立明', at: '2026-11-23 15:32' }] },
+    { id: 'EXP-20261121-0065', src: '数据来源企业名单', title: '数据池企业名单（186 家）', cond: ['范围：当前数据池全部在池企业（含冻结 2 家）', '名单版本：2026-11-21'], cols: '', fmt: 'Excel', rows: 186, status: 'done', by: '郑晓岚', at: '2026-11-21 16:20', doneAt: '2026-11-21 16:20', downloads: [{ who: '郑晓岚', at: '2026-11-21 16:21' }, { who: '周立明', at: '2026-11-22 09:03' }] },
+    { id: 'EXP-20261120-0031', src: '多维查询', title: '省 × 大类交叉表（近 90 日销量）', cond: ['时间：2026-08-22 至 2026-11-19（日粒度）', '地区：全国（按仓库所在地，省级）', '品类：全部大类', '布局：省 × 大类交叉表'], cols: '销量（交叉表，含追加屏蔽）', fmt: 'CSV', rows: 0, status: 'fail', failReason: '生成超时，文件未生成，本次不占用导出配额。可直接重新生成。', by: '郑晓岚', at: '2026-11-20 17:48', failAt: '2026-11-20 17:58' },
+    { id: 'EXP-20261119-0047', price: true, src: '量价视图', title: '热轧卷板 Q235B · 本厂与其他品牌价差', cond: ['时间：2026-09-01 至 2026-11-18（周粒度）', '地区：全国', '品名：热轧卷板 · 材质 Q235B', '品牌：本厂（东岳）、其他品牌', '口径：含税、自提、非暂估'], cols: '加权均价（取整到 10 元/吨）、涨跌额、涨跌幅、价格覆盖率区间、有价企业数区间', fmt: 'CSV', rows: 24, cells: 96, masked: 0, merged: 0, status: 'done', by: '周立明', at: '2026-11-19 11:06', doneAt: '2026-11-19 11:06' },
+    { id: 'EXP-20261116-0022', src: '聚合看板', title: '看板数据（概览、地区、品类）', cond: ['数据日期：2026-11-15', '范围：概览指标、地区分布、品类结构', '地区口径：仓库所在地'], cols: '看板各卡片的指标与图表数据：' + VOL, fmt: 'Excel', rows: 268, cells: 1340, masked: 121, merged: 6, status: 'expired', by: '周立明', at: '2026-11-16 09:12', doneAt: '2026-11-16 09:12', downloads: [{ who: '周立明', at: '2026-11-16 09:15' }] },
+    { id: 'EXP-20261114-0009', src: '多维查询', title: '东岳品牌分规格动销', cond: ['时间：2026-11-01 至 2026-11-13（日粒度）', '地区：全国', '品类：全部大类 → 品名 → 规格段', '品牌：本厂（东岳）'], cols: VOL, fmt: 'Excel', rows: 1924, cells: 11544, masked: 2630, merged: 41, status: 'expired', by: '郑晓岚', at: '2026-11-14 15:37', doneAt: '2026-11-14 15:39' },
+  ];
+  RAW.forEach((t) => {
+    t.account = ACC[t.by];
+    if (t.status === 'done' || t.status === 'expired') { t.fp = fpOf(t.id); t.expire = plus7(t.doneAt); }
+  });
+
+  STP.mount({
+    data() {
+      return {
+        tab: 'all', f: { src: '', status: '', kw: '' }, all: RAW, seq: 43,
+        quota: { times: 3, maxTimes: 20, rows: 1286, maxRows: 200000 },
+        ST: { queue: { t: '排队中', type: 'info' }, run: { t: '生成中', type: 'primary' }, done: { t: '已完成', type: 'success' }, expired: { t: '已过期', type: 'info' }, fail: { t: '生成失败', type: 'danger' } },
+        SRC_TYPE: { 聚合看板: 'primary', 多维查询: 'success', 数据来源企业名单: 'warning', 定时发送: 'info', 量价视图: 'danger' },
+        dlDlg: false, dlTask: null, dlAgree: false, drawer: false, curId: null,
+      };
+    },
+    computed: {
+      gateOpen() { return this.$state.gate === 'open'; },
+      tasks() { return this.all.filter((t) => !t.price || this.gateOpen); },
+      mineCount() { return this.tasks.filter((t) => t.by === '周立明').length; },
+      srcOptions() { return ['聚合看板', '多维查询', '数据来源企业名单', '定时发送'].concat(this.gateOpen ? ['量价视图'] : []); },
+      listFields() { return ['企业名称或匿名编号', '所在省市', '主营大类', '规模档（企业自主申报）', '覆盖声明'].concat(this.gateOpen ? ['是否提供价格数据'] : [], ['质量评级', '近 3 个月活跃等级', '生效起止', '名额状态']); },
+      shown() {
+        const f = this.f, kw = f.kw.trim().toLowerCase();
+        return this.tasks.filter((t) => (this.tab !== 'mine' || t.by === '周立明') && (!f.src || t.src === f.src) && (!f.status || t.status === f.status) && (!kw || (t.id + t.title + t.cond.join('')).toLowerCase().indexOf(kw) >= 0));
+      },
+      cur() {
+        const t = this.tasks.find((x) => x.id === this.curId);
+        if (!t) return null;
+        return Object.assign({}, t, { audit: audit(t), cols: t.src === '数据来源企业名单' ? this.listFields.join('、') + '（不含任何数值）' : t.cols });
+      },
+    },
+    watch: {
+      gateOpen(v) { if (!v) { if (this.f.src === '量价视图') this.f.src = ''; if (this.cur === null) this.drawer = false; } },
+    },
+    mounted() {
+      this._timer = setInterval(this.tick, 1000);
+    },
+    beforeUnmount() { clearInterval(this._timer); },
+    methods: {
+      now() { const d = new Date(); return M.TODAY + ' ' + STP.pad(14) + ':' + STP.pad(10 + (d.getSeconds() % 40)); },
+      tick() {
+        this.all.forEach((t) => {
+          if (t.status === 'run') {
+            t.progress = Math.min(100, t.progress + (t.fast ? 17 : 2));
+            if (t.progress >= 100) this.finish(t);
+          } else if (t.status === 'queue' && t.fast) {
+            t.wait = (t.wait || 0) + 1;
+            if (t.wait >= 2) { t.status = 'run'; t.progress = 8; }
+          }
+        });
+      },
+      finish(t) {
+        t.status = 'done'; t.doneAt = t.at; t.fp = fpOf(t.id + t.at); t.expire = plus7(t.at);
+        if (!t.cells && t.src !== '数据来源企业名单') { t.cells = t.rows * 5; t.masked = Math.round(t.cells * 0.082); t.merged = 5; }
+        if (t.fast) { this.quota.rows += t.rows; this.$demo(t.id + ' 已生成，可下载，文件保留 7 天'); }
+      },
+      fileName(t) { return t.id + '_' + t.src + (t.fmt === 'Excel' ? '.xlsx' : '.csv'); },
+      termsOf(t) {
+        const list = [
+          { h: '禁止再识别：', t: '不得通过任何方式（包括与自有发货数据或其他来源数据比对、多次导出相减）推算或识别单家企业的经营数据。' },
+          { h: '禁止转售：', t: '文件仅限本企业内部经营分析使用，不得转售、转授权或向任何第三方提供。' },
+          { h: '可追溯：', t: '文件带有企业、账号、时间、导出编号水印，可追溯到导出人与下载人。' },
+          { h: '违约责任：', t: '违反上述条款的，平台有权按《数据服务协议》终止服务并追究责任。' },
+        ];
+        if (t.price && this.gateOpen) list.splice(2, 0, { h: '价格指标用途限制：', t: '文件中的加权均价为样本成交均价，不是市场报价；不得用于与其他经营者协同定价，不得对外传播。' });
+        return list;
+      },
+      askDownload(t) { this.dlTask = t; this.dlAgree = false; this.dlDlg = true; },
+      doDownload() {
+        const t = this.all.find((x) => x.id === this.dlTask.id);
+        (t.downloads = t.downloads || []).push({ who: '周立明', at: this.now() });
+        this.dlDlg = false;
+        this.$demo('已开始下载 ' + this.fileName(t) + '，下载行为已记入审计日志');
+      },
+      openDetail(t) { this.curId = t.id; this.drawer = true; },
+      regen(t) {
+        if (this.quota.times >= this.quota.maxTimes) { this.$info('今日导出次数已达上限，需提交申请由企业管理员审批'); return; }
+        this.seq += 1;
+        const id = 'EXP-20261124-' + ('0000' + this.seq).slice(-4);
+        const rows = t.rows || 1530;
+        this.all.unshift({ id, src: t.src, title: t.title, cond: t.cond.concat(['重新生成自 ' + t.id + '，按当前数据池成员与披露规则重新计算']), cols: t.cols, fmt: t.fmt, rows, price: t.price, status: 'queue', fast: true, progress: 0, by: '周立明', account: 'zhoulm', at: this.now() });
+        this.quota.times += 1;
+        this.tab = 'all'; this.f = { src: '', status: '', kw: '' };
+        this.curId = id;
+        this.$info('已提交重新生成，新任务编号 ' + id);
+      },
+    },
+  });
+})();
+</script>
+</body>
+</html>

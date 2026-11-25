@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>暂停与退出 · 下游钢贸端 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.state-card { display: flex; gap: 20px; align-items: stretch; }
+.state-main { flex: 0 0 300px; display: flex; gap: 14px; align-items: center; padding-right: 20px; border-right: 1px solid var(--stp-border); }
+.state-ico { width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 28px; flex-shrink: 0; }
+.state-ico.normal { background: #e8f7ef; color: #18a058; }
+.state-ico.paused { background: #fff8eb; color: #d48806; }
+.state-ico.exiting { background: #fdeeee; color: #e5484d; }
+.state-main h3 { margin: 0 0 4px; font-size: 22px; font-weight: 600; }
+.state-facts { flex: 1; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px 20px; align-content: center; }
+.state-facts .f .l { font-size: 12px; color: var(--stp-sub); margin-bottom: 3px; }
+.state-facts .f .v { font-size: 14px; font-weight: 600; }
+.state-facts .f .s { font-size: 12px; color: var(--stp-sub); margin-top: 2px; }
+.eff-list { margin: 0; padding: 0; list-style: none; font-size: 13px; line-height: 1.7; }
+.eff-list li { display: flex; gap: 8px; padding: 5px 0; align-items: flex-start; }
+.eff-list li .el-icon { margin-top: 4px; flex-shrink: 0; color: #8a94a3; }
+.eff-list li .el-icon.g { color: #18a058; } .eff-list li .el-icon.o { color: #d48806; } .eff-list li .el-icon.r { color: #e5484d; }
+.act-foot { display: flex; align-items: center; gap: 12px; margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--stp-border); }
+.light { display: flex; gap: 12px; padding: 12px; border: 1px solid var(--stp-border); border-radius: 6px; background: #fff; text-decoration: none; color: inherit; margin-bottom: 10px; align-items: center; }
+.light:last-child { margin-bottom: 0; }
+.light:hover { border-color: #a8d2ff; background: #f7fbff; }
+.light .ic { width: 36px; height: 36px; border-radius: 8px; background: #eef4fb; color: #2b5d9b; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+.light .tt { font-weight: 600; font-size: 14px; }
+.light .ds { font-size: 12px; color: var(--stp-sub); margin-top: 2px; line-height: 1.6; }
+.light .go { margin-left: auto; color: #8a94a3; flex-shrink: 0; }
+.resp { background: #1f2a37; color: #d6e1ee; border-radius: 6px; padding: 10px 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.7; white-space: pre; overflow-x: auto; }
+.exit-card { border-color: #f3c9ca; }
+.exit-steps { padding: 6px 0 16px; }
+.cmp-table th, .cmp-table td { padding: 7px 10px; }
+.demo-param { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 11px; line-height: 18px; background: #fff8eb; color: #9a6400; border: 1px solid #f3dfb8; font-weight: 400; }
+.el-descriptions__label { white-space: nowrap; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="downstream" active="pause-exit" title="暂停与退出"
+  desc="数据是否继续提供由本企业决定。可以随时暂停、随时恢复；也可以申请退出，平台停止对外提供并按协议删除明细数据。">
+  <template #actions>
+    <el-button @click="$go('ledger.html')"><el-icon><Notebook /></el-icon>数据使用透明账本</el-button>
+  </template>
+
+  <!-- 当前状态 -->
+  <div class="card">
+    <div class="state-card">
+      <div class="state-main">
+        <div class="state-ico" :class="status"><el-icon><component :is="stateView.icon"></component></el-icon></div>
+        <div>
+          <div class="small muted">当前状态</div>
+          <h3>{{ stateView.title }}</h3>
+          <div class="small muted">{{ stateView.sub }}</div>
+        </div>
+      </div>
+      <div class="state-facts">
+        <div class="f"><div class="l">接口</div><div class="v"><span class="dot" :class="status==='normal' ? 'ok' : status==='paused' ? 'warn' : 'err'"></span>{{ status==='normal' ? '正常接收' : status==='paused' ? '拒收（已暂停）' : '拒收（退出中）' }}</div><div class="s">最近一次成功上传 2026-11-23 23:58</div></div>
+        <div class="f"><div class="l">被订阅</div><div class="v">23 家钢厂</div><div class="s">{{ status==='normal' ? '名额生效中' : status==='paused' ? '23 个名额已冻结' : '名额已冻结，退出完成后释放' }}</div></div>
+        <div class="f"><div class="l">收益计提</div><div class="v">{{ status==='normal' ? '正常计提' : '停止计提' }}</div><div class="s">{{ status==='normal' ? '本月有效上传 23 天' : '冻结期间不计提分成' }}</div></div>
+        <div class="f"><div class="l">已上传数据</div><div class="v">保留在平台</div><div class="s">自 2025-09-26 起，共 14 个月</div></div>
+      </div>
+    </div>
+    <el-alert v-if="status==='paused'" type="warning" show-icon :closable="false" class="mt16" style="margin-bottom:0">
+      <template #title>已于 {{ pausedAt }} 暂停上传。ERP 现在推送数据会被拒收并收到业务状态错误码 <span class="code">3002</span>（企业已暂停上传）；已上传的数据保留，随时可以恢复。</template>
+    </el-alert>
+    <el-alert v-if="status==='exiting'" type="error" show-icon :closable="false" class="mt16" style="margin-bottom:0">
+      <template #title>退出申请已提交（{{ exitAt }}）。接口已停止接收，冷静期至 {{ coolEnd }}，期间可以撤回申请。</template>
+    </el-alert>
+  </div>
+
+  <div class="grid c-3-2">
+    <!-- 暂停上传 -->
+    <div class="card" style="margin-bottom:0">
+      <div class="card-title">
+        <span><el-icon style="vertical-align:-2px;margin-right:6px;color:#d48806"><VideoPause /></el-icon>暂停上传<small>随时暂停，随时恢复，不需要平台审批</small></span>
+        <el-tag v-if="status==='paused'" type="warning" size="small">已暂停</el-tag>
+      </div>
+      <ul class="eff-list">
+        <li><el-icon class="o"><CircleClose /></el-icon><span><b>接口拒收数据。</b>暂停期间 ERP 推送的销售、库存数据全部拒收，返回业务状态错误码 <span class="code">3002</span>（企业已暂停上传，HTTP 403），不落盘。</span></li>
+        <li><el-icon class="g"><CircleCheck /></el-icon><span><b>已上传的数据保留。</b>历史数据继续留在平台，不删除；暂停日之后没有新数据进入聚合。</span></li>
+        <li><el-icon class="o"><Lock /></el-icon><span><b>名额冻结。</b>订阅本企业的 23 家钢厂的名额进入冻结，钢厂可免费替换或顺延；<b>冻结期间不计提分成</b>。钢厂只会看到“名额冻结”，看不到原因。</span></li>
+        <li><el-icon class="g"><RefreshRight /></el-icon><span><b>可随时恢复。</b>恢复后接口立即接收数据，名额解冻、恢复计提；暂停期间的数据可在 ERP 端按业务日期补传。</span></li>
+      </ul>
+      <div class="act-foot">
+        <template v-if="status==='normal'">
+          <el-button type="warning" @click="openPause"><el-icon><VideoPause /></el-icon>暂停上传</el-button>
+          <span class="small muted">仅企业管理员可操作，操作留痕并通知接口对接员。</span>
+        </template>
+        <template v-else-if="status==='paused'">
+          <el-button type="success" @click="resumeDlg = true"><el-icon><VideoPlay /></el-icon>恢复上传</el-button>
+          <span class="small muted">已暂停 {{ pausedAt }} 起。恢复后立即生效。</span>
+        </template>
+        <template v-else>
+          <el-button disabled>暂停上传</el-button>
+          <span class="small muted">退出流程进行中，接口已停止接收。</span>
+        </template>
+        <a href="javascript:;" class="small" style="margin-left:auto" @click="respDlg = true">查看暂停时的接口返回示例</a>
+      </div>
+    </div>
+
+    <!-- 更轻的选择 -->
+    <div class="card" style="margin-bottom:0">
+      <div class="card-title"><span>更轻的选择<small>不一定要暂停或退出</small></span></div>
+      <a class="light" href="upload-rules.html">
+        <span class="ic"><el-icon><Filter /></el-icon></span>
+        <span><div class="tt">只收紧上传规则</div><div class="ds">只上传指定品类、仓库或品牌，其余数据在 ERP 端就不上传。当前规则 v7：仅主营大类、指定仓库。</div></span>
+        <el-icon class="go"><ArrowRight /></el-icon>
+      </a>
+      <a class="light" href="visibility.html">
+        <span class="ic"><el-icon><View /></el-icon></span>
+        <span><div class="tt">改为匿名上架</div><div class="ds">在钢厂的企业名录里只显示匿名编号，或只对指定钢厂可见。对分成没有影响。</div></span>
+        <el-icon class="go"><ArrowRight /></el-icon>
+      </a>
+      <a class="light" href="upload-settings.html">
+        <span class="ic"><el-icon><Setting /></el-icon></span>
+        <span><div class="tt">切换为日汇总模式</div><div class="ds">不上传单据号与行号，每天只上传按品类、仓库汇总后的数。也可在这里关闭价格上传。</div></span>
+        <el-icon class="go"><ArrowRight /></el-icon>
+      </a>
+      <div class="small muted mt12" style="line-height:1.7">这三项都立即或次日生效，可以随时改回，不影响已签署的协议。</div>
+    </div>
+  </div>
+
+  <!-- 退出与数据撤回 -->
+  <div class="card exit-card">
+    <div class="card-title">
+      <span><el-icon style="vertical-align:-2px;margin-right:6px;color:#e5484d"><SwitchButton /></el-icon>退出与数据撤回<small>申请退出后，平台停止对外提供，并按协议删除明细数据</small></span>
+      <el-tag v-if="status==='exiting'" type="danger" size="small">退出流程进行中</el-tag>
+    </div>
+    <div class="exit-steps">
+      <el-steps :active="status==='exiting' ? 1 : 0" align-center finish-status="success">
+        <el-step title="提交申请" :description="status==='exiting' ? exitAt + ' 已提交' : '企业管理员提交并确认'"></el-step>
+        <el-step title="停止对外提供" :description="status==='exiting' ? '冷静期至 ' + coolEnd : '冷静期 ' + P.cool + ' 天结束后，次日起不再进入任何聚合'"></el-step>
+        <el-step title="按协议删除明细数据" :description="'停止对外提供后 ' + P.del + ' 天内完成'"></el-step>
+        <el-step title="完成" description="出具数据删除确认书"></el-step>
+      </el-steps>
+    </div>
+    <div class="grid c2" style="margin-bottom:0">
+      <div>
+        <div class="small muted mb8">退出后会发生什么</div>
+        <ul class="eff-list">
+          <li><el-icon class="r"><CircleClose /></el-icon><span><b>接口立即停止接收</b>，与暂停时一样返回业务状态错误码；退出完成后企业的接口凭证作废。</span></li>
+          <li><el-icon class="r"><CircleClose /></el-icon><span><b>停止对外提供。</b>本企业的数据不再进入任何钢厂的聚合结果，并从企业名录下架；23 个名额释放，钢厂可免费替换。</span></li>
+          <li><el-icon class="r"><Delete /></el-icon><span><b>按协议删除明细数据。</b>销售与库存明细、汇总记录、价格与金额、物料映射在 {{ P.del }} 天内删除，含备份中的副本按备份周期滚动清除。</span></li>
+          <li><el-icon><InfoFilled /></el-icon><span><b>已生成并已披露的历史聚合结果不回溯修改。</b>那些数里早已不能分辨出本企业；回溯重算反而会让“重算前后之差”暴露本企业的数。<span class="demo-param">待业务方确认 D-12</span></span></li>
+          <li><el-icon><Money /></el-icon><span><b>收益结清。</b>自申请日起停止计提；已计提未结算的金额照常出结算单并付款，不受起付金额限制。</span></li>
+          <li><el-icon><Document /></el-icon><span><b>保留的内容。</b>协议签署记录、结算与发票记录、操作审计日志按法规要求保留，不含业务明细。</span></li>
+        </ul>
+      </div>
+      <div>
+        <div class="small muted mb8">暂停与退出的区别</div>
+        <table class="plain-table cmp-table">
+          <thead><tr><th></th><th>暂停上传</th><th>退出与数据撤回</th></tr></thead>
+          <tbody>
+            <tr><th>接口</th><td>拒收，可随时恢复</td><td>停止接收，凭证作废</td></tr>
+            <tr><th>已上传数据</th><td>保留</td><td>明细按协议删除</td></tr>
+            <tr><th>历史聚合</th><td>不变</td><td>不回溯修改</td></tr>
+            <tr><th>订阅名额</th><td>冻结，恢复后解冻</td><td>释放</td></tr>
+            <tr><th>收益分成</th><td>冻结期间不计提</td><td>停止计提，已计提部分结清</td></tr>
+            <tr><th>行业对标</th><td>保留，本企业数据停更</td><td>停止提供</td></tr>
+            <tr><th>是否可逆</th><td><b style="color:#18a058">随时可恢复</b></td><td>冷静期内可撤回；完成后需重新认证、签约、联调</td></tr>
+          </tbody>
+        </table>
+        <div class="small muted mt8"><span class="demo-param">示例参数，待业务方确定</span> 冷静期 {{ P.cool }} 天、明细删除时限 {{ P.del }} 天。</div>
+      </div>
+    </div>
+    <div class="act-foot">
+      <template v-if="status!=='exiting'">
+        <el-button type="danger" plain @click="openExit"><el-icon><SwitchButton /></el-icon>申请退出</el-button>
+        <span class="small muted">需要输入企业名称确认。建议先 <a href="data-check.html">导出本企业数据</a> 留存。</span>
+      </template>
+      <template v-else>
+        <el-button type="primary" plain @click="cancelExit"><el-icon><RefreshLeft /></el-icon>撤回退出申请</el-button>
+        <span class="small muted">冷静期至 {{ coolEnd }}。撤回后恢复为“已暂停”，需手动恢复上传。</span>
+      </template>
+    </div>
+  </div>
+
+  <!-- 操作记录 -->
+  <div class="card">
+    <div class="card-title"><span>操作记录<small>暂停、恢复、退出相关的全部操作</small></span></div>
+    <el-table :data="logs" border size="small">
+      <el-table-column prop="at" label="时间" width="150"><template #default="{row}"><span class="num">{{ row.at }}</span></template></el-table-column>
+      <el-table-column label="操作" width="130"><template #default="{row}"><el-tag size="small" effect="plain" :type="row.type">{{ row.act }}</el-tag></template></el-table-column>
+      <el-table-column prop="by" label="操作人" width="150" />
+      <el-table-column prop="reason" label="原因" min-width="180" />
+      <el-table-column prop="effect" label="影响" min-width="320" />
+    </el-table>
+  </div>
+
+  <!-- 暂停确认 -->
+  <el-dialog v-model="pauseDlg" title="确认暂停上传" width="580px">
+    <el-alert type="warning" show-icon :closable="false" title="暂停立即生效，可以随时恢复。"></el-alert>
+    <ul class="eff-list mt12">
+      <li><el-icon class="o"><CircleClose /></el-icon><span>接口拒收数据，ERP 收到业务状态错误码 <span class="code">3002</span>（企业已暂停上传）。建议同时通知 ERP 厂商停用定时任务，避免产生大量报错。</span></li>
+      <li><el-icon class="g"><CircleCheck /></el-icon><span>已上传的数据保留，不删除。</span></li>
+      <li><el-icon class="o"><Lock /></el-icon><span>订阅本企业的 <b>23 家</b>钢厂名额冻结，冻结期间<b>不计提分成</b>。按近期水平，每暂停一天约少计提 <b>71 元</b>。</span></li>
+      <li><el-icon class="g"><RefreshRight /></el-icon><span>可随时恢复，恢复后名额解冻、恢复计提。</span></li>
+    </ul>
+    <el-form label-width="88px" class="mt12">
+      <el-form-item label="暂停原因">
+        <el-select v-model="pauseForm.reason" style="width:100%"><el-option v-for="r in pauseReasons" :key="r" :label="r" :value="r"></el-option></el-select>
+      </el-form-item>
+      <el-form-item label="补充说明"><el-input v-model="pauseForm.note" placeholder="选填，仅本企业可见"></el-input></el-form-item>
+      <el-form-item label="通知"><el-checkbox v-model="pauseForm.notify">通知本企业的接口对接员（周凯、沈立新）</el-checkbox></el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="pauseDlg = false">取消</el-button>
+      <el-button type="warning" @click="doPause">确认暂停</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 恢复确认 -->
+  <el-dialog v-model="resumeDlg" title="恢复上传" width="500px">
+    <ul class="eff-list">
+      <li><el-icon class="g"><CircleCheck /></el-icon><span>接口立即恢复接收数据。</span></li>
+      <li><el-icon class="g"><CircleCheck /></el-icon><span>收到第一批有效数据后，23 个名额解冻并恢复计提分成。</span></li>
+      <li><el-icon><InfoFilled /></el-icon><span>暂停期间的数据可在 ERP 端按业务日期补传（补传窗口为近 90 天）。</span></li>
+    </ul>
+    <template #footer>
+      <el-button @click="resumeDlg = false">取消</el-button>
+      <el-button type="success" @click="doResume">确认恢复</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 接口返回示例 -->
+  <el-dialog v-model="respDlg" title="暂停时的接口返回示例" width="560px">
+    <div class="small muted mb8">POST /sales/batch、/sales/daily-summary、/inventory/snapshot 均返回同一结果。错误码定义见 <a href="api-docs.html">接口文档中心</a>。</div>
+    <div class="resp">{{ respText }}</div>
+    <div class="tip-box small mt12">这是业务状态错误，不是鉴权失败或系统故障。ERP 端不应自动重试；恢复上传后重新推送即可。</div>
+    <template #footer><el-button type="primary" @click="respDlg = false">关闭</el-button></template>
+  </el-dialog>
+
+  <!-- 退出申请 -->
+  <el-dialog v-model="exitDlg" title="申请退出与数据撤回" width="620px">
+    <el-alert type="error" show-icon :closable="false">
+      <template #title>退出完成后不可恢复：明细数据被删除，重新加入需要重新认证、签约和联调。</template>
+    </el-alert>
+    <el-descriptions :column="1" border size="small" class="mt12">
+      <el-descriptions-item label="接口">提交后立即停止接收数据</el-descriptions-item>
+      <el-descriptions-item label="对外提供">冷静期（{{ P.cool }} 天）结束后停止，届时从企业名录下架，23 个名额释放</el-descriptions-item>
+      <el-descriptions-item label="明细数据">停止对外提供后 {{ P.del }} 天内按协议删除，完成后出具数据删除确认书</el-descriptions-item>
+      <el-descriptions-item label="历史聚合">已生成并已披露的历史聚合结果不回溯修改</el-descriptions-item>
+      <el-descriptions-item label="收益">自今日起停止计提；已计提未结算部分照常结清</el-descriptions-item>
+    </el-descriptions>
+    <el-form label-position="top" class="mt16">
+      <el-form-item label="退出原因">
+        <el-select v-model="exitForm.reason" style="width:100%"><el-option v-for="r in exitReasons" :key="r" :label="r" :value="r"></el-option></el-select>
+      </el-form-item>
+      <el-form-item>
+        <template #label>请输入企业名称 <b>{{ ent }}</b> 以确认</template>
+        <el-input v-model="exitForm.name" placeholder="输入完整的企业名称"></el-input>
+        <div v-if="exitForm.name && exitForm.name.trim() !== ent" class="small" style="color:#e5484d;margin-top:4px">与企业名称不一致</div>
+      </el-form-item>
+      <el-form-item style="margin-bottom:0">
+        <el-checkbox v-model="exitForm.read">我已了解：退出后明细数据将被删除，已披露的历史聚合结果不回溯修改</el-checkbox>
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="exitDlg = false">再想想</el-button>
+      <el-button type="danger" :disabled="exitForm.name.trim() !== ent || !exitForm.read" @click="doExit">提交退出申请</el-button>
+    </template>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const ME = '陈海峰（企业管理员）';
+  const NOW = '2026-11-24 14:30';
+  STP.mount({
+    data() {
+      return {
+        ent: '苏州恒运钢铁贸易有限公司',
+        status: 'normal',
+        pausedAt: '', exitAt: '', coolEnd: '',
+        P: { cool: 7, del: 30 },
+        pauseDlg: false, resumeDlg: false, respDlg: false, exitDlg: false,
+        pauseForm: { reason: 'ERP 系统升级或切换', note: '', notify: true },
+        exitForm: { reason: '业务调整，不再需要', name: '', read: false },
+        pauseReasons: ['ERP 系统升级或切换', '内部数据核查', '对数据使用方式有疑虑，先暂停', '业务淡季或停业', '其他'],
+        exitReasons: ['业务调整，不再需要', '对数据安全有顾虑', '对接和维护成本高', '收益不及预期', '企业注销或合并', '其他'],
+        respText: 'HTTP/1.1 403\n\n{\n  "code": 3002,\n  "message": "企业已暂停上传",\n  "requestId": "req-5b0d93e1a7c24f16",\n  "data": null\n}',
+        logs: [
+          { at: '2026-08-11 08:40', act: '恢复上传', type: 'success', by: ME, reason: 'ERP 升级完成', effect: '接口恢复接收；22 个名额于当日解冻并恢复计提；2026-08-09、08-10 的数据已补传' },
+          { at: '2026-08-09 07:55', act: '暂停上传', type: 'warning', by: ME, reason: 'ERP 系统升级或切换', effect: '接口拒收 2 天；22 个名额冻结 2 天，当月少计提 44 个名额日；已上传数据保留' },
+          { at: '2025-09-26 10:20', act: '开始上传', type: 'primary', by: ME, reason: '联调通过，转为生产', effect: '接口开始接收生产数据；同日以实名方式上架' },
+          { at: '2025-09-19 10:26', act: '签署协议', type: 'info', by: ME, reason: '签署《数据授权协议》', effect: '取得上传与上架资格' }],
+      };
+    },
+    computed: {
+      stateView() {
+        return {
+          normal: { icon: 'CircleCheckFilled', title: '正常上传中', sub: '自 2025-09-26 起持续上传' },
+          paused: { icon: 'VideoPause', title: '已暂停', sub: '自 ' + this.pausedAt + ' 起，可随时恢复' },
+          exiting: { icon: 'SwitchButton', title: '退出流程进行中', sub: '冷静期至 ' + this.coolEnd },
+        }[this.status];
+      },
+    },
+    methods: {
+      openPause() { this.pauseForm = { reason: 'ERP 系统升级或切换', note: '', notify: true }; this.pauseDlg = true; },
+      doPause() {
+        this.status = 'paused'; this.pausedAt = NOW; this.pauseDlg = false;
+        this.logs.unshift({ at: NOW, act: '暂停上传', type: 'warning', by: ME, reason: this.pauseForm.reason + (this.pauseForm.note ? '：' + this.pauseForm.note : ''), effect: '接口拒收并返回错误码 3002；23 个名额冻结，冻结期间不计提分成；已上传数据保留' });
+        this.$demo('已暂停上传，可随时恢复');
+      },
+      doResume() {
+        this.status = 'normal'; this.resumeDlg = false;
+        this.logs.unshift({ at: NOW, act: '恢复上传', type: 'success', by: ME, reason: '企业主动恢复', effect: '接口恢复接收；收到首批有效数据后 23 个名额解冻并恢复计提' });
+        this.$demo('已恢复上传');
+      },
+      openExit() { this.exitForm = { reason: '业务调整，不再需要', name: '', read: false }; this.exitDlg = true; },
+      doExit() {
+        this.status = 'exiting'; this.exitAt = NOW; this.coolEnd = STP.addDays('2026-11-24', this.P.cool) + ' 24:00'; this.exitDlg = false;
+        this.logs.unshift({ at: NOW, act: '申请退出', type: 'danger', by: ME, reason: this.exitForm.reason, effect: '接口停止接收；冷静期 ' + this.P.cool + ' 天后停止对外提供，其后 ' + this.P.del + ' 天内删除明细数据' });
+        this.$demo('退出申请已提交，冷静期内可撤回');
+      },
+      cancelExit() {
+        this.status = 'paused'; this.pausedAt = this.exitAt;
+        this.logs.unshift({ at: NOW, act: '撤回退出申请', type: 'primary', by: ME, reason: '冷静期内撤回', effect: '退出流程终止，数据未删除；当前为“已暂停”，恢复上传后名额解冻' });
+        this.$demo('已撤回退出申请，当前为已暂停状态');
+      },
+    },
+  });
+})();
+</script>
+</body>
+</html>
