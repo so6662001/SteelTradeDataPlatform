@@ -25,6 +25,14 @@
 .ann-item .bd span { display: block; color: var(--stp-sub); font-size: 12px; }
 .rate-bar { display: inline-block; width: 90px; height: 8px; border-radius: 4px; background: #eef1f5; vertical-align: middle; margin-right: 8px; overflow: hidden; }
 .rate-bar i { display: block; height: 100%; border-radius: 4px; }
+.src-bar { display: flex; height: 14px; border-radius: 7px; overflow: hidden; margin: 4px 0 10px; }
+.src-bar i { display: block; height: 100%; }
+.src-leg { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12px; color: #4a5568; }
+.src-leg i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
+.src-kpi { display: block; border: 1px solid var(--stp-border); border-radius: 6px; padding: 8px 12px; color: inherit; text-decoration: none; }
+.src-kpi:hover { border-color: var(--el-color-primary); }
+.src-kpi b { display: block; font-size: 20px; }
+.src-kpi span { font-size: 12px; color: var(--stp-sub); line-height: 1.5; display: block; }
 </style>
 </head>
 <body>
@@ -51,6 +59,23 @@
     <stat-card label="在订名额" :value="86400" unit="个" icon="Tickets" tip="生效中订阅的名额总数；1 个名额 = 1 家下游企业 × 1 个计费周期"><span>已分配 <b>81,960</b></span><span>冻结 <b>1,128</b></span></stat-card>
     <stat-card label="昨日入库明细" :value="1912" unit="万行" icon="DataLine" tip="2026-11-23 业务日期入库的销售与库存记录，含行级明细与日汇总记录"><span>行级 <b>1,688</b> 万</span><span>日汇总 <b>224</b> 万</span></stat-card>
     <stat-card label="标准品类映射率" :value="96.3" :d="1" unit="%" icon="Files" tip="能映射到平台标准品名的入库行数占比；未映射数据进入待映射队列，不参与聚合"><span>较上周 <b class="up">+0.4%</b></span><span>积压 <b>1,246</b> 项</span></stat-card>
+  </div>
+
+  <!-- 入驻来源与带动 -->
+  <div class="card">
+    <div class="card-title"><span>下游入驻来源<small>截至 {{ today }}，共 {{ $fmt(srcTotal) }} 家；钢厂带动是主要的推广方式</small></span><span class="right"><a href="referral-rewards.html">带动奖励规则 ›</a></span></div>
+    <div class="grid c-3-2" style="margin-bottom:0">
+      <div>
+        <div class="src-bar"><i v-for="(s, i) in SRC" :key="s.k" :style="{ width: s.n / srcTotal * 100 + '%', background: srcColor[i] }"></i></div>
+        <div class="src-leg"><span v-for="(s, i) in SRC" :key="s.k"><i :style="{ background: srcColor[i] }"></i>{{ s.k }} <b class="num">{{ $fmt(s.n) }}</b> 家（{{ (s.n / srcTotal * 100).toFixed(1) }}%）</span></div>
+        <div class="small muted mt8">本月新增 412 家：钢厂带动 318、一级代理带动 52、平台运营邀请 27、自主注册 15。钢厂带动的企业由钢厂通过名单导入、邀请链接或邀请码邀请，带动关系须由对方的企业管理员确认后才成立。平台运营只做支持和审核：不逐家邀请，不代下游确认带动关系；准入审核标准不因来源不同而放宽。</div>
+      </div>
+      <div class="grid c3" style="margin-bottom:0;gap:10px">
+        <a class="src-kpi" href="referral-rewards.html"><b class="num">312</b><span>参与带动的钢厂（订阅钢厂 438 家）</span></a>
+        <a class="src-kpi" href="referral-rewards.html"><b class="num">12,640</b><span>有效带动户：已确认、已接入且考核期内 2 个周期达标</span></a>
+        <a class="src-kpi" href="enterprises.html"><b class="num">3</b><span>准入待审核中来自带动的企业</span></a>
+      </div>
+    </div>
   </div>
 
   <!-- 今日 T+1 发布任务 -->
@@ -159,7 +184,7 @@
         <el-radio-group v-model="ann.to"><el-radio value="全部">全部企业</el-radio><el-radio value="上游">上游钢厂</el-radio><el-radio value="下游">下游钢贸</el-radio></el-radio-group>
       </el-form-item>
       <el-form-item label="公告类型">
-        <el-select v-model="ann.type" style="width:100%"><el-option v-for="t in ['规则与参数变更','功能上线','维护与发布延迟','主数据变更','结算通知']" :key="t" :label="t" :value="t" /></el-select>
+        <el-select v-model="ann.type" style="width:100%"><el-option v-for="t in ['规则与参数变更','功能上线','维护与发布延迟','主数据变更','带动奖励通知']" :key="t" :label="t" :value="t" /></el-select>
       </el-form-item>
       <el-form-item label="标题"><el-input v-model="ann.title" maxlength="40" show-word-limit placeholder="请输入公告标题" /></el-form-item>
       <el-form-item label="正文"><el-input v-model="ann.body" type="textarea" :rows="4" placeholder="请输入公告正文" /></el-form-item>
@@ -203,6 +228,7 @@
   STP.mount({
     data() {
       return {
+        SRC: M.REF.source, srcColor: ['#409eff', '#18a058', '#f7b500', '#a0a9b6'], srcTotal: M.REF.source.reduce((s, x) => s + x.n, 0),
         today: M.TODAY, dataDate: M.DATA_DATE, annDlg: false, pubDlg: false, matchView: 'high',
         ann: { to: '全部', type: '规则与参数变更', title: '', body: '', ch: ['站内信'] },
         pubSteps: [
@@ -215,7 +241,10 @@
         ],
         todos: [
           { group: '企业与主数据', items: [
-            { n: 18, t: '待审核企业', d: '准入、身份认定、画像、上架', href: 'enterprises.html', lv: 'warm' },
+            { n: 18, t: '待审核企业', d: '准入、身份认定、画像、上架；准入中 3 家来自带动', href: 'enterprises.html', lv: 'warm' },
+            { n: 2, t: '钢厂发起资格审核', d: '申请开通“协议户邀请与接入”的钢厂：认证与订阅状态核对', href: 'enterprises.html', lv: '' },
+            { n: 3, t: '协议户名单抽检', d: '是否为真实企业、是否滥发；抽检不查看名单以外的信息', href: 'referral-rewards.html', lv: '' },
+            { n: 5, t: '带动关系争议与反套取核查', d: '多家钢厂邀请同一协议户 3，关联方 1，套取核查 1', href: 'referral-rewards.html', lv: '' },
             { n: 1246, t: '待确认映射与品类积压', d: '各品类待映射队列合计', href: 'master-category.html', lv: '' },
           ] },
           { group: '数据治理', items: [
@@ -223,16 +252,18 @@
             { n: 312, t: '可疑与隔离数据', d: '隔离区数据不参与聚合', href: 'quality.html', lv: 'warm' },
             { n: 7, t: '价格隔离待处置', d: '按批处置；只隔离价格字段，销量照常入库', href: 'price-control.html', lv: '' },
             { n: 41, t: '粒度冲突拒收', d: '近 7 日被拒收批次', href: 'grain-monitor.html', lv: '' },
+            { n: 2, t: '无库存经营待核实', d: '核实时限 5 个工作日；依据平台内的汇总信号和企业材料，不打开明细', href: 'enterprises.html?tab=ns', lv: 'warm' },
+            { n: 3, t: '无库存经营标记复核', d: '持续核验信号 1、钢厂异议 1（二期）、到期抽检 1', href: 'enterprises.html?tab=ns', lv: '' },
+            { n: 2, t: '达标异议待复核', d: '企业对 2026-10 周期达标结果提出异议；复核后更正并留痕', href: 'referral-rewards.html', lv: 'warm' },
           ] },
-          { group: '交易与结算', items: [
+          { group: '交易与奖励', items: [
             { n: 6, t: '对公转账待核销', d: '最早一笔已等待 2 个工作日', href: 'billing.html', lv: 'hot' },
-            { n: 214, t: '待审核结算单', d: '2026-10 结算期', href: 'settlement.html', lv: 'warm' },
-            { n: 2, t: '待付款批次', d: '审核通过，待财务付款', href: 'settlement.html', lv: 'warm' },
-            { n: 9, t: '分成异议与冻结', d: '异议 5，冻结待核查 4', href: 'settlement.html', lv: '' },
+            { n: 3, t: '待审核带动奖励', d: '2026 Q3 考核期：奖励名额 3 笔待审核发放', href: 'referral-rewards.html', lv: 'warm' },
+            { n: 2, t: '待处理退款', d: '未生效 1 笔，已生效 1 笔', href: 'billing.html', lv: '' },
           ] },
           { group: '安全审计与关键配置', items: [
             { n: 3, t: '异常查询告警', d: '待处置 2，终止服务待复核 1', href: 'audit.html', lv: 'hot' },
-            { n: 4, t: '待复核的关键配置变更', d: '防反推参数 1、披露粒度 1、分成规则 1、定价 1', href: 'privacy-params.html', lv: 'warm' },
+            { n: 4, t: '待复核的关键配置变更', d: '防反推参数 1、披露粒度 1、带动奖励规则 1、定价 1；分段字典与达标参数同样须双人复核', href: 'privacy-params.html', lv: 'warm' },
             { n: 3, t: '明细访问工单', d: '待企业授权 2，授权中 1', href: 'audit.html', lv: '' },
           ] },
         ],
@@ -251,7 +282,7 @@
           { to: '全部', title: '关于 2026-12-01 数据池周期变更生效安排的公告', time: '2026-11-23 16:30', by: '林若彤', status: '已发布，送达 21,898 家' },
           { to: '上游', title: '不锈钢、优特钢品类披露粒度说明（地区到省、时间到旬）', time: '2026-11-18 09:12', by: '赵启明', status: '已发布，送达 512 家' },
           { to: '下游', title: '日汇总模式接口新增末片标记校验的提醒', time: '2026-11-12 14:40', by: '孙雅婷', status: '已发布，送达 7,266 家' },
-          { to: '下游', title: '2026 年 10 月分成结算单已生成，请于 11 月 30 日前确认', time: '2026-11-05 10:00', by: '何志远', status: '已发布，送达 4,186 家' },
+          { to: '上游', title: '2026 年第三季度带动奖励（奖励名额）已核算发放，请在“协议户邀请与接入”查看', time: '2026-10-12 11:00', by: '林若彤', status: '已发布，送达 312 家' },
         ],
         notices: [
           { title: '披露粒度变更 MDC-1124-002 待复核：管材最细地区由地级市调整到省', time: '今天 09:26', src: '关键配置', lv: 'err', href: 'master-category.html', read: false },

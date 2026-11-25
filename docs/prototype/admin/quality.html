@@ -76,12 +76,16 @@
       <el-table-column label="失败率" width="90" align="right"><template #default="{row}"><span class="num" :style="{color: row.fail >= 3 ? '#e5484d' : ''}">{{ row.fail.toFixed(1) }}%</span></template></el-table-column>
       <el-table-column label="隔离率" width="90" align="right"><template #default="{row}"><span class="num" :style="{color: row.qr >= 0.8 ? '#e5484d' : ''}">{{ row.qr.toFixed(2) }}%</span></template></el-table-column>
       <el-table-column label="待映射积压" width="110" align="right"><template #default="{row}"><span class="num" :style="{color: row.backlog > 200 ? '#e5484d' : ''}">{{ row.backlog }}</span> 项</template></el-table-column>
+      <el-table-column width="150" align="right">
+        <template #header>维度缺失率<el-tooltip placement="top" content="按品类统计维度模板：第一维度（规格、厚度）缺失的行进入待映射；第二维度（宽度、壁厚、公斤段或负差段）缺失的行照常入库，归入“未分段”，只参与更粗层级的聚合"><el-icon style="vertical-align:-2px;margin-left:2px"><QuestionFilled /></el-icon></el-tooltip></template>
+        <template #default="{row}"><span class="num">{{ row.dim[1].toFixed(1) }}%</span><div class="small muted">{{ row.dim[0] }}<template v-if="row.dim[2] !== null"> · 未分段 <b :style="{color: row.dim[2] >= 8 ? '#b26a00' : ''}">{{ row.dim[2].toFixed(1) }}%</b></template></div></template>
+      </el-table-column>
       <el-table-column label="当前深度 → 目标" width="140" align="center"><template #default="{row}"><span class="level-tag" style="margin:0">{{ row.depth }}</span> → <span class="level-tag" :class="{lock: row.depth !== row.target}" style="margin:0">{{ row.target }}</span></template></el-table-column>
       <el-table-column label="能否提升标准化深度" min-width="260">
         <template #default="{row}"><el-tag size="small" :type="row.can === 'yes' ? 'success' : row.can === 'done' ? 'info' : 'warning'">{{ row.can === 'yes' ? '具备条件' : row.can === 'done' ? '已达目标深度' : '暂不具备' }}</el-tag> <span class="muted small">{{ row.why }}</span></template>
       </el-table-column>
     </el-table>
-    <div class="tbl-foot"><span>映射率门槛为<b>示例参数，待业务方确定</b>；未达标的品类只开放到品名级。失败率 = 字段与分品类规则校验失败行数占比；隔离率 = 进入隔离区的记录占比。</span></div>
+    <div class="tbl-foot"><span>映射率门槛为<b>示例参数，待业务方确定</b>；未达标的品类只开放到品名级。失败率 = 字段与分品类规则校验失败行数占比；隔离率 = 进入隔离区的记录占比。维度缺失率 = 第一维度缺失且无法从规格原文解析的行数占比，“未分段”为第二维度缺失的占比（全平台约 6%，示例值）；各模板的格子达标与上卷率见 <a href="grain-monitor.html">上传粒度监控 › 统计维度格子达标与上卷率</a>。非钢材（配套辅材，按数量）单独统计：映射率 90.3%，单位不一致拒收率 1.2%。</span></div>
   </div>
 
   <!-- 处置标签页 -->
@@ -134,7 +138,7 @@
           <el-table-column label="操作" width="176" align="center">
             <template #default="{row}">
               <template v-if="row.st !== '已释放'">
-                <el-button v-if="row.type === '反刷量命中'" link type="danger" @click="row.st = '人工核查中'; $demo('已转人工核查，并提交分成冻结申请')">转人工核查</el-button>
+                <el-button v-if="row.type === '反刷量命中'" link type="danger" @click="row.st = '人工核查中'; $demo('已转人工核查；核查期间该企业不计入带动奖励的有效带动户')">转人工核查</el-button>
                 <el-button v-else link type="primary" @click="row.urged = true; $demo('已催办企业确认，通知已发送给企业管理员与数据管理员')">{{ row.urged ? '再次催办' : '催办企业' }}</el-button>
                 <el-button link type="primary" @click="ticket(row)">发起工单</el-button>
               </template>
@@ -273,11 +277,13 @@
     热轧板卷: [97.8, 95, 0.8, 0.28, 64, 'L4', 'L4', 'done', ''],
     中厚板: [96.5, 95, 1.1, 0.35, 92, 'L4', 'L4', 'done', ''],
     冷轧及涂镀: [94.6, 92, 1.6, 0.46, 148, 'L3', 'L4', 'yes', '映射率高于门槛，规格段方案已评审'],
-    管材: [92.1, 90, 2.3, 0.62, 236, 'L3', 'L4', 'no', '待映射积压超过 200 项'],
+    管材: [92.1, 90, 2.3, 0.62, 236, 'L4', 'L4', 'done', '按统计维度模板（规格 + 壁厚）已提前到 L4；积压偏高，优先补规格归一'],
     型钢: [95.8, 92, 1.4, 0.4, 87, 'L4', 'L4', 'done', ''],
     优特钢: [89.4, 88, 3.1, 0.88, 342, 'L3', 'L3', 'done', '积压偏高，优先补充牌号对照'],
     不锈钢: [87.2, 88, 3.8, 1.05, 239, 'L2', 'L3', 'no', '映射率低于门槛，只开放到品名级'],
   };
+  /* [模板维度, 第一维度缺失率 %, 第二维度“未分段”占比 %（单维度模板为 null）]，示例值 */
+  const CDIM = { 建筑钢材: ['规格', 0.5, null], 热轧板卷: ['厚度 + 宽度', 0.7, 5.2], 中厚板: ['厚度 + 宽度', 0.9, 4.6], 冷轧及涂镀: ['厚度 + 宽度', 1.4, 6.8], 管材: ['规格 + 壁厚', 2.1, 7.4], 型钢: ['规格 + 公斤段或负差段', 1.2, 8.6], 优特钢: ['规格', 2.6, null], 不锈钢: ['规格', 3.2, null] };
   const B = (name, loc, q, days, subs, owner, st, reason) => ({ name, loc, q, days, subs, owner, st, reason: reason || '', last: STP.addDays('2026-11-23', -days), api: days >= 10 ? '近 ' + days + ' 天无成功调用；最后一次返回“密钥无效”' : '近 ' + days + ' 天无上传调用；字典查询接口仍有调用', hist: owner ? [{ time: STP.addDays('2026-11-24', -Math.min(days - 2, 3)) + ' 10:20', txt: owner + '：' + (reason || '已电话联系企业数据管理员') }] : [] });
   const breaks = [
     B('合肥宝源钢铁贸易有限公司', '安徽 · 合肥', 'B', 16, 6, '林若彤', '企业处理中', 'ERP 升级，接口待服务商重新对接'),
@@ -341,7 +347,7 @@
           { k: 'B', t: '良', d: '评分 70–84，占 42.0%', n: 7520, c: '#409eff' },
           { k: 'C', t: '合格', d: '评分低于 70，占 17.0%；重点跟进', n: 3042, c: '#f0a020' },
         ],
-        catRows: CATS.map((n) => { const v = CQ[n]; return { name: n, map: v[0], th: v[1], fail: v[2], qr: v[3], backlog: v[4], depth: v[5], target: v[6], can: v[7], why: v[8] }; }),
+        catRows: CATS.map((n) => { const v = CQ[n]; return { name: n, map: v[0], th: v[1], fail: v[2], qr: v[3], backlog: v[4], depth: v[5], target: v[6], can: v[7], why: v[8], dim: CDIM[n] }; }),
         breaks, followDlg: false, cur: null, ff: { way: '电话', reason: '', st: '已联系', date: '', note: '' },
         reasons: ['ERP 升级或更换', '密钥过期或被停用', '接口对接人员变动', '网络或白名单变更', '企业主动停传', '原因待查'],
         quars, qType: '', qTypes: ['销量突变', '库存突变', '库存快照缺失', '重复数据', '日汇总批次不完整', '反刷量命中'],

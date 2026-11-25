@@ -160,9 +160,10 @@
           <div class="cart-sec"><span>名额来源</span></div>
           <dl class="cart-kv">
             <dt>优先使用未分配名额</dt><dd><b class="num">{{ calc.free }}</b> / {{ freeQuota }} 个<el-tooltip content="名额包 200 个名额已全部分配：在池 186 个、待生效 14 个。待生效的 14 个里，1 个是 2026-11-19 数据池调整时新增的，13 个是 2026-11-20 选购时用未分配名额分配的" placement="top"><el-icon style="vertical-align:-2px;margin-left:4px;color:#909399"><QuestionFilled /></el-icon></el-tooltip></dd>
+            <dt>奖励名额抵用<el-switch v-model="useReward" size="small" style="margin-left:6px" /></dt><dd><b class="num">{{ calc.rw }}</b> / {{ rewardFree }} 个<el-tooltip content="带动奖励发放的名额，有效期至 2027-10-11，不计费。协议户照常占用付费名额，奖励名额可以抵用；能否用于协议户以外的企业待业务方确定，原型暂不限制" placement="top"><el-icon style="vertical-align:-2px;margin-left:4px;color:#909399"><QuestionFilled /></el-icon></el-tooltip></dd>
             <dt>超出部分为加购</dt><dd><b class="num">{{ calc.buy }}</b> 个</dd>
           </dl>
-          <div class="formula">用已购名额包内的未分配名额分配企业<b>不属于加购，不产生新费用</b>（费用自名额包订单生效日起已计算）；只有超出的部分按加购计费。<br>目前没有未分配名额：2026-11-20 的选购共选 43 家，其中 13 家用完了未分配名额（不产生费用，已列为待生效），其余 30 家为加购（订单 DO-20261120-0052，待核销）。现在新选的企业全部按加购计价。</div>
+          <div class="formula">用已购名额包内的未分配名额分配企业<b>不属于加购，不产生新费用</b>（费用自名额包订单生效日起已计算）；只有超出的部分按加购计费。<br>目前没有未分配名额：2026-11-20 的选购共选 43 家，其中 13 家用完了未分配名额（不产生费用，已列为待生效），其余 30 家为加购（订单 DO-20261120-0052，待核销）。现在新选的企业先用奖励名额抵用（现有 {{ rewardFree }} 个），其余按加购计价。<br><b>本厂协议户与其他企业一样占用名额</b>，不因带动关系减免：已接入的协议户中还有 {{ seat.listedOut }} 户已对本厂上架、尚未选入，全部选入需 {{ seat.listedOut }} 个名额，奖励名额抵用 {{ rewardFree }} 个后须加购 {{ seat.needBuy }} 个。</div>
 
           <div class="cart-sec"><span>阶梯与单价</span>
             <el-popover placement="left" :width="300" trigger="hover">
@@ -223,7 +224,7 @@
           <div class="small" style="line-height:1.7;color:#4a5568">新增企业 <b>2026-12-01</b> 起生效（数据池按周期统一生效）；生效日之前的数据仍按原成员集合展示，历史不重算。生效前在数据池页面列为“待生效”。</div>
         </div>
         <div class="cart-foot">
-          <el-button type="primary" style="width:100%" size="large" :disabled="!selCount" @click="openCheckout">去结算{{ selCount ? '（' + selCount + ' 家）' : '' }}</el-button>
+          <el-button type="primary" style="width:100%" size="large" :disabled="!selCount" @click="openCheckout">去下单{{ selCount ? '（' + selCount + ' 家）' : '' }}</el-button>
         </div>
       </div>
     </div>
@@ -235,6 +236,7 @@
       <thead><tr><th>商品</th><th class="r">数量</th><th class="r">单价</th><th>周期</th><th class="r">金额（元）</th></tr></thead>
       <tbody>
         <tr v-if="calc.free"><td>分配未分配名额<div class="muted small">来自订单 DO-20260318-0007；不属于加购，不产生新费用</div></td><td class="r num nowrap">{{ calc.free }} 个</td><td class="r muted nowrap">已购</td><td class="nowrap">至 2027-03-31</td><td class="r num">0</td></tr>
+        <tr v-if="calc.rw"><td>奖励名额抵用<div class="muted small">来源：2026 Q3 带动奖励；不计费，不计入已购名额数和数量阶梯</div></td><td class="r num nowrap">{{ calc.rw }} 个</td><td class="r muted nowrap">奖励</td><td class="nowrap">至 2027-10-11</td><td class="r num">0</td></tr>
         <tr v-if="calc.buy"><td>周期内加购名额<div class="muted small">{{ calc.tier.label }} 档 · 年付 {{ yearOff * 100 }} 折 · 阶梯 {{ calc.tier.off === 1 ? '原价' : (calc.tier.off * 100) + ' 折' }}</div></td><td class="r num nowrap">{{ calc.buy }} 个</td><td class="r num nowrap">{{ calc.unit.toFixed(0) }} 元/名额·月</td><td class="nowrap">121 天（含首尾）<div class="muted small">2026-12-01 至 2027-03-31</div></td><td class="r num nowrap">{{ $fmt(calc.amount) }}</td></tr>
         <tr class="total"><td colspan="4">应付金额<span class="ex-tag" style="margin-left:8px;font-weight:400">示例参数，待业务方确定</span></td><td class="r nowrap"><span class="price-big num" style="font-size:20px">¥ {{ $fmt(calc.amount) }}</span></td></tr>
       </tbody>
@@ -246,7 +248,7 @@
         <el-descriptions-item label="计划生效日"><b class="num">2026-12-01</b><span class="muted small">（新增企业生效日，即计费起始日）</span></el-descriptions-item>
         <el-descriptions-item label="计费起止日"><span class="num">2026-12-01 至 2027-03-31</span>，共 <b class="num">121</b> 天（含首尾），到期日与原订单对齐</el-descriptions-item>
         <el-descriptions-item label="适用单价"><span class="num">{{ calc.unit.toFixed(0) }}</span> 元/名额·月，折合 <span class="num">{{ calc.day.toFixed(2) }}</span> 元/名额·日 <span class="ex-tag">折算口径 N-24、适用阶梯 N-25 待确认</span></el-descriptions-item>
-        <el-descriptions-item label="计费规则"><b>下单日至生效日之间不收费。</b>生效前名额为“已分配（待生效）”，不计费、不计提分成，企业数据不进入聚合；生效日之前可取消并全额退款。订单与合同记载上述日期。</el-descriptions-item>
+        <el-descriptions-item label="计费规则"><b>下单日至生效日之间不收费。</b>生效前名额为“已分配（待生效）”，不计费，企业数据不进入聚合；生效日之前可取消并全额退款。订单与合同记载上述日期。</el-descriptions-item>
         <el-descriptions-item label="截单时点">须在 <b class="num">2026-11-28 18:00</b> 前完成支付或对公核销，新增企业才能在计划生效日生效；逾期顺延到 2027-01-01 生效并重新计价。<span class="ex-tag">截单时点与差额处理待确认（N-27）</span></el-descriptions-item>
       </template>
       <el-descriptions-item v-if="calc.buy" label="支付方式">
@@ -273,7 +275,7 @@
 
   <!-- 企业线索 -->
   <el-dialog v-model="leadDlg" title="提交希望接入的企业线索" width="600px">
-    <div class="tip-box blue small mb12">名录里没有想要的企业（例如本厂经销商）？提交线索后由平台运营跟进邀请。企业是否入驻、是否上架、实名还是匿名，均由该企业自行决定。</div>
+    <div class="tip-box blue small mb12">名录里没有想要的企业？本厂的协议户请直接到 <a href="dealer-invite.html">协议户邀请与接入</a> 批量邀请，带动入驻还可获得奖励名额；协议户入驻后要进入本厂数据池，同样在这里选入并占用名额，可用奖励名额抵用；其他企业可在这里提交线索，由平台运营跟进邀请。企业是否入驻、是否上架、实名还是匿名，均由该企业自行决定。</div>
     <el-form label-width="96px">
       <el-form-item label="提交方式">
         <el-radio-group v-model="lead.mode"><el-radio-button value="single">逐家填写</el-radio-button><el-radio-button value="batch">批量上传名单</el-radio-button></el-radio-group>
@@ -324,7 +326,7 @@
     data() {
       return {
         list: LIST, packs: PACKS, f: emptyFilter(), sel: {}, page: 1, pageSize: 10,
-        base: P.base, yearOff: P.yearOff, tiers: P.tiers, freeQuota: FREE_QUOTA,
+        base: P.base, yearOff: P.yearOff, tiers: P.tiers, freeQuota: FREE_QUOTA, useReward: true, rewardFree: M.REF.dy.seat.rewardFree, seat: M.REF.dy.seat,
         ck: { show: false, pay: 'transfer', agree: false, loading: false },
         leadDlg: false, lead: { mode: 'single', name: '', region: [], rel: '一级代理', contact: '', phone: '', note: '' },
       };
@@ -356,10 +358,10 @@
       selCount() { return this.selList.length; },
       selReal() { return this.selList.filter((e) => e.mode === '实名').length; },
       calc() {
-        const n = this.selCount, free = Math.min(n, FREE_QUOTA), buy = n - free;
+        const n = this.selCount, free = Math.min(n, FREE_QUOTA), rw = this.useReward ? Math.min(n - free, this.rewardFree) : 0, buy = n - free - rw;
         const tier = M.tierOf(200 + buy);
         const unit = P.base * P.yearOff * tier.off;
-        return { free, buy, tier, unit, day: unit * 12 / 365, amount: Math.round(buy * P.base * 12 * P.yearOff * tier.off * 121 / 365) };
+        return { free, rw, buy, tier, unit, day: unit * 12 / 365, amount: Math.round(buy * P.base * 12 * P.yearOff * tier.off * 121 / 365) };
       },
       avail() {
         const cnt = {}; this.selList.forEach((e) => { cnt[e.cat] = (cnt[e.cat] || 0) + 1; });
@@ -408,7 +410,7 @@
             this.$demo('订单 DO-20261124-0061 已提交，应付 ' + STP.fmt(c.amount) + ' 元；' + (this.ck.pay === 'transfer' ? '请上传转账凭证' : '请在收银台完成支付') + '，正在跳转订单与订阅…');
             setTimeout(() => this.$go('orders.html'), 1400);
           } else {
-            this.$demo('已使用未分配名额分配 ' + c.free + ' 家企业，2026-12-01 起生效，正在跳转订单与订阅…');
+            this.$demo('已使用' + (c.rw ? '奖励名额' : '未分配名额') + '分配 ' + (c.free + c.rw) + ' 家企业，2026-12-01 起生效，正在跳转订单与订阅…');
             setTimeout(() => this.$go('orders.html'), 1400);
           }
         }, 600);

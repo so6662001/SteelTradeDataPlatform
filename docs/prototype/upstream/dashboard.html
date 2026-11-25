@@ -28,7 +28,7 @@
     <el-alert type="warning" show-icon :closable="true">
       <template #title>数据池内 3 家企业的名额已冻结（2 家连续 10 天无有效上传、1 家主动暂停），冻结期间不参与聚合。可免费替换且不占用本周期替换额度，或剩余天数自动顺延。<a href="pool.html">前往处理 ›</a></template>
     </el-alert>
-    <up-board></up-board>
+    <up-board ref="board"></up-board>
   </template>
 
   <template v-else>

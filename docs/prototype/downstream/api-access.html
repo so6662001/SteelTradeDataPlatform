@@ -120,6 +120,7 @@
           <dt>批量限制</dt><dd>单次不超过 1,000 行且报文不超过 5 MB</dd>
           <dt>处理方式</dt><dd>接入校验通过后返回 202 和批次号，逐行结果用批次查询接口获取</dd>
           <dt>字段最小化</dt><dd>客户名称、业务员、成本、毛利等禁止字段收到即丢弃，不落盘</dd>
+          <dt>报送达标</dt><dd>应报送日（工作日）截止时点前收到库存快照或销售数据，任一即可。<b>常年不落库、没有库存快照可报的企业</b>可以申报无库存经营，核实生效后不参加评定。<a href="mill-relations.html">去申报 ›</a></dd>
         </dl>
       </div>
     </div>
@@ -588,7 +589,7 @@
           else if (a.m === 'POST') resp = { http: 202, batchId: this.dbgBatch, text: J({ code: 0, message: '已受理', requestId, data: { batchId: this.dbgBatch } }), note: '接入校验通过。逐行处理（规则过滤、字段校验、映射）异步进行，请用批次结果查询接口获取。' };
           else if (a.k === 'ping') resp = { http: 200, text: J({ code: 0, message: '成功', requestId, data: { appKey: this.dbgApp.appKey, sourceSystem: src, env: 'sandbox', serverTime: '2026-11-24T14:30:00+08:00' } }), note: '密钥与签名校验通过。' };
           else if (a.k === 'batch') resp = { http: 200, text: J({ code: 0, message: '成功', requestId, data: { batchId: 'B-SBX-20261124-001', status: 'DONE', received: 2, accepted: 2, filtered: 0, rejected: 0, pendingMapping: 0, quarantined: 0, lines: [{ docNo: 'XS2611230158', lineNo: 1, status: 'ACCEPTED' }, { docNo: 'XS2611230158', lineNo: 2, status: 'ACCEPTED' }] } }) };
-          else if (a.k === 'rules') resp = { http: 200, text: J({ code: 0, message: '成功', requestId, data: { version: 'v7', effectiveFrom: '2026-11-10T00:00:00+08:00', dataType: 'SALES', include: [{ dim: 'category', op: 'IN', values: ['建筑钢材', '热轧板卷'] }, { dim: 'warehouse', op: 'IN', values: ['WH01', 'WH02', 'WH03'] }, { dim: 'bizDate', op: 'GTE', values: ['2025-10-01'] }], exclude: [{ dim: 'mill', op: 'IN', values: ['北辰'] }, { dim: 'lineWeight', op: 'GT', values: [500], erpOnly: src === 'SRC-WX' }, { dim: 'customerCodeDigest', op: 'IN', values: ['3 个摘要'], erpOnly: src === 'SRC-WX' }] } }) };
+          else if (a.k === 'rules') resp = { http: 200, text: J({ code: 0, message: '成功', requestId, data: { version: 'v7', effectiveFrom: '2026-11-10T00:00:00+08:00', dataType: 'SALES', include: [{ dim: 'category', op: 'IN', values: ['建筑钢材', '热轧板卷', '配套辅材'] }, { dim: 'warehouse', op: 'IN', values: ['WH01', 'WH02', 'WH03'] }, { dim: 'bizDate', op: 'GTE', values: ['2025-10-01'] }], exclude: [{ dim: 'mill', op: 'IN', values: ['北辰'] }, { dim: 'lineWeight', op: 'GT', values: [500], erpOnly: src === 'SRC-WX' }, { dim: 'customerCodeDigest', op: 'IN', values: ['3 个摘要'], erpOnly: src === 'SRC-WX' }] } }) };
           else if (a.k === 'settings') resp = { http: 200, text: J({ code: 0, message: '成功', requestId, data: { sourceSystem: src, grain: src === 'SRC-WX' ? 'DAILY_SUMMARY' : 'LINE', grainEffectiveFrom: src === 'SRC-WX' ? '2026-10-01' : '2025-09-26', priceUpload: this.$state.dnPrice === 'on' ? { enabled: true, scope: { categories: ['建筑钢材', '热轧板卷'], mills: ['东岳', '金江'], warehouses: 'ALL' } } : { enabled: false } } }) };
           else resp = { http: 200, text: J({ code: 0, message: '成功', requestId, data: { type: 'category', version: '2026.11.02', items: [{ code: 'C01', name: '建筑钢材' }, { code: 'C02', name: '热轧板卷' }, { code: 'C03', name: '中厚板' }, { code: '…', name: '共 8 个大类，此处省略' }] } }) };
           resp.ms = 40 + (M.hash(requestId) % 160);

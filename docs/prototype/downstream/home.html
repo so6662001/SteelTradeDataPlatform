@@ -121,17 +121,17 @@
       <div class="ico"><el-icon><OfficeBuilding /></el-icon></div>
     </div>
     <div class="stat">
-      <div class="label">本月预计收益（2026-11）<span class="demo-param">示例参数，待业务方确定</span></div>
-      <div class="value num">2,125<span class="unit">元</span></div>
-      <div class="foot"><span>名额天数 690</span><span>质量系数 1.10</span><span>丰富度系数 1.05</span></div>
-      <div class="foot" style="margin-top:6px"><span>待结算 <b>4,215</b> 元</span><span>累计已结算 <b>18,640</b> 元</span><a href="revenue.html">我的收益 ›</a></div>
-      <div class="ico" style="background:#fff8eb;color:#d48806"><el-icon><Coin /></el-icon></div>
+      <div class="label">邀请我的钢厂<el-tooltip placement="top" content="有带动关系的钢厂只能看到本企业是否已接入（含报送中断、已暂停、已退出）、各达标周期是达标还是未达标，看不到销量、库存、价格、条数和日级报送情况"><el-icon><QuestionFilled /></el-icon></el-tooltip></div>
+      <div class="value" style="font-size:20px;line-height:36px">东岳钢铁<span class="unit">2025-09-05 确认带动关系</span></div>
+      <div class="foot"><span>它看到的本企业：<b>已接入</b></span><span>2026-10 周期 <b style="color:#18a058">达标</b></span></div>
+      <div class="foot" style="margin-top:6px"><span style="color:#b25e00">金江钢铁的确认请求待处理</span><a href="mill-relations.html">带动关系与报送达标 ›</a></div>
+      <div class="ico" style="background:#eef4fb;color:#2b6fd6"><el-icon><Share /></el-icon></div>
     </div>
     <div class="stat">
       <div class="label">数据质量评级<el-tooltip placement="top" content="由及时率、连续性、映射率、校验通过率、可疑率、选填字段填报率构成。价格为自愿上传，不计入质量评分"><el-icon><QuestionFilled /></el-icon></el-tooltip></div>
       <div class="value num" style="display:flex;align-items:center"><span class="big-a">A</span>92<span class="unit">分</span></div>
       <div class="foot"><span>及时率 <b>98.6%</b></span><span>映射率 <b>96.5%</b></span><span>校验通过率 <b>99.5%</b></span><span>选填字段填报率 <b>78%</b></span></div>
-      <div class="foot" style="margin-top:6px"><span>评级展示在企业名录中，并影响收益分成的质量系数</span></div>
+      <div class="foot" style="margin-top:6px"><span>评级展示在企业名录中，供钢厂选购时参考</span></div>
     </div>
   </div>
 
@@ -188,7 +188,7 @@
           <div class="param"><div class="k">优势度：最大一家占比</div><div class="v num">≤ {{ $PV.dom1 }}%</div></div>
           <div class="param"><div class="k">优势度：前两家占比</div><div class="v num">≤ {{ $PV.dom2 }}%</div></div>
         </div>
-        <div class="tip-box blue small">钢厂的数据池少于 {{ $PV.nMin }} 家时不提供任何聚合数值；任一统计单元格的贡献企业少于 {{ $PV.k }} 家，或单家占比超过 {{ $PV.dom1 }}%、前两家合计超过 {{ $PV.dom2 }}% 时屏蔽。钢厂任何时候都看不到你单家的销量、库存、价格，也看不到你每天是否上传。<a href="ledger.html">查看完整公示 ›</a></div>
+        <div class="tip-box blue small">钢厂的数据池少于 {{ $PV.nMin }} 家时不提供任何聚合数值；任一统计单元格的贡献企业少于 {{ $PV.k }} 家，或单家占比超过 {{ $PV.dom1 }}%、前两家合计超过 {{ $PV.dom2 }}% 时屏蔽。钢厂任何时候都看不到你单家的销量、库存和价格。邀请你的钢厂（东岳钢铁）另外只能看到你是否接入、报送是否达标。<a href="ledger.html">查看完整公示 ›</a></div>
       </div>
       <div class="grid c2" style="margin-bottom:0;gap:10px;align-content:start">
         <a class="entry" href="ledger.html"><el-icon><View /></el-icon><div><b>上游视角预览</b><span>看看钢厂能看到什么</span></div><el-icon class="arrow"><ArrowRight /></el-icon></a>
@@ -257,7 +257,7 @@
           { key: 'settings', t: '粒度与价格设置', sub: '', state: 'done', date: '2025-09-19', href: 'upload-settings.html' },
           { key: 'key', t: '创建应用与密钥', sub: '2 个应用，密钥将于 2027-02-22 到期', state: 'done', date: '2025-09-22', href: 'api-access.html', tech: true },
           { key: 'test', t: '沙箱联调', sub: 'SRC-HQ 的“上传设置查询”尚未联调，不影响上传', state: 'done', date: '2025-09-25', href: 'api-access.html', tech: true },
-          { key: 'rule', t: '设置上传条件规则', sub: '当前生效 v7：仅建筑钢材、热轧板卷，3 个仓库', state: 'done', date: '2025-09-25', href: 'upload-rules.html' },
+          { key: 'rule', t: '设置上传条件规则', sub: '当前生效 v7：仅建筑钢材、热轧板卷和配套辅材，3 个仓库', state: 'done', date: '2025-09-25', href: 'upload-rules.html' },
           { key: 'map', t: '物料与仓库映射', sub: '12 个物料待映射，映射前这些数据不参与聚合', state: 'doing', date: '', href: 'data-check.html' },
           { key: 'first', t: '首次上传', sub: '首个业务日期 2025-09-26，此后每日上传', state: 'done', date: '2025-09-26', href: 'daily-summary.html' },
         ],

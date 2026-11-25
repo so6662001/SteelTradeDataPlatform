@@ -47,7 +47,7 @@
     </div>
     <div class="stat" style="cursor:pointer" @click="tab='refund'">
       <div class="label">待处理退款</div><div class="value num">{{ refunds.filter(r => r.st==='待审核').length }}<span class="unit">笔</span></div>
-      <div class="foot"><span>退款须同步冲正已计提分成</span></div>
+      <div class="foot"><span>未生效全额退，已生效按合同规则退</span></div>
       <div class="ico"><el-icon><RefreshLeft /></el-icon></div>
     </div>
     <div class="stat" style="cursor:pointer" @click="tab='invoice'">
@@ -114,7 +114,7 @@
       <el-tab-pane label="退款审核" name="refund">
         <div class="grid c2 mb12" style="margin-bottom:12px">
           <div class="tip-box small"><b>退款规则：</b>未生效订单可全额退；已生效订单按合同约定的规则退款。<span class="demo-tag">示例规则，待业务方确定（D-18）</span><br>原型示例：已生效订单按剩余服务天数比例退还实付金额。</div>
-          <div class="tip-box orange small"><b>退款须同步冲正已计提的分成：</b>退款覆盖的期间若已计提分成，系统自动生成冲正记录；未付部分直接冲正，已付部分从该下游企业的后续结算中扣减。<a href="settlement.html">去分成结算查看冲正记录 ›</a></div>
+          <div class="tip-box orange small"><b>退款与带动奖励：</b>奖励名额不产生订单，不能退款、转让或折现；奖励折扣为二期，届时使用折扣下单的订单按实付金额退款。平台不向下游发放现金，退款不涉及下游。<a href="referral-rewards.html">带动奖励规则 ›</a></div>
         </div>
         <el-table :data="refunds" border size="small">
           <el-table-column label="退款单号" width="146"><template #default="{row}"><span class="num">{{ row.id }}</span></template></el-table-column>
@@ -122,7 +122,6 @@
           <el-table-column label="订单情况" width="90"><template #default="{row}"><el-tag size="small" :type="row.eff ? 'warning' : 'info'" disable-transitions>{{ row.eff ? '已生效' : '未生效' }}</el-tag></template></el-table-column>
           <el-table-column label="实付金额（元）" width="114" align="right"><template #default="{row}"><span class="num">{{ $fmt(row.paid) }}</span></template></el-table-column>
           <el-table-column label="可退金额（元）" width="114" align="right"><template #default="{row}"><b class="num">{{ $fmt(row.refund) }}</b></template></el-table-column>
-          <el-table-column label="需冲正分成（元）" width="124" align="right"><template #default="{row}"><span class="num">{{ row.rev ? $fmt(row.rev) : '0' }}</span></template></el-table-column>
           <el-table-column label="申请时间" width="136"><template #default="{row}"><span class="num">{{ row.t }}</span></template></el-table-column>
           <el-table-column label="状态" width="116"><template #default="{row}"><el-tag size="small" :type="row.st==='待审核' ? 'warning' : row.st==='已驳回' ? 'danger' : row.st==='已退款' ? 'info' : 'success'" disable-transitions>{{ row.st }}</el-tag></template></el-table-column>
           <el-table-column label="操作" width="76" align="center"><template #default="{row}"><el-button link type="primary" @click="openRefund(row)">{{ row.st==='待审核' ? '审核' : '查看' }}</el-button></template></el-table-column>
@@ -157,7 +156,7 @@
       <el-tab-pane name="pricing">
         <template #label>商品与定价<el-badge v-if="pp.length" :value="pp.length" style="margin-left:6px" /></template>
         <el-alert type="warning" show-icon :closable="false">
-          <template #title>本页全部价格参数均为<b>示例参数，待业务方确定</b>（D-15）。定价修改须经“提交 → 另一人复核 → 生效”，只影响生效日之后新下的订单；定价时需把分成成本计入，见<a href="share-rules.html">分成规则与台账</a>。</template>
+          <template #title>本页全部价格参数均为<b>示例参数，待业务方确定</b>（D-15）。定价修改须经“提交 → 另一人复核 → 生效”，只影响生效日之后新下的订单。带动奖励一期以奖励名额发放，不影响本页定价；奖励折扣为二期，与数量阶梯、合同价能否叠加待定，规则见<a href="referral-rewards.html">带动奖励规则</a>。</template>
         </el-alert>
 
         <div v-if="pp.length" class="mb16">
@@ -194,7 +193,7 @@
                 <tr><td>周期折扣</td><td>月付 原价；季付 <b>{{ offText(pr.quarter) }}</b>；年付 <b>{{ offText(pr.year) }}</b></td><td class="muted">年付为主</td></tr>
                 <tr><td>最小购买量</td><td><b class="num">{{ pr.minQty }}</b> 个名额</td><td class="muted">等于最小数据池规模，不得低于防反推参数 N_min</td></tr>
                 <tr><td>赠送历史深度</td><td><b class="num">{{ pr.hist }}</b> 个月</td><td class="muted">随订阅赠送，更长的历史另计</td></tr>
-                <tr><td>企业等级系数</td><td>统一为 <b>1</b></td><td class="muted">一期不启用，保留字段；启用时分成基数是否同步提高待定（N-15）</td></tr>
+                <tr><td>企业等级系数</td><td>统一为 <b>1</b></td><td class="muted">一期不启用，保留字段</td></tr>
                 <tr><td>价格数据加价</td><td><el-tag size="small" type="info">待确认</el-tag></td><td class="muted">包含在名额价格内还是作为加价项，待业务方确定（N-04）</td></tr>
               </tbody>
             </table>
@@ -228,9 +227,7 @@
               <div class="line"><span class="muted">数量阶梯（{{ calcR.tier.label }}）</span><span>{{ offText(calcR.tier.off) }}</span></div>
               <div class="line sum"><span>应付金额</span><span class="price-big num" style="font-size:20px">{{ $fmt(calcR.amount) }} 元</span></div>
               <div class="line"><span class="muted">实收单价</span><span class="num">{{ calcR.unit.toFixed(1) }} 元/名额·月</span></div>
-              <div class="line"><span class="muted">分成成本（目录价 × 20% × 平均系数 0.98）</span><span class="num">{{ calcR.share.toFixed(1) }} 元/名额·月</span></div>
-              <div class="line"><span class="muted">分成成本占实收</span><b :style="{color: calcR.rate > 30 ? '#e5484d' : '#1f2d3d'}" class="num">{{ calcR.rate.toFixed(1) }}%</b></div>
-              <div class="small muted mt8">分成基数按目录价时，上游折扣全部由平台承担：折扣越深，分成成本占实收的比例越高。分成参数同为示例参数。</div>
+              <div class="small muted mt8">带动奖励一期以奖励名额发放，不改变订单金额；奖励折扣为二期。</div>
             </div>
 
             <div class="sec-title mt16"><i></i>合同价与折扣码<span class="sp"></span><el-button size="small" @click="openCc()"><el-icon><Plus /></el-icon>新增</el-button></div>
@@ -259,22 +256,22 @@
       <!-- ============ 收入报表 ============ -->
       <el-tab-pane label="收入报表" name="report" lazy>
         <div class="grid c4">
-          <stat-card label="2026-10 平台收入" :value="2425.3" :d="1" unit="万元" :mom="2.5" icon="Money" tip="按名额日确认的收入，不是当月收款金额"></stat-card>
-          <stat-card label="2026-10 分成成本" :value="614.9" :d="1" unit="万元" :mom="2.5" icon="Coin"><span>占收入 25.4%</span></stat-card>
-          <stat-card label="2026-10 净收入" :value="1810.4" :d="1" unit="万元" :mom="2.5" icon="TrendCharts"></stat-card>
+          <stat-card label="2026-10 平台收入" :value="2425.3" :d="1" unit="万元" :mom="2.5" icon="Money" tip="按服务期逐日确认的收入，不是当月收款金额"></stat-card>
+          <stat-card label="2026-10 奖励名额折算" :value="48.2" :d="1" unit="万元" icon="Present" tip="在用奖励名额按目录单价 400 元/名额·月折算的金额，用于衡量激励预算的使用；不产生现金支出，不计入收入"><span>相当于收入的 2.0%</span><span>示例数据</span></stat-card>
+          <stat-card label="在用奖励名额" :value="1204" unit="个" icon="Medal"><span>累计发放 1,512 个</span></stat-card>
           <stat-card label="近 12 个月平台收入" :value="24611.3" :d="1" unit="万元" icon="DataLine"><span>其中 2026-11 截至 23 日</span></stat-card>
         </div>
         <div class="grid c-2-1" style="margin-bottom:0">
           <div>
-            <div class="sec-title"><i></i>按月收入<small>单位：万元；收入按名额日确认</small></div>
+            <div class="sec-title"><i></i>按月收入<small>单位：万元；收入按服务期逐日确认</small></div>
             <ve-chart :option="revOption" height="320px"></ve-chart>
           </div>
           <div>
             <div class="sec-title"><i></i>2026-10 收入构成<small>按商品</small></div>
             <ve-chart :option="prodOption" height="200px"></ve-chart>
             <div class="tip-box small mt8">
-              净收入 = 平台收入 − 分成成本。分成按名额日台账计提，规则与台账见<a href="share-rules.html">分成规则与台账</a>，付款见<a href="settlement.html">分成结算</a>。<br>
-              未分配名额、冻结名额不计提分成，对应收入全部归平台。
+              平台只向上游收费，不向下游发放现金分成。原分成预算改为奖励带动协议户入驻的钢厂：一期发放奖励名额，折算金额 = 在用奖励名额 × 目录单价；奖励折扣为二期。规则与发放记录见<a href="referral-rewards.html">带动奖励规则</a>。<br>
+              奖励名额不产生订单和应收，不计入平台收入。
             </div>
           </div>
         </div>
@@ -293,7 +290,7 @@
         <template v-if="od.o.prod==='周期内加购'">
           <el-descriptions-item label="计划生效日"><b class="num">{{ od.o.from }}</b><span class="muted small">（即计费起始日）</span></el-descriptions-item>
           <el-descriptions-item label="指定新增企业"><span class="num">{{ od.o.qty }}</span> 家</el-descriptions-item>
-          <el-descriptions-item label="不收费期间" :span="2"><span class="num">{{ od.o.created.slice(0, 10) }} 至 2026-11-30</span>（下单日至生效日前一日）。生效前名额为“已分配（待生效）”：不计费、不计提分成，企业数据不进入聚合，没有台账行。</el-descriptions-item>
+          <el-descriptions-item label="不收费期间" :span="2"><span class="num">{{ od.o.created.slice(0, 10) }} 至 2026-11-30</span>（下单日至生效日前一日）。生效前名额为“已分配（待生效）”：不计费，企业数据不进入聚合。</el-descriptions-item>
           <el-descriptions-item v-if="od.o.st==='待支付'" label="截单时点" :span="2">须在 <span class="num">2026-11-28 18:00</span> 前完成支付或核销；逾期自动顺延到 2027-01-01 生效并重新计价，通知上游。<span class="demo-tag">截单时点与差额处理待确认（N-27）</span></el-descriptions-item>
         </template>
         <el-descriptions-item label="订单金额"><b class="num">{{ $fmt(od.o.amount) }}</b> 元</el-descriptions-item>
@@ -311,7 +308,7 @@
           <div class="stat"><div class="label">已分配</div><div class="value num" style="font-size:20px">{{ od.o.alloc[1] }}</div></div>
           <div class="stat"><div class="label">{{ od.o.alloc[2] != null ? '待生效 / 未分配' : '未分配' }}</div><div class="value num" style="font-size:20px"><template v-if="od.o.alloc[2] != null">{{ od.o.alloc[2] }} / </template>{{ od.o.alloc[0] - od.o.alloc[1] - (od.o.alloc[2] || 0) }}</div></div>
         </div>
-        <div class="small muted mt8">未分配名额不延长有效期，也不计提分成。名额每日的归属与状态见<a href="share-rules.html">名额日台账</a>；数据池成员见<a href="pools.html">数据池管理</a>。</div>
+        <div class="small muted mt8">未分配名额不延长有效期。数据池成员见<a href="pools.html">数据池管理</a>。</div>
       </template>
       <div class="sec-title mt16"><i></i>状态记录</div>
       <el-timeline style="padding-left:2px">
@@ -336,7 +333,7 @@
         <tbody><tr><td class="num">{{ rc.r.flow[0] }}</td><td class="num">{{ rc.r.flow[1] }}</td><td>{{ rc.r.flow[2] }}</td><td class="r num">{{ $fmt(rc.r.flow[3], 2) }}</td></tr></tbody>
       </table>
       <div v-else class="empty-block" style="padding:18px 0">未匹配到到账流水，款项可能在途</div>
-      <div v-if="rc.r.m==='ok'" class="tip-box green small">金额与付款户名均一致。核销后订单{{ rc.r.prod==='周期内加购' ? '变为“已支付待生效”，指定的新增企业列为“待生效”，到计划生效日生效并开始计费' : rc.r.future ? '变为“已支付待生效”，名额即可分配，到服务起始日自动生效并开始计费' : '立即生效，名额可分配' }}；名额日台账自生效日起记账。<template v-if="rc.r.prod==='周期内加购'">周期内加购从新增企业生效日起计费，下单日至生效日之间不收费；须在 2026-11-28 18:00 截单前核销，逾期顺延到 2027-01-01 生效并重新计价。</template></div>
+      <div v-if="rc.r.m==='ok'" class="tip-box green small">金额与付款户名均一致。核销后订单{{ rc.r.prod==='周期内加购' ? '变为“已支付待生效”，指定的新增企业列为“待生效”，到计划生效日生效并开始计费' : rc.r.future ? '变为“已支付待生效”，名额即可分配，到服务起始日自动生效并开始计费' : '立即生效，名额可分配' }}，自生效日起计费。<template v-if="rc.r.prod==='周期内加购'">周期内加购从新增企业生效日起计费，下单日至生效日之间不收费；须在 2026-11-28 18:00 截单前核销，逾期顺延到 2027-01-01 生效并重新计价。</template></div>
       <div v-else class="tip-box red small">{{ rc.r.mt }}：{{ rc.r.md }}。不能直接核销，请退回购买主体补充凭证或补足差额。</div>
       <el-checkbox v-if="rc.r.m==='ok'" v-model="rc.ok" class="mt12">我已核对转账凭证与银行到账流水</el-checkbox>
     </template>
@@ -359,9 +356,7 @@
       </el-descriptions>
       <div class="sec-title"><i></i>可退金额<span class="demo-tag">示例规则，待业务方确定</span></div>
       <div class="formula mb12">{{ rf.r.calc }}</div>
-      <div class="sec-title"><i></i>对分成的影响</div>
-      <div v-if="rf.r.rev" class="tip-box orange small">退款覆盖期间（{{ rf.r.revRange }}）已计提分成 <b class="num">{{ $fmt(rf.r.rev) }}</b> 元（{{ rf.r.revDays }} 个名额日），均未付款。审核通过后系统自动生成冲正记录，来源标记为“上游退款”。<a href="settlement.html">分成结算 › 冲正记录</a></div>
-      <div v-else class="tip-box small">订单尚未生效，没有名额日台账记录，未计提分成，无需冲正。</div>
+      <div class="tip-box small">{{ rf.r.eff ? '订单已生效：退款通过后，池内企业自退款生效日起停止向该钢厂提供聚合数据。' : '订单尚未生效，名额未开始计费，企业数据未进入聚合。' }}退款只涉及购买主体，不涉及下游企业。</div>
       <el-form v-if="rf.r.st==='待审核'" label-width="84px" class="mt12"><el-form-item label="审核意见" style="margin-bottom:0"><el-input v-model="rf.note" placeholder="选填；驳回时必填" /></el-form-item></el-form>
     </template>
     <template #footer>
@@ -428,12 +423,12 @@
     O('DO-20261118-0049', B.bc, '名额包', 1200, '2027-03-01', '2028-02-29', '年付', 3456000, '对公转账', '已支付待生效', '2026-11-18 10:05', '1,200 × 合同价 240 元/名额·月 × 12 = 3,456,000 元（提前续费，现有数据池 2027-02-28 到期后接续，成员保持不变；合同价见定价变更 PRC-20260910-01）', { inv: '已申请，待开具', logs: [['2026-11-20 15:12', '对公到账核销（何志远），订单已支付，2027-03-01 生效'], ['2026-11-18 10:05', '续费下单，生成订单与电子合同']] }),
     O('DO-20261116-0047', B.ql, '名额包', 100, '2026-12-01', '2027-11-30', '年付', 367200, '对公转账', '退款中', '2026-11-16 09:30', '100 × 400 × 12 × 年付 85 折 × 阶梯（100–199）9 折 = 367,200 元', { logs: [['2026-11-21 10:02', '购买主体申请退款（订单未生效）'], ['2026-11-17 14:20', '对公到账核销（何志远）'], ['2026-11-16 09:30', '下单，生成订单与电子合同']] }),
     O('DO-20261109-0044', B.hj, '单选订阅', 20, '2026-12-01', '2027-02-28', '季付', 22800, '在线支付', '已取消', '2026-11-09 13:44', '20 × 400 × 3 × 季付 95 折 × 阶梯（20–49）原价 = 22,800 元', { logs: [['2026-11-12 13:44', '超过 72 小时未支付，订单自动取消'], ['2026-11-09 13:44', '下单，生成订单与电子合同']] }),
-    O('DO-20261028-0041', B.hj, '名额包', 80, '2026-11-01', '2027-10-31', '年付', 310080, '对公转账', '已退款', '2026-10-28 11:20', '80 × 400 × 12 × 年付 85 折 × 阶梯（50–99）95 折 = 310,080 元', { logs: [['2026-10-30 16:40', '退款完成，全额 310,080 元原路退回（订单未生效，无需冲正分成）'], ['2026-10-30 09:15', '购买主体申请退款，财务审核通过'], ['2026-10-29 10:10', '对公到账核销（何志远）'], ['2026-10-28 11:20', '下单，生成订单与电子合同']] }),
-    O('DO-20261015-0038', B.kl, '名额包', 250, '2026-11-01', '2027-10-31', '年付', 867000, '对公转账', '生效中', '2026-10-15 09:48', '250 × 400 × 12 × 年付 85 折 × 阶梯（200–499）85 折 = 867,000 元（续费，数据池保持不变）', { inv: '已申请，待开具', alloc: [250, 241], logs: [['2026-11-01 00:00', '订单生效，名额日台账开始记账'], ['2026-10-16 11:30', '对公到账核销（何志远）'], ['2026-10-15 09:48', '续费下单']] }),
-    O('DO-20260612-0019', B.hc, '单选订阅', 60, '2026-07-01', '2027-06-30', '年付', 232560, '在线支付', '生效中', '2026-06-12 15:02', '60 × 400 × 12 × 年付 85 折 × 阶梯（50–99）95 折 = 232,560 元', { inv: '已开具', alloc: [60, 60], logs: [['2026-07-01 00:00', '订单生效，名额日台账开始记账'], ['2026-06-12 15:06', '在线支付成功'], ['2026-06-12 15:02', '下单，生成订单与电子合同']] }),
-    O('DO-20260520-0015', B.ny, '名额包', 100, '2026-06-01', '2027-05-31', '年付', 367200, '对公转账', '退款中', '2026-05-20 10:18', '100 × 400 × 12 × 年付 85 折 × 阶梯（100–199）9 折 = 367,200 元', { inv: '已开具', alloc: [100, 96], logs: [['2026-11-16 09:20', '购买主体申请退款（订单已生效，按合同规则处理）'], ['2026-06-01 00:00', '订单生效，名额日台账开始记账'], ['2026-05-21 14:36', '对公到账核销（何志远）'], ['2026-05-20 10:18', '下单，生成订单与电子合同']] }),
-    O('DO-20260318-0007', B.dy, '名额包', 200, '2026-04-01', '2027-03-31', '年付', 693600, '对公转账', '生效中', '2026-03-18 10:26', '200 × 400 × 12 × 年付 85 折 × 阶梯（200–499）85 折 = 693,600 元', { inv: '已开具', alloc: [200, 186, 14], logs: [['2026-04-08 14:20', '增值税专用发票已开具'], ['2026-04-01 00:00', '订单生效，名额日台账开始记账'], ['2026-03-20 15:42', '对公到账核销（何志远）'], ['2026-03-18 10:26', '下单，生成订单与电子合同']] }),
-    O('DO-20260105-0002', B.jj, '名额包', 500, '2026-02-01', '2027-01-31', '年付', 1632000, '对公转账', '生效中', '2026-01-05 14:11', '500 × 400 × 12 × 年付 85 折 × 阶梯（500–999）8 折 = 1,632,000 元', { inv: '已开具', alloc: [500, 478], logs: [['2026-02-01 00:00', '订单生效，名额日台账开始记账'], ['2026-01-07 10:30', '对公到账核销（何志远）'], ['2026-01-05 14:11', '下单，生成订单与电子合同']] }),
+    O('DO-20261028-0041', B.hj, '名额包', 80, '2026-11-01', '2027-10-31', '年付', 310080, '对公转账', '已退款', '2026-10-28 11:20', '80 × 400 × 12 × 年付 85 折 × 阶梯（50–99）95 折 = 310,080 元', { logs: [['2026-10-30 16:40', '退款完成，全额 310,080 元原路退回（订单未生效）'], ['2026-10-30 09:15', '购买主体申请退款，财务审核通过'], ['2026-10-29 10:10', '对公到账核销（何志远）'], ['2026-10-28 11:20', '下单，生成订单与电子合同']] }),
+    O('DO-20261015-0038', B.kl, '名额包', 250, '2026-11-01', '2027-10-31', '年付', 867000, '对公转账', '生效中', '2026-10-15 09:48', '250 × 400 × 12 × 年付 85 折 × 阶梯（200–499）85 折 = 867,000 元（续费，数据池保持不变）', { inv: '已申请，待开具', alloc: [250, 241], logs: [['2026-11-01 00:00', '订单生效，开始计费'], ['2026-10-16 11:30', '对公到账核销（何志远）'], ['2026-10-15 09:48', '续费下单']] }),
+    O('DO-20260612-0019', B.hc, '单选订阅', 60, '2026-07-01', '2027-06-30', '年付', 232560, '在线支付', '生效中', '2026-06-12 15:02', '60 × 400 × 12 × 年付 85 折 × 阶梯（50–99）95 折 = 232,560 元', { inv: '已开具', alloc: [60, 60], logs: [['2026-07-01 00:00', '订单生效，开始计费'], ['2026-06-12 15:06', '在线支付成功'], ['2026-06-12 15:02', '下单，生成订单与电子合同']] }),
+    O('DO-20260520-0015', B.ny, '名额包', 100, '2026-06-01', '2027-05-31', '年付', 367200, '对公转账', '退款中', '2026-05-20 10:18', '100 × 400 × 12 × 年付 85 折 × 阶梯（100–199）9 折 = 367,200 元', { inv: '已开具', alloc: [100, 96], logs: [['2026-11-16 09:20', '购买主体申请退款（订单已生效，按合同规则处理）'], ['2026-06-01 00:00', '订单生效，开始计费'], ['2026-05-21 14:36', '对公到账核销（何志远）'], ['2026-05-20 10:18', '下单，生成订单与电子合同']] }),
+    O('DO-20260318-0007', B.dy, '名额包', 200, '2026-04-01', '2027-03-31', '年付', 693600, '对公转账', '生效中', '2026-03-18 10:26', '200 × 400 × 12 × 年付 85 折 × 阶梯（200–499）85 折 = 693,600 元', { inv: '已开具', alloc: [200, 186, 14], logs: [['2026-04-08 14:20', '增值税专用发票已开具'], ['2026-04-01 00:00', '订单生效，开始计费'], ['2026-03-20 15:42', '对公到账核销（何志远）'], ['2026-03-18 10:26', '下单，生成订单与电子合同']] }),
+    O('DO-20260105-0002', B.jj, '名额包', 500, '2026-02-01', '2027-01-31', '年付', 1632000, '对公转账', '生效中', '2026-01-05 14:11', '500 × 400 × 12 × 年付 85 折 × 阶梯（500–999）8 折 = 1,632,000 元', { inv: '已开具', alloc: [500, 478], logs: [['2026-02-01 00:00', '订单生效，开始计费'], ['2026-01-07 10:30', '对公到账核销（何志远）'], ['2026-01-05 14:11', '下单，生成订单与电子合同']] }),
     O('DO-20251020-0011', B.kl, '名额包', 200, '2025-11-01', '2026-10-31', '年付', 693600, '对公转账', '已到期', '2025-10-20 09:40', '200 × 400 × 12 × 年付 85 折 × 阶梯（200–499）85 折 = 693,600 元', { inv: '已开具', sub: '已续费', logs: [['2026-10-31 24:00', '订单到期；已由 DO-20261015-0038 续费'], ['2025-11-01 00:00', '订单生效'], ['2025-10-20 09:40', '下单，生成订单与电子合同']] }),
   ];
   const R = (no, upT, m, mt, md, flow, future) => { const o = ORDERS.find((x) => x.no === no); return { no, payer: o.buyer, prod: o.prod, qty: o.qty, amount: o.amount, upT, m, mt, md, flow, future }; };
@@ -451,7 +446,8 @@
     ['INV-202602-0003', 'DO-20260105-0002', '2026-02-02 10:05', '26112000000018440291'], ['INV-202511-0001', 'DO-20251020-0011', '2025-11-03 14:05', '25112000000007316458']];
   const MONTHS = ['2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11'];
   const REV = [1664.5, 1741.7, 1784.6, 1910.5, 2016.3, 2093.5, 2170.7, 2239.4, 2305.2, 2365.2, 2425.3, 1894.4];
-  const SHARE = [422.0, 441.6, 452.5, 484.4, 511.2, 530.8, 550.4, 567.8, 584.5, 599.7, 614.9, 480.3];
+  /* 奖励名额折算（万元，示例）：在用奖励名额 × 目录单价 400 元/名额·月；2026-10 为 1,204 个 × 400 = 48.2 万元 */
+  const REWARD = [8.6, 10.2, 12.4, 14.9, 18.3, 21.6, 25.4, 30.7, 36.2, 42.5, 48.2, 37.0];
 
   STP.mount({
     data() {
@@ -461,9 +457,9 @@
         od: { show: false, o: null },
         recons: RECONS, rc: { show: false, r: null, ok: false },
         refunds: [
-          { id: 'RF-20261121-0006', no: 'DO-20261116-0047', buyer: B.ql, eff: false, paid: 367200, refund: 367200, rev: 0, t: '2026-11-21 10:02', st: '待审核', why: '集团预算调整，暂缓采购。', calc: '订单未生效（服务起始日 2026-12-01），可全额退款：367,200 元' },
-          { id: 'RF-20261116-0005', no: 'DO-20260520-0015', buyer: B.ny, eff: true, paid: 367200, refund: 198187, rev: 2130, revRange: '2026-11-16 至 2026-11-23', revDays: 768, t: '2026-11-16 09:20', st: '待审核', why: '业务重组，申请自 2026-11-16 起终止订阅。', calc: '按剩余服务天数比例退还：367,200 × 197 ÷ 365 = 198,187 元（终止日 2026-11-16，剩余 197 天；已使用 168 天不退）' },
-          { id: 'RF-20261030-0004', no: 'DO-20261028-0041', buyer: B.hj, eff: false, paid: 310080, refund: 310080, rev: 0, t: '2026-10-30 09:15', st: '已退款', why: '下单名额数有误（应为 50 个，误下 80 个），重新下单。', calc: '订单未生效，全额退款：310,080 元' }],
+          { id: 'RF-20261121-0006', no: 'DO-20261116-0047', buyer: B.ql, eff: false, paid: 367200, refund: 367200, t: '2026-11-21 10:02', st: '待审核', why: '集团预算调整，暂缓采购。', calc: '订单未生效（服务起始日 2026-12-01），可全额退款：367,200 元' },
+          { id: 'RF-20261116-0005', no: 'DO-20260520-0015', buyer: B.ny, eff: true, paid: 367200, refund: 198187, t: '2026-11-16 09:20', st: '待审核', why: '业务重组，申请自 2026-11-16 起终止订阅。', calc: '按剩余服务天数比例退还：367,200 × 197 ÷ 365 = 198,187 元（终止日 2026-11-16，剩余 197 天；已使用 168 天不退）' },
+          { id: 'RF-20261030-0004', no: 'DO-20261028-0041', buyer: B.hj, eff: false, paid: 310080, refund: 310080, t: '2026-10-30 09:15', st: '已退款', why: '下单名额数有误（应为 50 个，误下 80 个），重新下单。', calc: '订单未生效，全额退款：310,080 元' }],
         rf: { show: false, r: null, note: '' },
         invoices: INV.map((a) => { const o = ORDERS.find((x) => x.no === a[1]); return { id: 'INV-202611-' + a[0], no: a[1], buyer: o.buyer, type: '增值税专用发票', amount: o.amount, t: a[2], st: '待开具', invNo: '' }; })
           .concat(INV_DONE.map((a) => { const o = ORDERS.find((x) => x.no === a[1]); return { id: a[0], no: a[1], buyer: o.buyer, type: '增值税专用发票', amount: o.amount, t: a[2], st: '已开具', invNo: a[3] }; })),
@@ -493,14 +489,13 @@
       calcR() {
         const c = this.calc, months = { 月付: 1, 季付: 3, 年付: 12 }[c.cycle], cOff = { 月付: 100, 季付: this.pr.quarter, 年付: this.pr.year }[c.cycle];
         const tier = this.tiers.find((t) => c.qty >= t.min && c.qty <= t.max) || this.tiers[0];
-        const list = c.qty * this.pr.base * months, amount = Math.round(list * cOff * tier.off / 10000), unit = this.pr.base * cOff * tier.off / 10000, share = this.pr.base * 0.2 * 0.98;
-        return { months, cOff, tier, list, amount, unit, share, rate: share / unit * 100 };
+        const list = c.qty * this.pr.base * months, amount = Math.round(list * cOff * tier.off / 10000), unit = this.pr.base * cOff * tier.off / 10000;
+        return { months, cOff, tier, list, amount, unit };
       },
       revOption() {
         const o = STP.chart.line({ x: MONTHS.map((m, i) => (i === 11 ? m + '\n（截至 23 日）' : m)), unit: '万元', smooth: false, series: [
           { name: '平台收入', type: 'bar', data: REV, barMaxWidth: 26, itemStyle: { borderRadius: [3, 3, 0, 0] } },
-          { name: '分成成本', type: 'bar', data: SHARE, barMaxWidth: 26, color: '#f7b500', itemStyle: { borderRadius: [3, 3, 0, 0] } },
-          { name: '净收入', data: REV.map((v, i) => +(v - SHARE[i]).toFixed(1)), color: '#18a058', showSymbol: true }] });
+          { name: '奖励名额折算', type: 'bar', data: REWARD, barMaxWidth: 26, color: '#f7b500', itemStyle: { borderRadius: [3, 3, 0, 0] } }] });
         o.yAxis[0].scale = false; o.xAxis.axisLabel = { color: '#6b7787', interval: 0, fontSize: 11 };
         return o;
       },
@@ -516,7 +511,7 @@
       doRecon() {
         const r = this.rc.r, o = this.orders.find((x) => x.no === r.no), t = nowStr();
         o.st = r.future ? '已支付待生效' : '生效中'; o.sub = '';
-        o.logs.unshift([t, '对公到账核销（' + this.me + '），流水号 ' + r.flow[0] + (r.future ? '；订单已支付，' + o.from + ' 生效' : '；订单生效，名额日台账开始记账')]);
+        o.logs.unshift([t, '对公到账核销（' + this.me + '），流水号 ' + r.flow[0] + (r.future ? '；订单已支付，' + o.from + ' 生效' : '；订单生效，开始计费')]);
         this.recons = this.recons.filter((x) => x !== r);
         this.rc.show = false;
         this.$demo('核销完成，订单 ' + r.no + (r.future ? ' 已支付，待 ' + o.from + ' 生效' : ' 已生效'));
@@ -525,10 +520,10 @@
       doRefund(pass) {
         const r = this.rf.r, o = this.orders.find((x) => x.no === r.no), t = nowStr();
         if (!pass && !this.rf.note.trim()) return warn('驳回时请填写审核意见');
-        if (pass) { r.st = '已通过，待打款'; o.logs.unshift([t, '退款审核通过（' + this.me + '），退款 ' + STP.fmt(r.refund) + ' 元' + (r.rev ? '；同步生成分成冲正 ' + STP.fmt(r.rev) + ' 元' : '')]); }
+        if (pass) { r.st = '已通过，待打款'; o.logs.unshift([t, '退款审核通过（' + this.me + '），退款 ' + STP.fmt(r.refund) + ' 元']); }
         else { r.st = '已驳回'; o.st = r.eff ? '生效中' : '已支付待生效'; o.logs.unshift([t, '退款申请被驳回（' + this.me + '）：' + this.rf.note]); }
         this.rf.show = false;
-        this.$demo(pass ? '退款审核通过' + (r.rev ? '，已生成分成冲正记录' : '') : '已驳回退款申请');
+        this.$demo(pass ? '退款审核通过' : '已驳回退款申请');
       },
       issue(row) { row.st = '已开具'; row.invNo = '2611200000005' + String(M.hash(row.id) % 10000000).padStart(7, '0'); this.$demo('发票已开具，已通知购买主体下载'); },
       getP(k) { return k.indexOf('tier:') === 0 ? this.tiers[+k.slice(5)].off : this.pr[k]; },

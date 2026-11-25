@@ -21,6 +21,9 @@
 .prog-steps { display: flex; gap: 3px; margin-bottom: 3px; }
 .prog-steps i { flex: 1; height: 5px; border-radius: 2px; background: #e4e8ee; }
 .prog-steps i.on { background: #18a058; }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip { border: 1px solid var(--stp-border); border-radius: 6px; padding: 5px 12px; font-size: 12.5px; color: #5b6778; background: #fff; }
+.chip b { font-size: 16px; margin-right: 6px; color: #1f2d3d; }
 .anon-gen { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid #e0d1fb; background: #faf7ff; border-radius: 6px; }
 </style>
 </head>
@@ -35,7 +38,7 @@
   </template>
 
   <div class="grid c5">
-    <stat-card label="下游入驻企业" :value="21386" unit="家" icon="OfficeBuilding"><span>已上架 <b>17,902</b></span></stat-card>
+    <stat-card label="下游入驻企业" :value="21386" unit="家" icon="OfficeBuilding" tip="入驻来源：钢厂带动 14,870、一级代理带动 2,316、平台运营邀请 3,120、自主注册 1,080"><span>已上架 <b>17,902</b></span><span>钢厂带动 <b>14,870</b></span></stat-card>
     <div class="stat">
       <div class="label">上架方式分布</div>
       <div class="value num" style="font-size:18px;line-height:1.7">实名 10,384<span class="unit">家</span></div>
@@ -58,10 +61,11 @@
           <el-select v-model="f.quality" placeholder="质量评级" clearable style="width:110px"><el-option v-for="p in ['A','B','C']" :key="p" :label="p + ' 级'" :value="p" /></el-select>
           <el-select v-model="f.grain" placeholder="上传粒度" clearable style="width:120px"><el-option v-for="p in ['行级','日汇总','混用']" :key="p" :label="p" :value="p" /></el-select>
           <el-select v-model="f.price" placeholder="价格上传" clearable style="width:120px"><el-option label="已开启" value="on" /><el-option label="未开启" value="off" /></el-select>
+          <el-select v-model="f.source" placeholder="入驻来源" clearable style="width:140px"><el-option v-for="p in sources" :key="p" :label="p" :value="p" /></el-select>
           <el-button @click="resetFilter">重置</el-button>
         </div>
         <el-table :data="pageRows" size="small" border>
-          <el-table-column label="企业" min-width="212">
+          <el-table-column label="企业" min-width="200">
             <template #default="{row}">
               <div class="ent-name"><a href="javascript:;" @click="open(row)"><b>{{ row.name }}</b></a><span>{{ row.id }} · 编号 {{ row.anon }}</span></div>
             </template>
@@ -81,7 +85,7 @@
           <el-table-column label="价格上传" width="72"><template #default="{row}"><span v-if="priceOn(row)" style="color:#18a058">已开启</span><span v-else class="muted">未开启</span></template></el-table-column>
           <el-table-column label="质量评级" width="72" align="center"><template #default="{row}"><el-tag size="small" :type="row.quality === 'A' ? 'success' : row.quality === 'B' ? 'primary' : 'warning'">{{ row.quality }}</el-tag></template></el-table-column>
           <el-table-column label="关联集团" width="104"><template #default="{row}"><span v-if="row.group">{{ row.group }}</span><span v-else class="muted">—</span></template></el-table-column>
-          <el-table-column prop="joined" label="入驻时间" width="98" />
+          <el-table-column label="入驻时间与来源" width="132"><template #default="{row}"><span class="num">{{ row.joined }}</span><div class="small" :style="{color: row.source === '钢厂带动' ? '#2b6fd6' : row.source === '一级代理带动' ? '#1b7a47' : '#8a94a3'}">{{ row.source }}<template v-if="row.refShort"> · {{ row.refShort }}</template></div></template></el-table-column>
           <el-table-column label="操作" width="104" align="center">
             <template #default="{row}">
               <el-button link type="primary" @click="open(row)">详情</el-button>
@@ -99,7 +103,7 @@
           <template #empty><div class="empty-block">没有符合条件的企业，请调整筛选条件</div></template>
         </el-table>
         <div class="tbl-foot">
-          <span>全平台下游企业 21,386 家；原型展示其中 {{ dnAll.length }} 家示例，当前筛选命中 {{ filtered.length }} 家。列表只含状态与质量评级，不含任何销量、库存、价格数值。</span>
+          <span>全平台下游企业 21,386 家；原型展示其中 {{ dnAll.length }} 家示例，当前筛选命中 {{ filtered.length }} 家。列表只含状态、入驻来源与质量评级，不含任何销量、库存、价格数值。</span>
           <el-pagination small background layout="prev, pager, next" :total="filtered.length" :page-size="10" v-model:current-page="page" />
         </div>
       </el-tab-pane>
@@ -134,18 +138,159 @@
         </div>
         <el-table :data="auditRows" size="small" border>
           <el-table-column label="审核类型" width="130"><template #default="{row}"><el-tag size="small" :type="auditTag(row.type)">{{ row.type }}</el-tag></template></el-table-column>
-          <el-table-column label="企业" min-width="230"><template #default="{row}"><b>{{ row.name }}</b></template></el-table-column>
+          <el-table-column label="企业" min-width="190"><template #default="{row}"><b>{{ row.name }}</b></template></el-table-column>
           <el-table-column label="身份" width="80"><template #default="{row}">{{ row.side }}</template></el-table-column>
-          <el-table-column prop="summary" label="申请内容" min-width="300" />
+          <el-table-column prop="summary" label="申请内容" min-width="200" />
+          <el-table-column label="入驻来源" width="160"><template #default="{row}"><template v-if="row.src"><el-tag size="small" :type="row.src === '钢厂带动' ? 'primary' : row.src === '一级代理带动' ? 'success' : 'info'" effect="plain">{{ row.src }}</el-tag><div v-if="row.ref" class="small muted">{{ row.ref }}</div></template><span v-else class="muted">—</span></template></el-table-column>
           <el-table-column prop="time" label="提交时间" width="140" />
-          <el-table-column label="等待时长" width="100"><template #default="{row}"><span :style="{color: row.wait > 24 ? '#e5484d' : ''}">{{ row.wait }} 小时</span></template></el-table-column>
-          <el-table-column label="操作" width="90" align="center"><template #default="{row}"><el-button type="primary" size="small" plain @click="openAudit(row)">审核</el-button></template></el-table-column>
+          <el-table-column label="等待时长" width="86"><template #default="{row}"><span :style="{color: row.wait > 24 ? '#e5484d' : ''}">{{ row.wait }} 小时</span></template></el-table-column>
+          <el-table-column label="操作" width="80" align="center"><template #default="{row}"><el-button type="primary" size="small" plain @click="openAudit(row)">审核</el-button></template></el-table-column>
           <template #empty><div class="empty-block">当前没有待审核事项</div></template>
         </el-table>
-        <div class="tbl-foot"><span>审核时限：准入与身份认定 1 个工作日，画像与上架 2 个工作日。审核结论与意见全部留痕，并通知企业。</span></div>
+        <div class="tbl-foot"><span>审核时限：准入与身份认定 1 个工作日，画像与上架 2 个工作日。审核结论与意见全部留痕，并通知企业；钢厂带动、一级代理带动来源的企业，准入结果不单独通知邀请它的钢厂或代理：对方确认带动关系前，钢厂看到的邀请状态一律是“已发送”。</span></div>
+      </el-tab-pane>
+
+      <!-- 无库存经营：核实与复核（N-54；OP-23、DQ-25） -->
+      <el-tab-pane name="ns">
+        <template #label>无库存经营 <el-badge :value="nsTodo" type="danger" :hidden="!nsTodo" style="vertical-align:1px" /></template>
+        <div class="tip-box blue small" style="margin-top:0">
+          <b>规则（业务方 2026-11-25 确认）。</b>常年不落库的企业由<b>企业申报、运营核实</b>后生效：不参加报送达标评定，对带动钢厂显示“不适用”并带“无库存经营”标签，不计入钢厂的汇总达标率；接入状态照常显示。企业申报时已逐项确认告知文案（{{ NS.noticeVer }}）。
+          核实依据是<b>平台内的汇总信号</b>（登记的仓库数、近 {{ NS.months }} 个月收到库存快照实际数据的天数、销售记录中带本企业仓库的比例）、企业提交的说明和材料，必要时电话回访。<b>不打开明细</b>，确需查看时走<a href="audit.html">数据访问工单</a>。核实期间不向带动钢厂征询，也不告知其有此申请。运营不能替企业申报。
+          <span class="ex-tag" style="margin-left:4px">时限与阈值为示例参数 N-58</span>
+        </div>
+        <div class="row between mb12" style="flex-wrap:wrap;gap:10px">
+          <div class="chips">
+            <div class="chip"><b class="num">{{ NS.platform.active }}</b>已生效（全平台）</div>
+            <div class="chip" style="border-color:#f5dab1;background:#fffaf2"><b class="num" style="color:#b25e00">{{ nsCount('待核实') + nsCount('待补充') }}</b>待核实</div>
+            <div class="chip" style="border-color:#f3c9ca;background:#fffafa"><b class="num" style="color:#b83a3e">{{ nsRecheckN }}</b>待复核</div>
+            <div class="chip"><b class="num">{{ NS.platform.revoked }}</b>累计撤销</div>
+            <div class="chip"><b class="num">{{ NS.platform.rejected }}</b>累计驳回</div>
+            <div class="chip"><b class="num">{{ NS.platform.expired }}</b>已到期</div>
+          </div>
+          <el-radio-group v-model="nsF" size="small">
+            <el-radio-button value="" label="全部" /><el-radio-button v-for="s in ['待核实', '待复核', '已生效', '已撤销', '已驳回']" :key="s" :value="s" :label="s" />
+          </el-radio-group>
+        </div>
+        <el-table :data="nsRows" size="small" border>
+          <el-table-column label="申报" width="150"><template #default="{row}"><span class="code">{{ row.id }}</span><div class="small muted" style="margin-top:2px">{{ row.applyAt }}</div></template></el-table-column>
+          <el-table-column label="企业" min-width="200"><template #default="{row}"><b>{{ row.ent }}</b><div class="small muted">{{ row.loc }} · {{ row.mode }}</div><div class="small muted">带动钢厂：{{ row.mill }} · 自 {{ row.startAt }} 起不落库（申报）</div></template></el-table-column>
+          <el-table-column width="216">
+            <template #header>平台内汇总信号<el-tooltip placement="top" content="登记的仓库数、近 3 个月收到库存快照实际数据的天数、销售记录中带本企业仓库的比例。都是汇总信号，不含销量、库存量等数据内容，不打开明细"><el-icon style="vertical-align:-2px;margin-left:2px"><QuestionFilled /></el-icon></el-tooltip></template>
+            <template #default="{row}">近 {{ NS.months }} 个月收到库存快照 <b :style="{color: row.invDays ? '#b83a3e' : '#18a058'}">{{ row.invDays }}</b> 天<div class="small muted">登记仓库 {{ row.wh }} 个 · 销售带本企业仓库 {{ row.whShare }}%</div></template>
+          </el-table-column>
+          <el-table-column label="状态" min-width="200">
+            <template #default="{row}">
+              <el-tag size="small" :type="nsTag(row.st)" effect="plain">{{ row.st }}</el-tag>
+              <span v-if="row.st === '已生效'" class="small muted" style="margin-left:6px">{{ row.since }} 周期起 · {{ row.until }} 到期</span>
+              <span v-if="row.st === '待核实' || row.st === '待补充'" class="small muted" style="margin-left:6px">核实时限 {{ row.due }}</span>
+              <div v-if="row.recheck && row.st === '已生效'" class="small" style="color:#b83a3e"><b>待复核 · {{ row.recheck.src }}</b><span v-if="row.recheck.p2" class="ph-tag" style="margin-left:4px">二期</span><br>{{ row.recheck.text }}</div>
+              <div v-if="row.at && row.st !== '待核实' && row.st !== '待补充'" class="small muted">{{ row.at }} · {{ row.by }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="96" align="center">
+            <template #default="{row}">
+              <el-button v-if="row.st === '待核实' || row.st === '待补充'" type="primary" size="small" plain @click="nsOpen(row, 'verify')">核实</el-button>
+              <el-button v-else-if="row.st === '已生效' && row.recheck" type="danger" size="small" plain @click="nsOpen(row, 'recheck')">复核</el-button>
+              <el-button v-else-if="row.st === '已生效'" size="small" plain @click="nsOpen(row, 'recheck')">撤销</el-button>
+              <el-button v-else link type="primary" size="small" @click="nsOpen(row, 'view')">查看记录</el-button>
+            </template>
+          </el-table-column>
+          <template #empty><div class="empty-block">没有符合条件的申报</div></template>
+        </el-table>
+        <div class="tbl-foot"><span>原型展示 {{ NS.list.length }} 条示例　|　核实时限 {{ NS.sla }} 个工作日。申报在周期第 {{ NS.deadlineDay }} 日及以前提交、并在该周期结果发布前核实通过的，自该周期起“不适用”，其余自下一个周期起；已发布的周期不变。复核的触发：持续核验信号（一个周期内累计 {{ NS.recheckInvDays }} 天收到库存快照、仓库新增登记等）、钢厂异议、到期抽检。标记有效期 {{ NS.validMonths }} 个月。全部操作留痕并通知企业。</span></div>
+
+        <div class="grid c-3-2" style="margin:14px 0 0">
+          <div>
+            <div class="sec-title" style="margin-top:0"><span>监控：各钢厂协议户中标记企业的占比</span><span class="muted small" style="font-weight:400">只在平台内部使用，不向钢厂展示</span></div>
+            <table class="plain-table" style="font-size:12.5px">
+              <thead><tr><th>钢厂</th><th class="r">已接入的协议户</th><th class="r">标记已生效</th><th class="r">占比</th><th>提示</th></tr></thead>
+              <tbody><tr v-for="m in NS.monitor.mills" :key="m[0]"><td>{{ m[0] }}</td><td class="r num">{{ m[1] }}</td><td class="r num">{{ m[2] }}</td><td class="r num">{{ (m[2] / m[1] * 100).toFixed(1) }}%</td><td class="small" :style="{color: m[2] / m[1] > 0.055 ? '#b83a3e' : '#8b95a3'}">{{ m[2] / m[1] > 0.055 ? '占比偏高，近 30 日集中申报 4 件，已转核查' : '—' }}</td></tr></tbody>
+            </table>
+          </div>
+          <div>
+            <div class="sec-title" style="margin-top:0"><span>监控：全平台</span></div>
+            <el-descriptions :column="1" border size="small">
+              <el-descriptions-item label="标记企业占入驻下游">{{ NS.monitor.share }}%（{{ NS.platform.active }} 家）</el-descriptions-item>
+              <el-descriptions-item label="申报时点的分布">周期第 {{ NS.deadlineDay }} 日及以前 {{ NS.monitor.early }}%，之后 {{ NS.monitor.late }}%（之后提交的不能使当期免评）</el-descriptions-item>
+              <el-descriptions-item label="反复申报与撤销">近 12 个月 {{ NS.monitor.repeat }} 家；主动撤销后再次申报须间隔 {{ NS.reapplyGap }} 个周期，申报不实被撤销的禁止期 {{ NS.banCycles }} 个周期</el-descriptions-item>
+              <el-descriptions-item label="带动奖励">标记生效的周期没有达标结果；一期这类企业不计入有效带动户</el-descriptions-item>
+            </el-descriptions>
+          </div>
+        </div>
       </el-tab-pane>
     </el-tabs>
   </div>
+
+  <!-- 无库存经营：核实 / 复核与撤销 / 查看 -->
+  <el-dialog v-model="nsDlg" :title="curNs ? ({ verify: '核实无库存经营申报', recheck: curNs.recheck ? '复核无库存经营标记' : '撤销无库存经营标记', view: '无库存经营申报记录' })[nsMode] + ' · ' + curNs.ent : ''" width="720px" top="5vh">
+    <template v-if="curNs">
+      <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="申报编号">{{ curNs.id }}</el-descriptions-item>
+        <el-descriptions-item label="申报人">企业管理员（本人申报）</el-descriptions-item>
+        <el-descriptions-item label="所在地">{{ curNs.loc }}</el-descriptions-item>
+        <el-descriptions-item label="带动钢厂">{{ curNs.mill }}</el-descriptions-item>
+        <el-descriptions-item label="经营模式">{{ curNs.mode }}</el-descriptions-item>
+        <el-descriptions-item label="持续不落库起始">{{ curNs.startAt }}（企业申报）</el-descriptions-item>
+        <el-descriptions-item label="申报时间">{{ curNs.applyAt }}</el-descriptions-item>
+        <el-descriptions-item label="告知文案">{{ NS.noticeVer }}，{{ NS.notice.length }} 项均已逐项确认</el-descriptions-item>
+        <el-descriptions-item label="登记的仓库数">{{ curNs.wh }} 个</el-descriptions-item>
+        <el-descriptions-item :label="'近 ' + NS.months + ' 个月收到库存快照'"><b :style="{color: curNs.invDays ? '#b83a3e' : '#18a058'}">{{ curNs.invDays }} 天</b></el-descriptions-item>
+        <el-descriptions-item label="销售带本企业仓库的比例">{{ curNs.whShare }}%</el-descriptions-item>
+        <el-descriptions-item label="明细">未打开；确需查看时走<a href="audit.html">数据访问工单</a></el-descriptions-item>
+        <el-descriptions-item v-if="curNs.note" label="说明" :span="2">{{ curNs.note }}</el-descriptions-item>
+        <el-descriptions-item v-if="curNs.recheck" label="复核触发" :span="2"><span style="color:#b83a3e"><b>{{ curNs.recheck.src }}</b><span v-if="curNs.recheck.p2" class="ph-tag" style="margin-left:4px">二期</span>：{{ curNs.recheck.text }}</span></el-descriptions-item>
+      </el-descriptions>
+
+      <template v-if="nsMode === 'verify'">
+        <div class="tip-box small mt12" :class="curNs.invDays ? 'orange' : 'green'">
+          <template v-if="curNs.invDays">近 {{ NS.months }} 个月有 {{ curNs.invDays }} 天收到库存快照，登记仓库 {{ curNs.wh }} 个，销售记录中 {{ curNs.whShare }}% 带本企业仓库，与“常年不落库”不一致；连续不落库也未满 {{ NS.months }} 个月。建议驳回，或要求补充。</template>
+          <template v-else>近 {{ NS.months }} 个月没有收到过库存快照，未登记仓库，销售记录不带本企业仓库，与申报一致。</template>
+        </div>
+        <div class="sec-title"><span>核实项</span><span class="muted small" style="font-weight:400">前三项都核对后才能通过；电话回访按需</span></div>
+        <el-checkbox-group v-model="nsRv.checks" style="display:flex;flex-direction:column">
+          <el-checkbox value="a">由企业管理员本人申报，告知文案已逐项确认，确认记录在审计日志中</el-checkbox>
+          <el-checkbox value="b">平台内的汇总信号与申报一致（仓库数、库存快照天数、销售带本企业仓库的比例）</el-checkbox>
+          <el-checkbox value="c">企业提交的说明和材料已核对</el-checkbox>
+          <el-checkbox value="d">已电话回访（必要时）</el-checkbox>
+        </el-checkbox-group>
+        <el-input v-model="nsRv.note" class="mt8" type="textarea" :rows="2" placeholder="核实意见（驳回须写明理由，要求补充须写明要补什么；会通知企业）" />
+        <div class="small muted mt8">通过后：自 <b>{{ nsEffect(curNs) }}</b> 周期起“不适用”（申报{{ nsLate(curNs) ? '晚于' : '不晚于' }}周期第 {{ NS.deadlineDay }} 日的申报截止日）；标签随该周期结果在发布日出现在 {{ curNs.mill }} 的协议户列表，平台不单独通知钢厂。有效期 {{ NS.validMonths }} 个月。核实期间不向钢厂征询，也不告知其有此申请。</div>
+      </template>
+      <template v-else-if="nsMode === 'recheck'">
+        <div class="sec-title"><span>{{ curNs.recheck ? '复核结论' : '撤销' }}</span></div>
+        <el-radio-group v-model="nsRv.reason" style="display:flex;flex-direction:column;align-items:flex-start">
+          <el-radio v-if="curNs.recheck" value="维持">维持标记（情况与申报相符）</el-radio>
+          <el-radio value="情况变化">撤销：情况变化（如开始持有库存）。自下一个达标周期起恢复评定</el-radio>
+          <el-radio value="申报不实">撤销：申报不实。自当前尚未发布的周期起恢复评定，{{ NS.banCycles }} 个周期内不得再次申报</el-radio>
+        </el-radio-group>
+        <el-input v-model="nsRv.note" class="mt8" type="textarea" :rows="2" placeholder="依据（必填；撤销须写明依据）" />
+        <el-checkbox v-if="nsRv.reason && nsRv.reason !== '维持'" v-model="nsRv.heard" class="mt8">已事先通知企业并听取申辩（申辩记录已归档）</el-checkbox>
+        <div class="small muted mt8">任何情况下都不追溯改评已发布的周期。撤销后钢厂只看到标签消失、恢复评定，看不到原因。<template v-if="curNs.recheck && curNs.recheck.src === '钢厂异议'">对提出异议的钢厂只回复“维持”或“已撤销”，不提供核实依据和任何数据内容。</template></div>
+      </template>
+      <template v-else>
+        <div class="sec-title"><span>处理记录</span></div>
+        <table class="plain-table" style="font-size:12.5px"><tbody>
+          <tr><td style="width:150px" class="num">{{ curNs.applyAt }}</td><td>企业管理员提交申报，已逐项确认告知文案</td></tr>
+          <tr v-if="curNs.since"><td class="num">{{ curNs.since }} 周期</td><td>核实通过，标记生效</td></tr>
+          <tr><td class="num">{{ curNs.at }}</td><td>{{ curNs.by }}：{{ curNs.st }}{{ curNs.log ? '（' + curNs.log + '）' : '' }}</td></tr>
+        </tbody></table>
+      </template>
+    </template>
+    <template #footer>
+      <template v-if="nsMode === 'verify'">
+        <el-button @click="nsDlg = false">取消</el-button>
+        <el-button :disabled="!nsRv.note" @click="nsDo('待补充')">要求补充</el-button>
+        <el-button type="danger" plain :disabled="!nsRv.note" @click="nsDo('已驳回')">驳回</el-button>
+        <el-button type="primary" :disabled="!['a', 'b', 'c'].every((k) => nsRv.checks.indexOf(k) >= 0)" @click="nsDo('已生效')">核实通过</el-button>
+      </template>
+      <template v-else-if="nsMode === 'recheck'">
+        <el-button @click="nsDlg = false">取消</el-button>
+        <el-button v-if="nsRv.reason === '维持'" type="primary" :disabled="!nsRv.note" @click="nsDo('维持')">维持标记</el-button>
+        <el-button v-else type="danger" :disabled="!(nsRv.reason && nsRv.note && nsRv.heard)" @click="nsDo('已撤销')">确认撤销</el-button>
+      </template>
+      <el-button v-else type="primary" @click="nsDlg = false">关闭</el-button>
+    </template>
+  </el-dialog>
 
   <!-- 下游企业详情抽屉 -->
   <el-drawer v-model="drawer" size="720px" :title="cur ? cur.name : ''">
@@ -166,9 +311,13 @@
         <el-descriptions-item label="企业认证">已认证（货袋子平台）</el-descriptions-item>
         <el-descriptions-item label="身份类型">下游钢贸企业</el-descriptions-item>
         <el-descriptions-item label="入驻时间">{{ cur.joined }}（接入 {{ cur.months }} 个月）</el-descriptions-item>
+        <el-descriptions-item label="入驻来源">{{ cur.source }}<template v-if="cur.refWay">（{{ cur.refWay }}）</template></el-descriptions-item>
+        <el-descriptions-item label="带动方">{{ cur.referrer || '—' }}</el-descriptions-item>
         <el-descriptions-item label="匿名编号"><span class="anon-name">{{ cur.anon }}</span></el-descriptions-item>
         <el-descriptions-item label="企业管理员">{{ cur.admin }}（手机号已脱敏）</el-descriptions-item>
       </el-descriptions>
+
+      <div v-if="cur.referrer" class="tip-box blue small mt8">{{ cur.source === '钢厂带动' ? '带动关系由该企业的企业管理员确认后成立。带动钢厂只能看到该企业是否已接入（及报送中断、已暂停、已退出）和各达标周期是达标还是未达标，看不到及时率数值和任何经营数据，也看不到具体哪天报了。' : '一级代理邀请下级经销商为二期功能：代理只能看到对方是否已接入，钢厂只能看到二级经销商的汇总户数。' }}是否计入带动奖励见 <a href="referral-rewards.html">带动奖励规则 › 带动关系与有效带动户</a>。</div>
 
       <div class="sec-title"><span>协议签署记录</span></div>
       <el-table :data="cur.agreements" size="small" border>
@@ -187,6 +336,7 @@
         <el-descriptions-item label="覆盖声明">{{ cur.cover }}</el-descriptions-item>
         <el-descriptions-item label="价格上传">{{ priceOn(cur) ? '已开启' : '未开启' }}</el-descriptions-item>
         <el-descriptions-item label="画像审核">已通过（{{ cur.joined }}）</el-descriptions-item>
+        <el-descriptions-item label="无库存经营">未申报<span class="muted small">（企业一级的属性，由企业申报、运营核实；见“无库存经营”页签）</span></el-descriptions-item>
       </el-descriptions>
 
       <div class="sec-title"><span>接入应用与密钥状态</span><el-button size="small" @click="quotaDlg = true"><el-icon><Setting /></el-icon>调整限流配额</el-button></div>
@@ -207,7 +357,7 @@
         <el-table-column prop="src" label="来源" width="130" />
         <el-table-column label="操作" width="76" align="center"><template #default="{$index}"><el-button link type="danger" @click="cur.rels.splice($index, 1); $demo('已解除关联关系，变更已留痕')">解除</el-button></template></el-table-column>
       </el-table>
-      <div v-else class="tip-box small">未登记关联企业。钢厂关联的贸易公司在名录中标注“关联企业”；关联方订阅的名额不参与分成（示例参数，待业务方确定）。</div>
+      <div v-else class="tip-box small">未登记关联企业。钢厂关联的贸易公司在名录中标注“关联企业”；钢厂的关联方企业不计入该钢厂带动奖励的有效带动户（示例参数，待业务方确定）。</div>
 
       <div class="sec-title"><span>状态管理</span></div>
       <div class="row">
@@ -281,7 +431,10 @@
           <el-checkbox value="b">已签署《数据授权协议》《板块服务协议》</el-checkbox>
           <el-checkbox value="c">企业管理员已实名并完成二次验证绑定</el-checkbox>
           <el-checkbox value="d">不在平台风险名单内</el-checkbox>
+          <el-checkbox v-if="curAudit.src === '钢厂带动' || curAudit.src === '一级代理带动'" value="e">入驻来源已记录：经 {{ curAudit.ref }} 进入注册。带动关系不在准入时认定，由该企业的企业管理员自行确认</el-checkbox>
         </el-checkbox-group>
+        <div v-if="curAudit.refNote" class="tip-box orange small mt8">{{ curAudit.refNote }} <a href="referral-rewards.html">带动关系争议处理 ›</a></div>
+        <div v-else-if="curAudit.ref" class="tip-box small mt8">准入审核标准不因来源不同而放宽。平台运营不能代企业确认带动关系；企业管理员确认之前，邀请它的钢厂看到的状态一律是“已发送”，不会得知它是否已入驻、是否通过准入。确认并接入后，考核期内 2 个周期达标才计为有效带动户。</div>
       </template>
 
       <template v-if="curAudit.type === '身份类型认定'">
@@ -349,6 +502,7 @@
   const STEPS = ['已签协议', '密钥已发放', '沙箱联调通过', '正式上传中'];
   const ADMINS = ['陈海峰', '王建国', '李秀兰', '张伟民', '刘志强', '黄丽华', '周文斌', '吴晓东', '郑国栋', '孙玉梅'];
   const monthAgo = (m, h) => { const d = new Date(2026, 10 - m, 1 + (h % 27)); return STP.dateStr(d); };
+  const AGENTS = ['苏州恒运钢铁贸易有限公司', '无锡瑞丰物资有限公司', '杭州华昌金属材料有限公司', '合肥永泰钢铁有限公司'];
   const enrich = (e, i) => {
     const h = M.hash(e.id + 'x'), r = M.rngOf(h);
     const a = r();
@@ -365,22 +519,28 @@
       { name: '《数据授权协议》', ver: 'V2.1', time: e.joined + ' 10:1' + (h % 10), by: e.admin, ok: true },
       { name: '《板块服务协议》', ver: 'V2.0', time: e.joined + ' 10:1' + (h % 10), by: e.admin, ok: true },
       { name: '《价格数据上传补充条款》', ver: 'V1.0', time: e.priceOn ? monthAgo(Math.max(0, e.months - 3), h) + ' 15:02' : '—', by: e.priceOn ? e.admin : '—', ok: e.priceOn },
-      { name: '《收益分成补充协议》', ver: 'V1.0', time: e.listing === '不上架' ? '—' : e.joined + ' 10:20', by: e.listing === '不上架' ? '—' : e.admin, ok: e.listing !== '不上架' },
+      { name: '《带动关系与报送状态可见条款》', ver: 'V1.0', time: e.joined + ' 10:20', by: e.admin, ok: true },
     ];
     e.apps = [{ src: 'SRC-ERP 主 ERP', key: 'ak_' + (h % 65536).toString(16).padStart(4, '0') + '••••' + ((h >> 8) % 4096).toString(16).padStart(3, '0'), grain: e.grain === '日汇总' ? '日汇总' : '行级', on: e.step >= 1, exp: h % 11 === 0, last: e.step === 3 && e.status === '正常' ? '今天 0' + (1 + h % 6) + ':' + STP.pad(h % 60) : '—' }];
     if (e.grain === '混用') e.apps.push({ src: 'SRC-FGS 分公司进销存', key: 'ak_' + ((h >> 4) % 65536).toString(16).padStart(4, '0') + '••••' + (h % 4096).toString(16).padStart(3, '0'), grain: '日汇总', on: true, exp: false, last: '今天 02:' + STP.pad((h >> 3) % 60) });
     e.rels = e.related ? [{ name: e.group + '有限公司', rel: '钢厂关联的贸易公司', src: '企业申报，运营核实' }] : [];
+    /* 入驻来源：比例与平台整体一致（钢厂带动约 70%、一级代理带动约 11%、平台运营邀请约 15%、自主注册约 5%） */
+    const sr = M.rngOf(M.hash(e.id + 'src'))(), mill = e.brands[0] + (e.brands[0].indexOf('特钢') >= 0 ? '' : '钢铁');
+    e.source = sr < 0.695 ? '钢厂带动' : sr < 0.803 ? '一级代理带动' : sr < 0.949 ? '平台运营邀请' : '自主注册';
+    e.refWay = e.source === '钢厂带动' ? ['名单导入', '邀请链接', '邀请码'][h % 3] : e.source === '一级代理带动' ? ['邀请链接', '邀请码'][h % 2] : '';
+    e.referrer = e.source === '钢厂带动' ? mill : e.source === '一级代理带动' ? AGENTS[h % AGENTS.length] + '（一级代理，二期；上级钢厂 ' + mill + ' 只见汇总户数）' : '';
+    e.refShort = e.source === '钢厂带动' ? mill : e.source === '一级代理带动' ? AGENTS[h % AGENTS.length].slice(0, 4) : '';
     return e;
   };
   const hy = {
     id: 'E100000', name: '苏州恒运钢铁贸易有限公司', mode: '实名', anon: '华东·建材·A0321', prov: '江苏', city: '苏州市', region: '华东', cat: '建筑钢材、热轧板卷', scale: '50–100 万吨', quality: 'A',
     months: 14, brands: ['东岳', '金江'], cover: '部分上传：仅主营大类、指定仓库', priceOn: false, related: false,
-    listing: '实名', status: '正常', step: 3, grain: '混用', group: '', joined: '2025-09-19', subs: 23, admin: '陈海峰', qps: 1200, batch: 1000, succ: '99.8', limited: 0, tickets: 3,
+    listing: '实名', status: '正常', step: 3, grain: '混用', group: '', joined: '2025-09-19', source: '钢厂带动', refWay: '名单导入，2025-09-02', referrer: '东岳钢铁集团有限公司', refShort: '东岳钢铁', subs: 23, admin: '陈海峰', qps: 1200, batch: 1000, succ: '99.8', limited: 0, tickets: 3,
     agreements: [
       { name: '《数据授权协议》', ver: 'V2.1', time: '2025-09-19 10:26', by: '陈海峰', ok: true },
       { name: '《板块服务协议》', ver: 'V2.0', time: '2025-09-19 10:26', by: '陈海峰', ok: true },
       STP.state.dnPrice === 'on' ? { name: '《价格数据上传补充条款》', ver: 'V1.0', time: '2026-10-20 09:12', by: '陈海峰', ok: true } : { name: '《价格数据上传补充条款》', ver: 'V1.0', time: '—', by: '—', ok: false },
-      { name: '《收益分成条款》', ver: '随《数据授权协议》V2.1 确认', time: '2026-07-01 09:40', by: '陈海峰', ok: true },
+      { name: '《带动关系与报送状态可见条款》', ver: '随《数据授权协议》V2.1 确认', time: '2026-07-01 09:40', by: '陈海峰', ok: true },
     ],
     apps: [
       { src: 'SRC-HQ 总部 ERP', key: 'hy3a••••7e45', grain: '行级', on: true, exp: false, last: '昨天 23:52' },
@@ -409,12 +569,12 @@
 
   const A = (type, name, side, summary, time, wait, ext) => Object.assign({ type, name, side, summary, time, wait }, ext || {});
   const audits = [
-    A('准入审核', '长沙鑫盛钢铁贸易有限公司', '下游', '申请开通数据板块；来源：东岳钢铁带动入驻', '2026-11-24 09:12', 5),
-    A('准入审核', '兰州广源物资有限公司', '下游', '申请开通数据板块；来源：平台定向邀约（甘肃 · 建筑钢材）', '2026-11-24 08:40', 6),
-    A('准入审核', '南昌永泰金属材料有限公司', '下游', '申请开通数据板块；来源：自主申请', '2026-11-23 17:26', 21),
-    A('准入审核', '沈阳宏达钢铁有限公司', '下游', '申请开通数据板块；来源：金江钢铁带动入驻', '2026-11-23 15:02', 23),
-    A('准入审核', '西安同创供应链管理有限公司', '下游', '申请开通数据板块；来源：自主申请', '2026-11-23 11:48', 26),
-    A('准入审核', '成都嘉禾不锈钢有限公司', '下游', '申请开通数据板块；主营不锈钢；来源：平台定向邀约', '2026-11-23 10:05', 28),
+    A('准入审核', '长沙鑫盛钢铁贸易有限公司', '下游', '申请开通数据板块', '2026-11-24 09:12', 5, { src: '钢厂带动', ref: '东岳钢铁集团有限公司 · 邀请码 DY2026A' }),
+    A('准入审核', '兰州广源物资有限公司', '下游', '申请开通数据板块；定向邀约（甘肃 · 建筑钢材）', '2026-11-24 08:40', 6, { src: '平台运营邀请' }),
+    A('准入审核', '南昌永泰金属材料有限公司', '下游', '申请开通数据板块', '2026-11-23 17:26', 21, { src: '一级代理带动', ref: '南昌天润实业有限公司 · 邀请链接' }),
+    A('准入审核', '沈阳宏达钢铁有限公司', '下游', '申请开通数据板块', '2026-11-23 15:02', 23, { src: '钢厂带动', ref: '金江钢铁股份有限公司 · 邀请链接', refNote: '多家钢厂邀请了同一企业：北辰钢铁 2026-09 的协议户名单中也有该企业。企业可以分别确认或拒绝两家的带动关系，互不影响；奖励只计给最先建立带动关系的钢厂（示例规则，待业务方确定）。' }),
+    A('准入审核', '西安同创供应链管理有限公司', '下游', '申请开通数据板块', '2026-11-23 11:48', 26, { src: '自主注册' }),
+    A('准入审核', '成都嘉禾不锈钢有限公司', '下游', '申请开通数据板块；主营不锈钢；定向邀约', '2026-11-23 10:05', 28, { src: '平台运营邀请' }),
     A('身份类型认定', '太行钢铁集团有限公司', '上游', '申请认定为“钢铁生产企业”，取得购买资格', '2026-11-24 10:20', 4),
     A('身份类型认定', '东岳钢铁（华东）物资有限公司', '上游 / 下游', '申请以上游身份购买；系统识别为东岳钢铁集团的关联贸易公司', '2026-11-23 16:10', 22),
     A('身份类型认定', '佛山万隆钢铁有限公司', '上游', '申请认定为“钢铁生产企业”；经营范围以贸易为主', '2026-11-22 14:30', 48),
@@ -432,9 +592,10 @@
   STP.mount({
     data() {
       return {
-        tab: 'dn', page: 1, dnAll, ups, audits, steps: STEPS, mills: M.MILLS,
+        tab: /[?&]tab=ns\b/.test(location.search) ? 'ns' : 'dn', NS: M.REF.noStock, S: M.REF.std, nsF: '', nsDlg: false, nsMode: 'verify', curNs: null, nsRv: { checks: [], reason: '', note: '', heard: false },
+        page: 1, dnAll, ups, audits, steps: STEPS, mills: M.MILLS,
         provs: M.provinces.map((p) => p.name), listings: ['实名', '匿名带编号', '只对指定钢厂可见', '不上架'],
-        f: { kw: '', prov: '', listing: '', status: '', quality: '', grain: '', price: '' },
+        f: { kw: '', prov: '', listing: '', status: '', quality: '', grain: '', price: '', source: '' }, sources: ['钢厂带动', '一级代理带动', '平台运营邀请', '自主注册'],
         auditTypes: ['准入审核', '身份类型认定', '画像审核', '上架审核'], auditType: '',
         drawer: false, cur: null, quotaDlg: false, quota: { qps: 600, batch: 1000, reason: '' },
         upDlg: false, curUp: null,
@@ -445,13 +606,16 @@
       filtered() {
         const f = this.f;
         return this.dnAll.filter((e) => (!f.kw || (e.name + e.id + e.anon).indexOf(f.kw) >= 0) && (!f.prov || e.prov === f.prov) && (!f.listing || e.listing === f.listing)
-          && (!f.status || e.status === f.status) && (!f.quality || e.quality === f.quality) && (!f.grain || e.grain === f.grain) && (!f.price || (f.price === 'on') === this.priceOn(e)));
+          && (!f.status || e.status === f.status) && (!f.quality || e.quality === f.quality) && (!f.grain || e.grain === f.grain) && (!f.price || (f.price === 'on') === this.priceOn(e)) && (!f.source || e.source === f.source));
       },
       pageRows() { return this.filtered.slice((this.page - 1) * 10, this.page * 10); },
+      nsRows() { const f = this.nsF; return this.NS.list.filter((r) => !f || (f === '待复核' ? r.st === '已生效' && r.recheck : f === '待核实' ? r.st === '待核实' || r.st === '待补充' : r.st === f)); },
+      nsRecheckN() { return this.NS.list.filter((r) => r.st === '已生效' && r.recheck).length; },
+      nsTodo() { return this.nsCount('待核实') + this.nsCount('待补充') + this.nsRecheckN; },
       auditRows() { return this.audits.filter((a) => !this.auditType || a.type === this.auditType); },
       canPass() {
         const a = this.curAudit; if (!a) return false;
-        if (a.type === '准入审核') return this.rv.checks.length === 4;
+        if (a.type === '准入审核') return this.rv.checks.length === (a.src === '钢厂带动' || a.src === '一级代理带动' ? 5 : 4);
         if (a.type === '上架审核') return !!this.rv.anon;
         return true;
       },
@@ -462,8 +626,24 @@
       listingType(l) { return l === '实名' ? 'success' : l === '匿名带编号' ? 'primary' : l === '不上架' ? 'info' : 'warning'; },
       upType(s) { return s === '订阅中' ? 'success' : s === '即将到期' ? 'warning' : 'info'; },
       auditTag(t) { return { 准入审核: 'primary', 身份类型认定: 'warning', 画像审核: 'success', 上架审核: 'danger' }[t]; },
+      nsCount(s) { return this.NS.list.filter((r) => r.st === s).length; },
+      nsTag(s) { return { 待核实: 'warning', 待补充: 'warning', 已生效: 'success', 已撤销: 'info', 已驳回: 'danger', 已到期: 'info' }[s]; },
+      nsLate(r) { return +r.applyAt.slice(8, 10) > this.NS.deadlineDay; },
+      nsEffect(r) { const ym = r.applyAt.slice(0, 7); if (!this.nsLate(r)) return ym; const y = +ym.slice(0, 4), m = +ym.slice(5); return m === 12 ? (y + 1) + '-01' : y + '-' + (m < 9 ? '0' : '') + (m + 1); },
+      nsOpen(row, mode) { this.curNs = row; this.nsMode = mode; this.nsRv = { checks: [], reason: '', note: '', heard: false }; this.nsDlg = true; },
+      nsDo(act) {
+        const r = this.curNs, P = this.NS.platform, now = M.TODAY + ' 14:20';
+        const log = (this.nsRv.reason && this.nsRv.reason !== '维持' ? this.nsRv.reason + '：' : '') + this.nsRv.note;
+        if (act === '已生效') { Object.assign(r, { st: act, since: this.nsEffect(r), until: '2027-11-30', at: now, by: '林若彤', log }); P.active++; }
+        else if (act === '已驳回') { Object.assign(r, { st: act, at: now, by: '林若彤', log }); P.rejected++; }
+        else if (act === '待补充') { Object.assign(r, { st: act, log }); }
+        else if (act === '维持') { r.recheck = null; }
+        else { Object.assign(r, { st: act, recheck: null, at: now, by: '林若彤', log }); P.active--; P.revoked++; }
+        this.nsDlg = false;
+        this.$demo({ 已生效: '核实通过：' + r.ent + ' 自 ' + r.since + ' 周期起不参加达标评定；已通知企业', 已驳回: '已驳回并通知企业：' + r.ent, 待补充: '已要求企业补充：' + r.ent, 维持: '复核结论：维持标记。' + r.ent, 已撤销: '已撤销标记并通知企业：' + r.ent }[act]);
+      },
       auditCount(t) { return this.audits.filter((a) => a.type === t).length; },
-      resetFilter() { this.f = { kw: '', prov: '', listing: '', status: '', quality: '', grain: '', price: '' }; },
+      resetFilter() { this.f = { kw: '', prov: '', listing: '', status: '', quality: '', grain: '', price: '', source: '' }; },
       open(row) { this.cur = row; this.drawer = true; },
       openUp(row) { this.curUp = row; this.upDlg = true; },
       rowCmd(c, row) {

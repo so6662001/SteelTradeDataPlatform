@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>带动关系与报送达标 · 下游钢贸端 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.mill { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border: 1px solid var(--stp-border); background: #fff; border-radius: 6px; margin-bottom: 10px; }
+.mill.wait { border-color: #f3dfb8; background: #fffaf0; }
+.mill .lg { width: 42px; height: 42px; border-radius: 10px; background: #409eff; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 19px; font-weight: 700; flex-shrink: 0; }
+.mill b { font-size: 15px; }
+.mill .m { font-size: 12px; color: var(--stp-sub); margin-top: 3px; line-height: 1.7; }
+.bound { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.bound .box { border: 1px solid var(--stp-border); border-radius: 6px; padding: 12px 14px; }
+.bound .box.yes { border-color: #cfe9da; background: #fafdfb; }
+.bound .box.no { border-color: #f3c9ca; background: #fffafa; }
+.bound h4 { margin: 0 0 8px; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+.bound ul { margin: 0; padding: 0; list-style: none; font-size: 13px; line-height: 1.9; color: #4a5568; }
+.bound li { display: flex; gap: 6px; align-items: flex-start; }
+.bound li .el-icon { margin-top: 5px; flex-shrink: 0; }
+.bound .yes .el-icon { color: #18a058; } .bound .no .el-icon { color: #e5484d; }
+.ack .el-checkbox { height: auto; align-items: flex-start; white-space: normal; margin-right: 0; padding: 4px 0; }
+.ack .el-checkbox__input { margin-top: 4px; }
+.ack .el-checkbox__label { line-height: 1.65; white-space: normal; }
+.peek { border: 1px dashed #a8c6ef; border-radius: 6px; padding: 10px 12px; background: #f8fbff; }
+.peek .hd { font-size: 12px; color: var(--stp-sub); margin-bottom: 8px; }
+.grade { display: inline-block; padding: 0 7px; border-radius: 10px; font-size: 12px; line-height: 20px; border: 1px solid #e1e5eb; background: #f5f6f8; color: #6b7787; white-space: nowrap; }
+.grade.g { background: #f0faf4; color: #1b7a47; border-color: #cfe9da; }
+.grade.r { background: #fff3f3; color: #b83a3e; border-color: #f3c9ca; }
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal .h { font-size: 12px; color: var(--stp-sub); text-align: center; padding: 2px 0; }
+.cal .d { border-radius: 4px; padding: 5px 6px; font-size: 12px; min-height: 44px; border: 1px solid var(--stp-border); background: #fff; }
+.cal .d .n { font-weight: 600; }
+.cal .d .t { font-size: 11px; margin-top: 2px; }
+.cal .d.ok { background: #f0faf4; border-color: #cfe9da; } .cal .d.ok .t { color: #1b7a47; }
+.cal .d.zero { background: #f0f6ff; border-color: #cfe0f7; } .cal .d.zero .t { color: #24528f; }
+.cal .d.miss { background: #fff3f3; border-color: #f3c9ca; } .cal .d.miss .t { color: #b83a3e; }
+.cal .d.todo { background: #fffaf0; border-color: #f3dfb8; } .cal .d.todo .t { color: #9a6400; }
+.cal .d.na { background: #fafbfc; color: #c0c6cf; }
+.cal .d.off { background: #f6f7f9; border-style: dashed; color: #9aa3af; } .cal .d.off .t { color: #a8b0bb; }
+.ns-state { border: 1px solid var(--stp-border); border-radius: 6px; padding: 10px 14px; margin-top: 12px; font-size: 13px; }
+.ns-state.on { border-color: #cfe9da; background: #fafdfb; } .ns-state.wait { border-color: #f5dab1; background: #fffaf2; }
+.ns-state .kvs { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 6px; color: #4a5568; }
+.ns-notice { border: 1px solid #f5dab1; background: #fffaf2; border-radius: 6px; padding: 8px 14px; display: flex; flex-direction: column; }
+.na-block { border: 1px dashed #c9d2de; border-radius: 6px; padding: 22px 16px; text-align: center; background: #fafbfc; }
+.na-block b { font-size: 18px; }
+.legend { display: flex; gap: 14px; font-size: 12px; color: var(--stp-sub); flex-wrap: wrap; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; border: 1px solid; }
+.land { border: 1px solid var(--stp-border); border-radius: 8px; overflow: hidden; }
+.land .top { background: linear-gradient(135deg, #18a058, #2bb673); color: #fff; padding: 16px 18px; }
+.land .top b { font-size: 17px; }
+.land .body { padding: 14px 18px; }
+.land .item { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px dashed var(--stp-border); font-size: 13px; line-height: 1.8; }
+.land .item:last-child { border-bottom: 0; }
+.land .item .no { width: 22px; height: 22px; border-radius: 50%; background: #e8f7ef; color: #18a058; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 12px; margin-top: 2px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="downstream" active="mill-relations" title="带动关系与报送达标"
+  desc="哪些钢厂邀请了本企业、每家钢厂能看到本企业的什么，都在这里。带动关系必须由本企业的企业管理员确认才成立，可以拒绝，也可以随时解除。本企业的报送达标情况和钢厂看到的样子，在这里对照查看。">
+  <template #actions>
+    <el-button @click="land.show = true; land.mill = '金江钢铁股份有限公司'; land.agree = false"><el-icon><Iphone /></el-icon>邀请落地页预览</el-button>
+    <el-button @click="$go('ledger.html')"><el-icon><Notebook /></el-icon>数据使用透明账本</el-button>
+    <el-button type="primary" @click="$go('daily-summary.html')"><el-icon><Calendar /></el-icon>每日上传汇总</el-button>
+  </template>
+
+  <div class="grid c4">
+    <stat-card label="已确认的带动关系" :value="confirmedN" unit="家钢厂" icon="Link"><span>待确认 {{ waitN }} 家</span><span>带动关系不是数据授权</span></stat-card>
+    <div class="stat">
+      <div class="label">最近一个达标周期</div>
+      <div class="value" style="color:#18a058">达标</div>
+      <div class="foot"><span>{{ S.last }} 周期</span><span>{{ S.lastPub }} 发布</span></div>
+      <div class="ico" style="background:#e8f7ef;color:#18a058"><el-icon><CircleCheck /></el-icon></div>
+    </div>
+    <stat-card label="连续达标" :value="H.streak" unit="个周期" icon="Medal"><span>自 2025-10 周期起</span></stat-card>
+    <div class="stat">
+      <div class="label">本周期进度（只有本企业可见）</div>
+      <template v-if="nsOn">
+        <div class="value" style="font-size:18px;line-height:36px">不适用<span class="unit">（无库存经营）</span></div>
+        <div class="foot"><span>{{ S.cur }} 周期起不参加评定</span><span>销售数据照常上传</span></div>
+      </template>
+      <template v-else>
+        <div class="value num" style="font-size:20px;line-height:36px">{{ curStat.ok }}<span class="unit">/ {{ curStat.due }} 个应报送日按时</span></div>
+        <div class="foot"><span>{{ S.cur }} 周期 · 缺报 {{ curStat.miss }} 天（{{ (curStat.ok / curStat.due * 100).toFixed(1) }}%）</span><span>{{ S.nextPub }} 发布结果</span></div>
+      </template>
+      <div class="ico"><el-icon><Calendar /></el-icon></div>
+    </div>
+  </div>
+
+  <!-- 带动关系 -->
+  <div class="card">
+    <div class="card-title"><span>带动关系<small>谁邀请了本企业；确认、拒绝、解除都由本企业决定</small></span><span class="right small muted"><el-icon style="vertical-align:-2px"><Lock /></el-icon> 只有企业管理员可以确认；平台人员和钢厂都不能代为确认</span></div>
+    <div v-for="r in rels" :key="r.mill" class="mill" :class="{wait: r.st === '待确认'}">
+      <div class="lg" :style="{background: r.color}">{{ r.mill.slice(0, 1) }}</div>
+      <div class="flex1">
+        <b>{{ r.mill }}</b>
+        <el-tag size="small" :type="r.st === '已确认' ? 'success' : r.st === '待确认' ? 'warning' : 'info'" effect="plain" style="margin-left:8px">{{ r.st }}</el-tag>
+        <div class="m">
+          <template v-if="r.st === '待确认'">{{ r.at }} 发来带动关系确认请求（{{ r.way }}）。你确认之前，对方只看到“已发送”，不知道本企业是否已在平台、是否与其他钢厂有带动关系。</template>
+          <template v-else-if="r.st === '已确认'">{{ r.at }} 邀请（{{ r.way }}）　|　{{ r.cfAt }} 由 {{ r.cfBy }} 确认　|　它看到的接入状态：<b>{{ accessSeen }}</b><template v-if="r.note"><br>{{ r.note }}</template></template>
+          <template v-else>{{ r.endAt }} {{ r.st }}。对方看到的状态：{{ r.st === '已拒绝' ? '已拒绝，不再向本企业发送邀请' : '已解除关联，不再有新状态' }}。</template>
+        </div>
+      </div>
+      <template v-if="r.st === '待确认'">
+        <el-button @click="reject(r)">拒绝</el-button>
+        <el-button type="primary" @click="land.show = true; land.mill = r.mill; land.agree = false">查看并确认</el-button>
+      </template>
+      <el-button v-else-if="r.st === '已确认'" link type="danger" @click="unlink(r)">解除带动关系</el-button>
+    </div>
+    <div class="tip-box blue small">
+      <b>三件事互相独立。</b>确认带动关系，只是让这家钢厂看到本企业的接入状态和各达标周期的结果；它不等于数据授权（上传数据前另行签署《数据授权协议》），也不等于被这家钢厂选购（钢厂要看包含你的聚合数据，仍须你对它上架可见、由它选入数据池；协议户同样占用它的付费名额，它可以用带动奖励抵用）。解除带动关系不影响上传、上架和行业对标权益；与钢厂之间代理协议的约定，由协议双方处理。
+    </div>
+  </div>
+
+  <div class="grid c-3-2">
+    <!-- 钢厂看到的样子 -->
+    <div class="card" style="margin-bottom:0">
+      <div class="card-title"><span>钢厂看到的样子<small>有带动关系的钢厂，对本企业只能看到下面这一行</small></span></div>
+      <div class="peek">
+        <div class="hd"><el-icon style="vertical-align:-2px;margin-right:4px"><View /></el-icon>东岳钢铁在“协议户邀请与接入”里看到的本企业（与对方页面一致）</div>
+        <table class="plain-table" style="font-size:12px">
+          <thead><tr><th>协议户</th><th>接入状态</th><th v-for="c in S.cycles" :key="c" class="c">{{ c }}</th><th class="c">连续达标周期</th></tr></thead>
+          <tbody><tr>
+            <td>苏州恒运钢铁贸易有限公司<el-tag v-if="nsOn" size="small" type="info" effect="plain" style="margin-left:6px">无库存经营</el-tag></td><td><el-tag size="small" :type="accessSeen === '已接入' ? 'success' : 'warning'" effect="plain">{{ accessSeen }}</el-tag></td>
+            <td v-for="c in S.cycles" :key="c" class="c"><span class="grade g">达标</span></td><td class="c">连续 {{ H.streak }} 期</td>
+          </tr></tbody>
+        </table>
+        <div class="small muted" style="margin-top:6px"><template v-if="nsOn">{{ S.cur }} 周期的结果在 {{ S.nextPub }} 统一发布，本企业该周期为<b>“不适用（无库存经营）”</b>；“无库存经营”标签随周期结果在发布日出现在钢厂端（这里按发布后的样子预览）。</template><template v-else>{{ S.cur }} 周期的结果在 {{ S.nextPub }} 统一发布，发布前钢厂看不到任何进度。</template>接入状态每日更新一次。</div>
+      </div>
+      <div class="bound mt12">
+        <div class="box yes">
+          <h4><el-icon><View /></el-icon>有带动关系的钢厂能看到</h4>
+          <ul><li v-for="t in canSee" :key="t"><el-icon><CircleCheck /></el-icon><span>{{ t }}</span></li></ul>
+        </div>
+        <div class="box no">
+          <h4><el-icon><Hide /></el-icon>它看不到</h4>
+          <ul><li v-for="t in cannotSee" :key="t"><el-icon><CircleClose /></el-icon><span>{{ t }}</span></li></ul>
+        </div>
+      </div>
+      <div class="tip-box green small mt12"><b>本企业保留的权利</b>不因带动关系或代理协议在平台上受限：自设上传条件、暂停、退出、解除带动关系、选择上架方式。平台不向钢厂披露你是否设置了上传条件及其内容。没有带动关系的钢厂连上面这一行也看不到，只能看到聚合数据。</div>
+    </div>
+
+    <!-- 我的报送达标 -->
+    <div class="card" style="margin-bottom:0">
+      <div class="card-title"><span>我的报送达标<small>规则 {{ S.ver }}</small></span><span class="ex-tag">阈值为示例参数，待业务方确定</span></div>
+      <div class="row between mb8">
+        <el-radio-group v-model="cyc" size="small"><el-radio-button :label="S.cur + '（进行中）'" :value="S.cur" /><el-radio-button :label="S.last + '（已发布）'" :value="S.last" /></el-radio-group>
+        <span class="small muted"><el-icon style="vertical-align:-2px"><Lock /></el-icon> 日历只有本企业可见</span>
+      </div>
+      <div v-if="nsOn && cyc === S.cur" class="na-block">
+        <b>不适用（无库存经营）</b>
+        <div class="small muted" style="margin-top:6px;line-height:1.8">本企业自 {{ S.cur }} 周期起不参加报送达标评定，不显示当期进度和缺报日历。<br>销售数据仍应照常上传；连续 {{ NS.breakDays }} 个自然日没有任何数据时，钢厂端会显示“报送中断”。<br><a href="#nostock">查看标记状态、到期日与撤销入口 ›</a></div>
+      </div>
+      <template v-else>
+      <div class="cal">
+        <div class="h" v-for="w in ['一','二','三','四','五','六','日']" :key="w">{{ w }}</div>
+        <div v-for="(d, i) in days" :key="i" class="d" :class="d.k"><template v-if="d.n"><div class="n num">{{ d.n }}</div><div class="t">{{ d.t }}</div><div v-if="d.why" class="t" style="font-weight:600">{{ d.why }}</div></template></div>
+      </div>
+      <div class="legend mt8">
+        <span><i style="background:#f0faf4;border-color:#cfe9da"></i>按时</span><span><i style="background:#f0f6ff;border-color:#cfe0f7"></i>只报了库存快照（当天无销售，同样算按时）</span><span><i style="background:#fff3f3;border-color:#f3c9ca"></i>缺报（标出原因）</span><span><i style="background:#f6f7f9;border-color:#c9d2de;border-style:dashed"></i>非应报送日（周末、法定节假日；数据照常接收，不计入评定）</span>
+      </div>
+      <table v-if="missDays.length" class="plain-table mt8" style="font-size:12px">
+        <thead><tr><th style="width:92px">缺报日期</th><th style="width:120px">原因</th><th>说明</th></tr></thead>
+        <tbody><tr v-for="m in missDays" :key="m.n"><td class="num">{{ cyc }}-{{ m.n < 10 ? '0' + m.n : m.n }}</td><td><el-tag size="small" type="danger" effect="plain">{{ m.reason }}</el-tag></td><td class="muted">{{ m.detail }}</td></tr></tbody>
+      </table>
+      <div v-else class="small muted mt8">本周期没有缺报的日子。</div>
+      <div class="small muted mt8" style="line-height:1.8">缺报原因有四种：<b>未上传</b>（截止时点前没有收到任何批次）、<b>全部被上传条件过滤</b>（收到了，但按你的上传条件规则没有一行留下）、<b>整批被拒</b>（批次没有通过接入校验）、<b>超过截止时点</b>（数据到达晚于次日 08:00）。原因只有本企业可见，钢厂只看到周期是达标还是未达标。</div>
+      <div class="tip-box small mt12">
+        <b>达标怎么评：</b>按{{ S.cycle }}评定。<b>应报送日为{{ S.dayType }}</b>（{{ S.dayNote }}；日历由平台维护）。周期内按时完成报送的天数不少于应报送天数的 {{ S.rate }}%，且最长连续缺报不超过 {{ S.gap }} 个应报送日；应报送日不足 {{ S.minDays }} 天的周期为“不适用”。<b>当日有实际数据才算报送</b>：{{ S.cutoff }}前平台收到该业务日期至少一行入库的销售数据，或一份非空的库存快照，两者有其一即可（业务方已确认，库存快照不是必要条件）。当天没有销售的，照常上传库存快照就算按时；平台不提供零申报，对账申报、空批次不算。评定不看条数、吨位、数量和金额。暂停期间按未报送计入评定。<a href="daily-summary.html">各种情形怎么算 ›</a>
+      </div>
+      <div class="row between mt8">
+        <span class="small muted">{{ cyc === S.last ? '本周期结果：达标（应报送 ' + cycStat.due + ' 天，按时 ' + cycStat.ok + ' 天，其中只报库存快照 ' + cycStat.zero + ' 天；缺报 ' + cycStat.miss + ' 天）' : '截至今日应报送 ' + curStat.due + ' 天，按时 ' + curStat.ok + ' 天、缺报 ' + curStat.miss + ' 天；全月 ' + curStat.all + ' 个应报送日，按当前进度本周期可达标' }}</span>
+        <el-button link type="primary" @click="$demo('异议已提交，平台复核后更正并留痕；复核只核对报送行为记录')">对已发布的结果有异议</el-button>
+      </div>
+      </template>
+    </div>
+  </div>
+
+  <!-- 无库存经营申报（N-54；DN-120 至 DN-126） -->
+  <div class="card" id="nostock" style="margin-top:16px">
+    <div class="card-title"><span>无库存经营申报<small>适用于常年不落库的企业；由企业管理员申报，平台核实后生效</small></span>
+      <span class="right"><span class="small muted" style="margin-right:8px">当前状态</span><el-tag :type="nsOn ? 'success' : nsWait ? 'warning' : ns.rejected ? 'danger' : 'info'" effect="plain">{{ nsLabel }}</el-tag></span></div>
+    <div class="grid c-3-2" style="margin-bottom:0">
+      <div>
+        <div class="small" style="line-height:1.9;color:#4a5568">
+          <b style="color:#1f2d3d">适用对象：</b>常年不落库，货物由钢厂或上游直接发给客户，本企业不持有现货库存。<b>有库存但暂时不想报送的企业不适用。</b>
+          平台不提供零申报，没有实际数据的日子计为缺报；这类企业没有库存快照可报，达标结果反映的是有销售的天数。申报并经平台核实后，<b>不再参加报送达标评定</b>。
+        </div>
+        <table class="plain-table mt8" style="font-size:12.5px">
+          <thead><tr><th style="width:150px">事项</th><th>未标记</th><th>标记生效期间</th></tr></thead>
+          <tbody>
+            <tr><td>报送达标</td><td>按周期评定，达标或未达标</td><td>不参加评定，显示“不适用（无库存经营）”</td></tr>
+            <tr><td>带动钢厂看到的</td><td>接入状态、各周期达标或未达标</td><td>接入状态照常；达标一栏为“不适用”，<b>并看到“无库存经营”标签</b></td></tr>
+            <tr><td>钢厂的汇总达标率</td><td>计入</td><td>不计入</td></tr>
+            <tr><td>上传</td><td>销售数据、库存快照</td><td>销售数据仍应照常上传；连续 {{ NS.breakDays }} 个自然日没有任何数据，钢厂端显示“报送中断”<span class="ex-tag" style="margin-left:4px">示例参数</span></td></tr>
+            <tr><td>名录、数据池、聚合数据</td><td colspan="2">不受影响。标签只对与本企业有带动关系的钢厂显示，不进企业名录，不作为聚合数据的维度、筛选条件或分组</td></tr>
+            <tr><td>带动奖励</td><td>达标周期计入有效带动户的认定</td><td>标记生效的周期没有达标结果；一期这类企业不计入钢厂的有效带动户</td></tr>
+          </tbody>
+        </table>
+
+        <!-- 状态区 -->
+        <div v-if="nsOn" class="ns-state on">
+          <div class="row between"><b>已生效</b><span class="small muted">演示状态：按“2026-11-10 申报、2026-11-13 核实通过”展示</span></div>
+          <div class="kvs"><span>生效的达标周期 <b>{{ S.cur }} 起</b></span><span>到期日 <b>2027-10-31</b></span><span>告知文案 <b>{{ NS.noticeVer }}</b>，陈海峰 2026-11-10 确认</span></div>
+          <div class="tip-box orange small" style="margin:8px 0 0"><b>已收到库存数据，与无库存经营的申报不一致，平台将复核。</b>{{ S.cur }} 周期内本企业有库存快照到达（示例企业苏州恒运每天上传库存快照，这里用来演示这条提示）。开始持有库存的，应及时撤销标记并照常上传库存快照。</div>
+          <div class="row mt8" style="gap:10px;flex-wrap:wrap">
+            <el-button @click="nsRevoke">撤销标记</el-button>
+            <el-tooltip placement="top" content="到期前 30 天起可以确认；逾期未确认的标记到期，自下一个达标周期起恢复评定"><span><el-button disabled>确认情况未变（2027-10-01 起可操作）</el-button></span></el-tooltip>
+            <span class="small muted">撤销自下一个达标周期起恢复评定；主动撤销后再次申报须间隔 {{ NS.reapplyGap }} 个周期。<span class="ex-tag" style="margin-left:4px">示例参数</span></span>
+          </div>
+        </div>
+        <div v-else-if="nsWait" class="ns-state wait">
+          <div class="row between"><b>待核实</b><span class="small muted">{{ M_TODAY }} 提交</span></div>
+          <div class="kvs"><span>预计核实完成 <b>2026-12-01 前</b>（{{ NS.sla }} 个工作日）</span><span>核实通过后 <b>自 2026-12 周期起</b>生效</span></div>
+          <div class="small muted" style="margin-top:4px;line-height:1.8">本周期的申报截止日是 2026-11-{{ NS.deadlineDay }}，本次申报晚于截止日，所以自下一个周期起生效。<b>待核实期间达标照常评定</b>，钢厂看不到本企业提交过申报。因平台超过核实时限而错过周期的，可按达标异议申请更正。</div>
+          <div class="row mt8" style="gap:10px;flex-wrap:wrap">
+            <el-button @click="nsWithdraw">撤回申报</el-button>
+            <el-button link type="primary" @click="nsPass">演示：切换为“已生效”</el-button>
+            <el-button link type="danger" @click="nsReject">演示：平台驳回</el-button>
+          </div>
+        </div>
+        <div v-else class="row mt12" style="gap:10px;flex-wrap:wrap">
+          <el-button type="primary" @click="nsOpen">{{ ns.rejected ? '补充后重新提交' : '申报无库存经营' }}</el-button>
+          <span v-if="ns.rejected" class="small" style="color:#b83a3e">已驳回：{{ ns.rejected }}</span>
+          <span v-else class="small muted">示例企业苏州恒运每天都上传库存快照，不属于适用对象；这里的入口用于演示申报流程。</span>
+        </div>
+      </div>
+      <div>
+        <div class="peek">
+          <div class="hd"><el-icon style="vertical-align:-2px;margin-right:4px"><View /></el-icon>标记生效后，有带动关系的钢厂看到的本企业（示意）</div>
+          <table class="plain-table" style="font-size:12px">
+            <thead><tr><th>协议户</th><th>接入状态</th><th class="c">生效前的周期</th><th class="c">生效后的周期</th></tr></thead>
+            <tbody><tr>
+              <td>苏州恒运钢铁贸易有限公司<el-tag size="small" type="info" effect="plain" style="margin-left:6px">无库存经营</el-tag></td>
+              <td><el-tag size="small" type="success" effect="plain">已接入</el-tag></td>
+              <td class="c"><span class="grade g">达标</span> 或 <span class="grade r">未达标</span></td><td class="c"><span class="grade">不适用</span><div class="small muted">无库存经营</div></td>
+            </tr></tbody>
+          </table>
+          <div class="small muted" style="margin-top:6px">标签随达标周期结果在发布日更新。钢厂看不到申报时间、申报内容和材料、核实过程；待核实、被驳回它都看不到，撤销或到期后它只看到标签消失、恢复评定，看不到原因。</div>
+        </div>
+        <table class="plain-table mt12" style="font-size:12px">
+          <thead><tr><th style="width:74px">状态</th><th>含义</th><th style="width:96px">钢厂是否可见</th></tr></thead>
+          <tbody>
+            <tr><td>未申报</td><td>默认状态，照常评定</td><td>—</td></tr>
+            <tr><td>待核实</td><td>已提交，平台尚未作出结论；照常评定</td><td>不可见</td></tr>
+            <tr><td>已生效</td><td>核实通过；显示生效的达标周期和到期日</td><td>可见</td></tr>
+            <tr><td>已驳回</td><td>核实未通过，显示理由，可补充后重新提交</td><td>不可见</td></tr>
+            <tr><td>已撤销</td><td>企业主动撤销，或平台依据复核结论撤销</td><td rowspan="2">只看到标签消失</td></tr>
+            <tr><td>已到期</td><td>到期未确认，自下一个周期起恢复评定</td></tr>
+          </tbody>
+        </table>
+        <div class="small muted mt8" style="line-height:1.8">状态变化都会通知企业管理员。核实依据是平台内的汇总信号（登记的仓库数、近 {{ NS.months }} 个月收到库存快照的天数等）和你提交的说明，平台核实期间不向钢厂征询。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 无库存经营申报：三步 -->
+  <el-dialog v-model="ns.dlg" title="申报无库存经营" width="760px" top="4vh">
+    <el-steps :active="ns.step" simple style="margin-bottom:14px"><el-step title="适用对象" /><el-step title="告知事项确认" /><el-step title="申报内容" /></el-steps>
+
+    <template v-if="ns.step === 0">
+      <div class="bound">
+        <div class="box yes"><h4><el-icon><CircleCheck /></el-icon>适用</h4><ul>
+          <li><el-icon><CircleCheck /></el-icon><span>常年不落库：货物由钢厂或上游直接发给客户，本企业不持有现货库存</span></li>
+          <li><el-icon><CircleCheck /></el-icon><span>以厂家直发、订单或期货订货、代理撮合为主</span></li>
+          <li><el-icon><CircleCheck /></el-icon><span>在途货物不算库存</span></li>
+        </ul></div>
+        <div class="box no"><h4><el-icon><CircleClose /></el-icon>不适用</h4><ul>
+          <li><el-icon><CircleClose /></el-icon><span>有库存但暂时不想报送</span></li>
+          <li><el-icon><CircleClose /></el-icon><span>偶尔落库：应照常上传库存快照</span></li>
+          <li><el-icon><CircleClose /></el-icon><span>货放在第三方监管仓或寄售：算库存</span></li>
+          <li><el-icon><CircleClose /></el-icon><span>连续不落库未满 {{ NS.months }} 个月</span></li>
+        </ul></div>
+      </div>
+      <div class="small muted mt8">认定标准为示例，待业务方确定。<span class="ex-tag" style="margin-left:4px">N-57 待定</span></div>
+      <div class="tip-box small mt12" style="margin-bottom:0">申报是自愿的。不申报的企业照常按“应报送日里有实际数据的天数”评定：库存快照或销售数据任一即可，按示例参数每个周期容许缺报约两成的应报送日。</div>
+    </template>
+
+    <template v-else-if="ns.step === 1">
+      <div class="small" style="margin-bottom:6px"><b>申报“无库存经营”之前，请确认以下事项：</b><span class="muted">　逐项勾选，共 {{ NS.notice.length }} 项</span></div>
+      <div class="ack ns-notice">
+        <el-checkbox v-for="(t, i) in notice" :key="i" v-model="ns.acks[i]"><span><b class="num">{{ i + 1 }}.</b> {{ t }}</span></el-checkbox>
+      </div>
+      <div class="small muted mt8">告知文案版本 {{ NS.noticeVer }}，上线前须法务审定。平台记录文案版本、确认人和确认时间，并写入审计日志。</div>
+    </template>
+
+    <template v-else>
+      <el-form label-width="150px" size="default">
+        <el-form-item label="经营模式（可多选）">
+          <el-checkbox-group v-model="ns.modes"><el-checkbox v-for="m in ['厂家直发', '订单或期货订货', '代理撮合', '其他']" :key="m" :value="m">{{ m }}</el-checkbox></el-checkbox-group>
+        </el-form-item>
+        <el-form-item label="自有或租用的仓库">
+          <el-radio-group v-model="ns.wh"><el-radio :value="0">没有</el-radio><el-radio :value="1">有</el-radio></el-radio-group>
+          <span v-if="ns.wh" class="small" style="color:#b25e00;margin-left:8px">有仓库的请在补充说明里写明用途；用于存放钢材的不适用</span>
+        </el-form-item>
+        <el-form-item label="持续不落库的起始时间"><el-date-picker v-model="ns.startAt" type="month" value-format="YYYY-MM" placeholder="选择月份" style="width:160px" /></el-form-item>
+        <el-form-item label="补充说明"><el-input v-model="ns.note" type="textarea" :rows="2" maxlength="200" show-word-limit placeholder="选填。例如：货物由钢厂直发工地，本企业不设仓库" /></el-form-item>
+        <el-form-item label="佐证材料">
+          <el-button size="small" @click="ns.files.push('直发合同或发货单样本 ' + (ns.files.length + 1) + '.pdf')"><el-icon style="margin-right:4px"><Upload /></el-icon>上传</el-button>
+          <span class="small muted" style="margin-left:8px">选填；金额与数量可以遮盖</span>
+          <div v-if="ns.files.length" class="small" style="width:100%;margin-top:4px"><el-tag v-for="(f, i) in ns.files" :key="f" size="small" closable style="margin-right:6px" @close="ns.files.splice(i, 1)">{{ f }}</el-tag></div>
+        </el-form-item>
+        <el-form-item label="承诺"><el-checkbox v-model="ns.promise">情况变化后（例如开始持有库存），在规定期限内更新或撤销本申报</el-checkbox></el-form-item>
+      </el-form>
+      <div class="small muted">申报人：陈海峰（企业管理员）。申报内容和材料只对本企业和平台运营可见，不向钢厂提供。提交后平台在 {{ NS.sla }} 个工作日内核实。</div>
+    </template>
+
+    <template #footer>
+      <el-button @click="ns.dlg = false">取消</el-button>
+      <el-button v-if="ns.step > 0" @click="ns.step--">上一步</el-button>
+      <el-button v-if="ns.step === 0" type="primary" @click="ns.step = 1">本企业属于适用对象，下一步</el-button>
+      <el-button v-else-if="ns.step === 1" type="primary" :disabled="!ackAll" @click="ns.step = 2">{{ ackAll ? '已全部确认，下一步' : '还有 ' + ackLeft + ' 项未确认' }}</el-button>
+      <el-button v-else type="primary" :disabled="!(ns.modes.length && ns.startAt && ns.promise)" @click="nsSubmit">提交申报</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 邀请落地页 / 确认 -->
+  <el-dialog v-model="land.show" :title="landPending ? '带动关系确认请求' : '邀请落地页预览'" width="640px" top="5vh">
+    <div class="land">
+      <div class="top"><b>{{ land.mill }}</b> 邀请贵司加入货袋子钢贸上下游数据平台<div class="small" style="opacity:.9;margin-top:4px">确认前请看清下面四件事。这些内容与钢厂端的说明一致。</div></div>
+      <div class="body">
+        <div class="item"><span class="no">1</span><div><b>谁邀请。</b>{{ land.mill }}，通过协议户名单向贵司发出邀请。</div></div>
+        <div class="item"><span class="no">2</span><div><b>钢厂能看到什么。</b>贵司是否已接入，以及报送中断、已暂停、已退出（接入前为未接入或接入中；解除后为已解除关联）；每个达标周期是达标还是未达标（不满评定条件的周期为“不适用”），以及连续达标的周期数；把贵司选入数据池后，包含贵司在内的聚合数据。贵司如自行申报“无库存经营”并经平台核实生效，钢厂还会看到这个标签；不申报就没有。</div></div>
+        <div class="item"><span class="no">3</span><div><b>钢厂看不到什么。</b>贵司单家的销量、库存、价格和金额；条数、吨位、数量、批次数、品类数、仓库数；上传时间、日级报送情况、缺报日期；是否设置了上传条件及其内容；质量评分明细。</div></div>
+        <div class="item"><span class="no">4</span><div><b>贵司保留的权利。</b>自设上传条件；选择上架方式；随时暂停、退出；随时解除带动关系。确认带动关系不等于数据授权，上传数据前另行签署《数据授权协议》。</div></div>
+      </div>
+    </div>
+    <div class="tip-box small mt12" style="margin-bottom:0"><b>本企业常年不落库？</b>货物由钢厂或上游直接发给客户、本企业不持有现货库存的，可以申报“无库存经营”：经平台核实后不参加报送达标评定，钢厂会看到“无库存经营”标签和“不适用”。有库存但暂时不想报送的不适用。<a href="javascript:;" @click="land.show = false; nsOpen()">了解并申报 ›</a></div>
+    <el-checkbox v-if="landPending" v-model="land.agree" class="mt12">我已阅读以上内容，同意与 {{ land.mill }} 建立带动关系</el-checkbox>
+    <div v-else class="small muted mt12">这是未入驻企业打开专属邀请链接时看到的页面（示意）。确认项默认不勾选；不确认也可以先注册了解平台。</div>
+    <template #footer>
+      <template v-if="landPending">
+        <el-button @click="land.show = false">暂不确认，先了解平台</el-button>
+        <el-button type="primary" :disabled="!land.agree" @click="confirmRel">确认带动关系</el-button>
+      </template>
+      <el-button v-else type="primary" @click="land.show = false">关闭</el-button>
+    </template>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const H = M.REF.hy, S = M.REF.std;
+  /* 本企业（苏州恒运）逐日报送情况，只有本企业可见。2026-10：国庆假期不是应报送日，10 日（调休上班的周六）没有销售、只报了库存快照（算按时），其余按时；2026-11：16 日缺报（原因：超过截止时点；总部 ERP 停机，次日 10:42 补传），其余按时，24 日今日销售数据已收到、已计为报送。与“每日上传汇总”一致 */
+  const calOf = (ym) => {
+    const y = +ym.slice(0, 4), m = +ym.slice(5), n = new Date(y, m, 0).getDate(), lead = (new Date(y, m - 1, 1).getDay() + 6) % 7, out = [];
+    for (let i = 0; i < lead; i++) out.push({ k: 'na' });
+    for (let d = 1; d <= n; d++) {
+      let k = 'ok', t = '按时';
+      const due = S.isDue(ym + '-' + (d < 10 ? '0' + d : d));
+      if (ym === '2026-10' && d === 10) { k = 'zero'; t = '仅库存'; }
+      let why = '', reason = '', detail = '';
+      if (ym === '2026-11' && d === 16) { k = 'miss'; t = '缺报'; why = '超时'; reason = '超过截止时点'; detail = '总部 ERP 停机，销售数据和库存快照 2026-11-17 10:42 才到达，晚于截止时点 2026-11-17 08:00。补传的数据已照常入库，当天仍计为缺报'; }
+      if (ym === '2026-11' && d === 24) { t = '今日已报'; }
+      if (!due) { k = 'off'; t = S.offDays.indexOf(ym + '-' + (d < 10 ? '0' + d : d)) >= 0 ? '节假日' : '不计'; why = ''; }
+      if (ym === '2026-11' && d > 24) { k = 'na'; t = ''; }
+      out.push({ n: d, k, t, why, reason, detail });
+    }
+    return out;
+  };
+  STP.mount({
+    data() {
+      return {
+        H, S, NS: M.REF.noStock, M_TODAY: M.TODAY, cyc: S.cur, land: { show: false, mill: '', agree: false },
+        ns: { dlg: false, step: 0, acks: [], modes: [], wh: 0, startAt: '', note: '', files: [], promise: false, rejected: '' },
+        rels: [
+          { mill: '金江钢铁股份有限公司', color: '#d46b08', st: '待确认', at: '2026-11-21', way: '协议户名单导入' },
+          { mill: H.inviter, color: '#409eff', st: '已确认', at: H.invitedAt, way: '协议户名单导入，批次 ' + H.batch, cfAt: H.confirmedAt, cfBy: '陈海峰（企业管理员）', note: '2025-09-18 完成企业认证并签署《数据授权协议》　|　' + H.firstReport + ' 首次有效报送，状态变为“已接入”' },
+        ],
+        canSee: [
+          '本企业是否已接入，以及报送中断、已暂停、已退出（接入前为未接入或接入中；解除后为已解除关联）',
+          '每个达标周期是达标还是未达标（不满评定条件的周期为“不适用”），以及连续达标的周期数',
+          '本企业是否带“无库存经营”标签：只在本企业自己申报并经平台核实生效之后才有，随周期结果在发布日更新',
+          '如果本企业对它上架并被它选入数据池：包含本企业在内的聚合数据（数据池不少于 ' + STP.PV.nMin + ' 家、每个格子不少于 ' + STP.PV.k + ' 家）',
+        ],
+        cannotSee: [
+          '单家的销量、库存、价格和金额',
+          '上传的条数、吨位、数量、批次数、品类数、仓库数',
+          '上传时间、哪一天报了、哪一天没报、缺报的原因、报的是销售还是库存、及时率数值和本周期进度',
+          '是否设置了上传条件、规则内容、被过滤的比例，以及质量评分明细',
+          '本企业是否匿名上架、匿名编号是哪一个，还有哪些钢厂与你有带动或选购关系',
+          '本企业邀请了哪些下级经销商（它只看到全厂汇总户数）',
+        ],
+      };
+    },
+    computed: {
+      confirmedN() { return this.rels.filter((r) => r.st === '已确认').length; },
+      confirmedNames() { return this.rels.filter((r) => r.st === '已确认').map((r) => r.mill).join('、') || '暂无'; },
+      waitN() { return this.rels.filter((r) => r.st === '待确认').length; },
+      landPending() { const r = this.rels.find((x) => x.mill === this.land.mill); return !!r && r.st === '待确认'; },
+      accessSeen() { return '已接入'; },
+      nsOn() { return this.$state.ns === 'on'; },
+      nsWait() { return this.$state.ns === 'wait'; },
+      nsLabel() { return this.nsOn ? '已生效' : this.nsWait ? '待核实' : this.ns.rejected ? '已驳回' : '未申报'; },
+      notice() { return this.NS.notice.map((t) => t.replace('{N}', this.confirmedN)); },
+      ackLeft() { return this.NS.notice.length - this.ns.acks.filter(Boolean).length; },
+      ackAll() { return this.ackLeft === 0; },
+      days() { return calOf(this.cyc); },
+      missDays() { return this.days.filter((x) => x.k === 'miss'); },
+      cycStat() { const d = this.days.filter((x) => x.n && ['ok', 'zero', 'miss'].indexOf(x.k) >= 0); return { ok: d.filter((x) => x.k !== 'miss').length, zero: d.filter((x) => x.k === 'zero').length, miss: d.filter((x) => x.k === 'miss').length, due: d.length }; },
+      curStat() {
+        const d = calOf(S.cur).filter((x) => x.n && ['ok', 'zero', 'miss'].indexOf(x.k) >= 0);
+        let all = 0; for (let i = 1; i <= 30; i++) if (S.isDue(S.cur + '-' + (i < 10 ? '0' + i : i))) all++;
+        return { ok: d.filter((x) => x.k !== 'miss').length, miss: d.filter((x) => x.k === 'miss').length, due: d.length, all };
+      },
+    },
+    methods: {
+      nsOpen() { Object.assign(this.ns, { dlg: true, step: 0, acks: this.NS.notice.map(() => false), promise: false }); },
+      nsSubmit() { this.ns.dlg = false; this.ns.rejected = ''; this.$setState('ns', 'wait'); this.$demo('申报已提交。平台在 ' + this.NS.sla + ' 个工作日内核实；待核实期间达标照常评定'); },
+      nsWithdraw() { this.$setState('ns', 'off'); this.$demo('申报已撤回'); },
+      nsPass() { this.$setState('ns', 'on'); this.$demo('（演示）已切换为“已生效”：本页、每日上传汇总按标记期间的样子展示'); },
+      nsReject() { this.$setState('ns', 'off'); this.ns.rejected = '近 ' + this.NS.months + ' 个月有多天收到库存快照，与申报不一致。可补充说明后重新提交'; this.$demo('（演示）平台已驳回，理由已通知企业管理员'); },
+      nsRevoke() {
+        ElementPlus.ElMessageBox.confirm('撤销后，自下一个达标周期起恢复评定；带动钢厂只看到标签消失，看不到原因。已发布周期的结果不变。主动撤销后再次申报须间隔 ' + this.NS.reapplyGap + ' 个周期。', '撤销无库存经营标记', { confirmButtonText: '确认撤销', cancelButtonText: '取消', type: 'warning' })
+          .then(() => { this.$setState('ns', 'off'); this.$demo('已撤销，自下一个达标周期起恢复评定'); }).catch(() => {});
+      },
+      confirmRel() {
+        const r = this.rels.find((x) => x.mill === this.land.mill);
+        Object.assign(r, { st: '已确认', cfAt: M.TODAY, cfBy: '陈海峰（企业管理员）', note: '带动关系在 ' + S.cur + ' 周期中途成立，本周期对它为“不适用”；此前周期的结果不向它展示' });
+        this.land.show = false; this.$demo('已确认。' + r.mill + ' 现在可以看到本企业的接入状态，以及此后各达标周期的结果');
+      },
+      reject(r) {
+        ElementPlus.ElMessageBox.confirm('拒绝后，' + r.mill + ' 只会看到“已拒绝”，并且不能再向本企业发送邀请。拒绝不影响本企业上传、上架和行业对标权益。', '拒绝带动关系', { confirmButtonText: '确认拒绝', cancelButtonText: '取消', type: 'warning' })
+          .then(() => { r.st = '已拒绝'; r.endAt = M.TODAY; this.$demo('已拒绝'); }).catch(() => {});
+      },
+      unlink(r) {
+        ElementPlus.ElMessageBox.confirm('解除后，' + r.mill + ' 只会看到“已解除关联”，不再看到本企业此后的接入状态和达标结果；已发布的历史周期结果的保留期限待业务方确定。解除不影响上传、上架和行业对标权益；代理协议中的约定由协议双方处理。', '解除带动关系', { confirmButtonText: '确认解除', cancelButtonText: '取消', type: 'warning' })
+          .then(() => { r.st = '已解除'; r.endAt = M.TODAY; this.$demo('已解除带动关系，并已通知对方'); }).catch(() => {});
+      },
+    },
+  });
+})();
+</script>
+</body>
+</html>

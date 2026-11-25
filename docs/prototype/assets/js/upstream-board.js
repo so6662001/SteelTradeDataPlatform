@@ -13,7 +13,7 @@
         K, scale: s, poolTotal: this.demo ? 120 : M.POOL.total,
         brandName: this.demo ? '示例品牌' : M.BRAND.name,
         colors: chart.COLORS, metric: 'sales', mapLevel: 'china', mapProv: null, mapReady: 0,
-        catPath: [], grain: '日', showYoy: true, regionMode: '仓库所在地',
+        catPath: [], grain: '日', showYoy: true, regionMode: '仓库所在地', dimLevel: '', dimMetric: 'sales', bandVer: M.BAND_VER,
         metricOpts: [{ k: 'sales', t: '销量' }, { k: 'stock', t: '库存' }, { k: 'days', t: '可销天数' }],
       };
     },
@@ -90,7 +90,19 @@
       catCur() { return this.catPath.length ? M.categories.find((x) => x.name === this.catPath[0]) : null; },
       /* 第三层随该品类的标准化深度开放：L4 及以上到规格段，L3 到材质，L2 不再下钻 */
       catThird() { const c = this.catCur; return !c ? null : c.depth >= 'L4' ? '规格段' : c.depth === 'L3' ? '材质' : null; },
-      catLevelName() { return this.catPath.length < 2 ? ['大类', '品名'][this.catPath.length] : this.catThird; },
+      catLevelName() { return this.catPath.length < 2 ? ['大类', '品名'][this.catPath.length] : this.catDim ? this.catDim.d.levels[0].t : this.catThird; },
+      /* 品名以下：标准化深度到 L4 的大类按统计维度模板展示（管材为规格加壁厚，板材为厚度加宽度，建材为规格，型材为规格加公斤段或负差段，按品名固定其一），
+         披露与上卷结果与多维查询同源 */
+      catDim() {
+        if (this.catPath.length !== 2 || this.catThird !== '规格段') return null;
+        const c = this.catCur, p = c.products.find((x) => x.name === this.catPath[1]), k = c.products.indexOf(p);
+        return { d: M.dimsOf(p.name), name: p.name, sales: this.sTreeAll.prods(c)[k], stock: this.tree.prods(c)[k], n: nOf(c.share * p.share, this.poolTotal), stockW: this.tree.leaf(c, p, p.bands, p.bandShare) };
+      },
+      /* 非钢材：按数量统计，每个品名一个数量单位，不合计，也不与钢材的吨位相加 */
+      nsRows() {
+        const s = this.scale;
+        return M.nonSteel[0].products.map((p) => { const k = M.nsKpi(p.name); return { name: k.name, unit: k.unit, n: Math.max(1, Math.round(k.n * (this.demo ? 0.65 : 1))), sales: Math.round(k.sales * s), stock: Math.round(k.stock * s), avg7: Math.round(k.avg7 * s), days: k.days }; });
+      },
       catRows() {
         const K = this.K, total = this.poolTotal;
         let items;
@@ -192,23 +204,36 @@
         if (row.locked) { this.$info('该品类暂不提供此粒度：' + this.catCur.name + '的标准化深度为品名级，暂不开放材质与规格段下钻'); return; }
         if (row.child && this.catPath.length < 2) this.catPath = this.catPath.concat([row.name]);
       },
-      depthText(d) { return d >= 'L4' ? '可到规格段' : d === 'L3' ? '可到材质' : '仅到品名'; },
-      catTo(i) { this.catPath = this.catPath.slice(0, i); },
+      depthText(d) { return d >= 'L4' ? '可到统计维度' : d === 'L3' ? '可到材质' : '仅到品名'; },
+      catTo(i) { this.catPath = this.catPath.slice(0, i); this.dimLevel = ''; },
       rowClass({ row }) { return row.merged ? 'merged-row' : ''; },
     },
     template: `
 <div>
   <sample-note :pool="poolTotal" :region="regionMode" :demo="demo"></sample-note>
 
+  <div class="grp-head"><span class="unit-pill">钢材 · 吨</span><span>以下指标卡、地区分布、趋势、品类结构与本厂品牌视图，都是按吨位统计的钢材；非钢材按数量另列一组，两者不合计。</span></div>
   <div class="grid c5">
     <stat-card label="昨日销量" :value="K.sales" unit="吨" :mom="K.salesMom" :yoy="K.salesYoy" mom-label="较上周同日" icon="Sell" tip="销售出库重量 − 销售退货重量，按出库日期归属；环比与上周同一星期的那天比较，避免周末成交偏少造成的波动"></stat-card>
     <stat-card label="昨日日末库存" :value="K.stock" unit="吨" :mom="K.stockMom" :yoy="K.stockYoy" mom-label="日环比" icon="Box" tip="货权属于上传企业的账面实物库存，日末全量快照"></stat-card>
     <stat-card label="近 7 日日均销量" :value="K.avg7" unit="吨/日" :mom="K.avg7Mom" :yoy="K.avg7Yoy" mom-label="周环比" icon="TrendCharts"></stat-card>
-    <stat-card label="库存可销天数" :value="K.days" :d="1" unit="天" icon="Timer" tip="期末库存量 ÷ 近 7 日日均销量"><span>较上周 <b :class="K.daysMom < 0 ? 'down' : 'up'">{{ (K.daysMom > 0 ? '+' : '') + K.daysMom }} 天</b></span><span>较上年 <b :class="K.daysYoy < 0 ? 'down' : 'up'">{{ (K.daysYoy > 0 ? '+' : '') + K.daysYoy }} 天</b></span></stat-card>
+    <stat-card label="库存可销天数" :value="K.days" :d="1" unit="天" icon="Timer" tip="期末库存量 ÷ 近 7 日日均销量。销量含不落库企业的直发销量；平台不提供剔除这类企业或只含这类企业的口径"><span>较上周 <b :class="K.daysMom < 0 ? 'down' : 'up'">{{ (K.daysMom > 0 ? '+' : '') + K.daysMom }} 天</b></span><span>较上年 <b :class="K.daysYoy < 0 ? 'down' : 'up'">{{ (K.daysYoy > 0 ? '+' : '') + K.daysYoy }} 天</b></span></stat-card>
     <stat-card label="数据池企业数" :value="poolTotal" unit="家" icon="OfficeBuilding" tip="当前生效的已购下游企业数，是全部聚合计算的范围">
       <template v-if="!demo"><span>有效 <b>183</b></span><span>冻结 <b style="color:#f0a020">3</b></span><a href="pool.html">查看名单</a></template>
       <template v-else><span>模拟样本企业</span></template>
     </stat-card>
+  </div>
+
+  <div class="card">
+    <div class="card-title">
+      <span><span class="unit-pill ns" style="margin-right:8px">非钢材 · 数量</span>非钢材品类<small>昨日销量与日末库存 · 按数量统计，各品名使用自己的数量单位</small></span>
+      <a v-if="!demo" href="query.html" style="font-weight:400;font-size:13px">到多维查询按规格查看 ›</a>
+    </div>
+    <table class="plain-table">
+      <thead><tr><th>品名</th><th class="c">数量单位</th><th class="r">昨日销量</th><th class="r">昨日日末库存</th><th class="r">近 7 日日均销量</th><th class="r">库存可销天数</th><th class="c">贡献企业数</th></tr></thead>
+      <tbody><tr v-for="r in nsRows" :key="r.name"><td><b>{{ r.name }}</b></td><td class="c"><span class="unit-pill ns">{{ r.unit }}</span></td><td class="r"><span class="num">{{ $fmt(r.sales) }}</span></td><td class="r"><span class="num">{{ $fmt(r.stock) }}</span></td><td class="r"><span class="num">{{ $fmt(r.avg7) }}</span></td><td class="r"><span class="num">{{ r.days }}</span> 天</td><td class="c"><contrib-tag :n="r.n" /></td></tr></tbody>
+    </table>
+    <div class="small muted mt8">不同数量单位之间不相加，所以这里没有合计行，也没有占比；数量不换算成吨位。非钢材暂不提供价格指标，地区最细到省。非钢材的范围与各品名的数量单位由业务方确定，此处为示例。</div>
   </div>
 
   <div class="grid" style="grid-template-columns:minmax(0,11fr) minmax(0,10fr)">
@@ -268,7 +293,17 @@
           <el-breadcrumb-item v-for="(c,i) in catPath" :key="c"><a href="javascript:;" @click="catTo(i+1)">{{ c }}</a></el-breadcrumb-item>
         </el-breadcrumb>
       </div>
-      <div class="grid" style="grid-template-columns: 170px minmax(0,1fr); margin-bottom:0">
+      <div v-if="catDim">
+        <div class="row small" style="gap:10px;margin-bottom:8px;flex-wrap:wrap">
+          <span class="dim-chip" style="margin:0">{{ catDim.d.tpl.name }}模板</span>
+          <span>层级 <el-radio-group v-model="dimLevel" size="small"><el-radio-button v-for="l in catDim.d.levels" :key="l.k" :value="l.k" :label="l.t" /></el-radio-group></span>
+          <el-radio-group v-model="dimMetric" size="small"><el-radio-button label="销量" value="sales" /><el-radio-button label="库存" value="stock" /></el-radio-group>
+          <span v-if="catDim.d.tplKey==='型材'" class="muted">{{ catDim.name }}的第二维度固定为{{ catDim.d.d2.segName }}（按品名配置，不能切换）</span>
+          <span class="muted">分段方案 {{ bandVer.ver }}（示例参数）</span>
+        </div>
+        <dim-table compact :name="catDim.name" :total="dimMetric==='stock' ? catDim.stock : catDim.sales" :n="catDim.n" :seg-w="dimMetric==='stock' ? catDim.stockW : undefined" :metric="dimMetric==='stock' ? '日末库存' : '昨日销量'" :level="dimLevel || catDim.d.levels[0].k"></dim-table>
+      </div>
+      <div v-else class="grid" style="grid-template-columns: 170px minmax(0,1fr); margin-bottom:0">
         <ve-chart :option="catOption" height="290px"></ve-chart>
         <el-table :data="catRows" size="small" height="290" @row-click="drillCat">
           <el-table-column :label="catLevelName" min-width="92">
@@ -287,7 +322,7 @@
           <el-table-column label="企业数" width="94" align="center"><template #default="{row}"><contrib-tag :n="row.n" /></template></el-table-column>
         </el-table>
       </div>
-      <div class="small muted mt8">优特钢、不锈钢样本较稀疏，最细披露粒度为“地区到省、时间到旬”；看板为日粒度，这两个大类合并为“其他”一行，分品类数据请到<a v-if="!demo" href="query.html">多维查询</a><template v-else>多维查询</template>按旬查看。</div>
+      <div class="small muted mt8">品名以下按该品类的统计维度查看：管材为规格、壁厚段，板材为厚度段、宽度段，建材为规格，型材为规格加公斤段或负差段（按品名固定其一）；冷轧及涂镀的标准化深度到材质，模板维度已采集、暂不披露。优特钢、不锈钢样本较稀疏，最细披露粒度为“地区到省、时间到旬”；看板为日粒度，这两个大类合并为“其他”一行，分品类数据请到<a v-if="!demo" href="query.html">多维查询</a><template v-else>多维查询</template>按旬查看。</div>
     </div>
     <div class="card" v-if="priceOn">
       <div class="card-title"><span>量价速览<small>含税、自提、非暂估 · 加权均价 · 元/吨 · 日粒度（标“旬”的为旬粒度）</small></span><a v-if="!demo" href="price.html" style="font-weight:400;font-size:13px">进入量价视图 ›</a></div>

@@ -110,7 +110,7 @@
               <span class="muted small" style="margin-left:12px">{{ form.type === 'new' ? '新开一个订阅批次，有独立的起止日期' : '费用试算：加购须在下单时指定新增企业，到期日与原订单对齐（2027-03-31）' }}</span>
             </el-form-item>
             <el-form-item label="名额数量">
-              <el-input-number v-model="form.qty" :min="minQty" :max="5000" :step="10" step-strictly style="width:160px" />
+              <el-input-number v-model="form.qty" :min="minQty" :max="5000" :step="form.type === 'add' ? 1 : 10" step-strictly style="width:160px" />
               <span class="quick"><span v-for="q in [50, 100, 200, 500, 1000]" :key="q" :class="{on: form.qty === q}" @click="form.qty = q">{{ $fmt(q) }}</span></span>
               <span class="muted small" style="margin-left:12px">{{ form.type === 'new' ? '最小购买量 ' + minQty + ' 个' : '加购后累计 ' + (200 + form.qty) + ' 个' }}</span>
             </el-form-item>
@@ -127,8 +127,9 @@
               <span class="muted small" style="margin-left:12px">{{ form.type === 'add' ? '计费起止日，共 121 天（含首尾）；计划生效日 2026-12-01 即计费起始日' : '付款核销后，自下一个数据池生效日起算' }}</span>
             </el-form-item>
             <div v-if="form.type === 'add'" class="tip-box blue small" style="margin:12px 0 0">
-              <b>周期内加购的计费规则：</b>从新增企业的生效日起计费，<b>下单日至生效日之间不收费</b>；计费天数为生效日至原订单到期日（含首尾）。新增企业在下一个数据池调整周期生效，生效前为“已分配（待生效）”，不计费、不计提分成，数据不进入聚合。<br>
-              加购须在下单时指定新增企业，本页只做费用试算，请到 <a href="directory.html">企业名录选购</a> 勾选企业后下单：有未分配名额时先用未分配名额（不属于加购，不产生新费用），超出的部分按加购计价。当前名额包 200 个已全部分配（在池 186 个、待生效 14 个），没有未分配名额，新选企业全部按加购计价。<span class="ex-tag">是否允许加购未指定企业的名额待确认（N-26）</span>
+              <b>周期内加购的计费规则：</b>从新增企业的生效日起计费，<b>下单日至生效日之间不收费</b>；计费天数为生效日至原订单到期日（含首尾）。新增企业在下一个数据池调整周期生效，生效前为“已分配（待生效）”，不计费，数据不进入聚合。<br>
+              加购须在下单时指定新增企业，本页只做费用试算，请到 <a href="directory.html">企业名录选购</a> 勾选企业后下单：有未分配名额时先用未分配名额（不属于加购，不产生新费用），超出的部分按加购计价。当前名额包 200 个已全部分配（在池 186 个、待生效 14 个），没有未分配名额，新选企业先用奖励名额抵用（现有 {{ seat.rewardFree }} 个），其余按加购计价。<br>
+              <b>协议户照常占用付费名额，带动奖励可抵用：</b>本厂已接入的协议户中，{{ seat.inPool }} 户已选入数据池（各占 1 个已购名额），还有 {{ seat.listedOut }} 户已对本厂上架、尚未选入。把这 {{ seat.listedOut }} 户全部选入需 {{ seat.listedOut }} 个名额：奖励名额抵用 {{ seat.rewardFree }} 个，其余 <b>{{ seat.needBuy }}</b> 个须加购。<a href="javascript:;" @click="form.qty = seat.needBuy">按 {{ seat.needBuy }} 个试算</a>　<span class="ex-tag">是否允许加购未指定企业的名额待确认（N-26）</span>
             </div>
           </el-form>
         </div>
@@ -337,12 +338,15 @@
     return '人民币' + (s || '零') + '元整';
   };
 
+  /* 从“协议户邀请与接入”带过来的加购试算数量 */
+  let PRESET = null;
+  try { PRESET = JSON.parse(sessionStorage.getItem('stp-qp-preset') || 'null'); sessionStorage.removeItem('stp-qp-preset'); } catch (e) { /* ignore */ }
   STP.mount({
     data() {
       return {
         step: 0, maxStep: 0, base: P.base, yearOff: P.yearOff, quarterOff: P.quarterOff, tiers: P.tiers, orderNo: 'DO-20261124-0061',
         steps: [{ t: '选择名额包', d: '数量、周期、购买类型' }, { t: '确认订单', d: '购买主体、开票、协议' }, { t: '支付', d: '对公转账或在线支付' }, { t: '分配名额', d: '到企业名录分配' }],
-        form: { type: 'new', qty: 100, cycle: 'year' },
+        form: PRESET ? { type: 'add', qty: PRESET.qty, cycle: 'year' } : { type: 'new', qty: 100, cycle: 'year' }, seat: M.REF.dy.seat,
         agree: { a: false, b: false },
         inv: { type: 'special', title: '东岳钢铁集团有限公司', tax: '9137 **** **** **** 6X', bank: '示例银行东岳支行 3700 **** **** 5521', addr: '示例省示例市钢城路 1 号 0000-5550100', mail: 'caiwu@dongyue.example' },
         pay: { way: 'transfer', proof: '', payer: '东岳钢铁集团有限公司', date: '2026-11-24', online: '企业网银', loading: false },
@@ -378,7 +382,7 @@
     },
     methods: {
       offText(o) { return CN_OFF[o] || '原价'; },
-      onType(v) { if (v === 'new' && this.form.qty < P.minQty) this.form.qty = P.minQty; if (v === 'add') { this.form.cycle = 'year'; this.maxStep = 0; } },
+      onType(v) { if (v === 'new') this.form.qty = Math.max(P.minQty, Math.ceil(this.form.qty / 10) * 10); if (v === 'add') { this.form.cycle = 'year'; this.maxStep = 0; } },
       pickTier(t) {
         const q = this.form.type === 'add' ? Math.max(10, t.min - 200) : t.min;
         if (this.form.type === 'add' && t.max < 210) { this.$info('已购 200 个名额，加购后累计名额数不会落在该档'); return; }

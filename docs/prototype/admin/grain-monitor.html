@@ -29,7 +29,7 @@
 <div id="app"></div>
 <script type="text/x-template" id="page">
 <app-layout portal="admin" active="grain-monitor" title="上传粒度监控"
-  desc="下游企业可按“企业 + 来源系统”选择单据行级或按日汇总上传。本页监控粒度分布、切换、粒度冲突拒收，以及日汇总企业的对账差异与批次完整性；只展示状态、计数与比率。">
+  desc="下游企业可按“企业 + 来源系统”选择单据行级或按日汇总上传。本页监控粒度分布、切换、粒度冲突拒收，以及日汇总企业的对账差异与批次完整性；只展示状态、计数与比率。“统计维度格子达标与上卷率”页签监控披露侧各品类维度格子的达标情况。">
   <template #actions>
     <span class="muted small">数据日期 {{ dataDate }}</span>
     <el-button @click="$demo('粒度监控日报已导出（仅含状态、计数与比率）')"><el-icon><Download /></el-icon>导出监控日报</el-button>
@@ -153,6 +153,52 @@
         </el-table>
         <div class="tbl-foot"><span>日汇总按业务日期<b>整批替换</b>：新批次只有收到末片标记（isLast）才生效；不完整的批次整批不生效，沿用上一个完整批次。相关隔离记录见 <a href="quality.html">数据质量监控</a>。</span></div>
       </el-tab-pane>
+
+      <!-- 统计维度的格子达标与上卷 -->
+      <el-tab-pane name="dim">
+        <template #label>统计维度格子达标与上卷率<span class="ex-tag" style="margin-left:6px">V0.4</span></template>
+        <div class="tip-box blue small mb12">这一页看的是<b>披露侧的颗粒度</b>：各品类按统计维度模板（规格、厚度、宽度、壁厚、公斤段或负差段）切出的格子，有多少达到披露阈值（企业数 ≥ {{ $PV.k }}），有多少被自动上卷。它与上面几个页签的“上传粒度”（行级或日汇总）是两回事。数据按一个数据池估算，用于判断分段是否切得太细；<b>监控只有格子计数，不含任何格子的数量</b>。</div>
+        <div class="row between mb12">
+          <div class="row">
+            <span class="small muted">数据池规模</span>
+            <el-radio-group v-model="dimScale" size="small"><el-radio-button v-for="s in dimScales" :key="s.k" :value="s.k">{{ s.t }}</el-radio-button></el-radio-group>
+            <span class="small muted">模板</span>
+            <el-select v-model="dimTpl" size="small" clearable placeholder="全部模板" style="width:150px"><el-option v-for="t in dimSum" :key="t.k" :label="t.k" :value="t.k" /></el-select>
+          </div>
+          <span class="small muted">分段字典 {{ bandVer.ver }}（{{ bandVer.eff }} 生效）<span class="ex-tag" style="margin-left:6px">分段数值为示例参数</span>　<a href="master-category.html">维度模板与分段字典 ›</a></span>
+        </div>
+        <div class="grid c6" style="margin-bottom:12px">
+          <div v-for="t in dimSum" :key="t.k" class="stat" style="cursor:pointer" :style="dimTpl === t.k ? 'border-color:#2f6bff' : ''" @click="dimTpl = dimTpl === t.k ? '' : t.k">
+            <div class="label">{{ t.k }}<span class="unit-pill" :class="{ns: t.ns}" style="margin-left:6px">{{ t.ns ? '数量' : '吨' }}</span></div>
+            <div class="value" :style="{color: t.rate === null ? '#8a94a3' : t.rate >= 85 ? '#18a058' : t.rate >= 65 ? '#d48806' : '#e5484d'}">{{ t.rate === null ? '—' : t.rate + '%' }}</div>
+            <div class="sub"><span>{{ t.cell ? '第二维度格子达标率' : '最细层格子达标率' }}</span></div>
+            <div class="sub"><span>上卷率 <b>{{ t.roll === null ? '—' : t.roll + '%' }}</b></span></div>
+            <div class="sub"><span>维度：{{ t.dims }}</span></div>
+          </div>
+        </div>
+        <el-table :data="dimShown" size="small" border>
+          <el-table-column label="模板" width="92"><template #default="{row}"><b>{{ row.tpl }}</b></template></el-table-column>
+          <el-table-column label="品名" min-width="130"><template #default="{row}">{{ row.name }}<div class="small muted">{{ row.cat }} · {{ row.depth }}</div></template></el-table-column>
+          <el-table-column label="计量" width="70" align="center"><template #default="{row}"><span class="unit-pill" :class="{ns: row.unit !== '吨'}">{{ row.unit }}</span></template></el-table-column>
+          <el-table-column label="最细披露层级" min-width="150"><template #default="{row}"><span v-if="row.open">{{ row.finest }}</span><span v-else class="muted">未达 L4：维度已采集，暂不披露</span></template></el-table-column>
+          <el-table-column label="池内报送企业" width="96" align="right"><template #default="{row}"><span class="num">{{ row.n }}</span> 家</template></el-table-column>
+          <el-table-column label="第一维度格子（达标 / 全部）" width="168">
+            <template #default="{row}"><template v-if="row.open"><span class="num">{{ row.a1Ok }} / {{ row.a1 }}</span><span class="small muted">　{{ row.a1Name }}</span></template><span v-else class="muted">—</span></template>
+          </el-table-column>
+          <el-table-column label="第二维度格子（达标 / 全部）" width="200">
+            <template #default="{row}">
+              <template v-if="row.open && row.s.cellAll"><el-progress :percentage="row.cellRate" :stroke-width="6" :color="row.cellRate >= 85 ? '#18a058' : row.cellRate >= 65 ? '#e6a23c' : '#e5484d'" :format="() => row.s.cellOk + ' / ' + row.s.cellAll" /></template>
+              <span v-else class="muted">{{ row.open ? '模板只有一个维度' : '—' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="去掉第二维度的行" width="130" align="right">
+            <template #default="{row}"><template v-if="row.open && row.s.rowAll"><span class="num" :style="{color: row.rollRate >= 50 ? '#e5484d' : row.rollRate >= 20 ? '#b26a00' : ''}">{{ row.s.rowRolled }} / {{ row.s.rowAll }}</span><div class="small muted">上卷率 {{ row.rollRate }}%</div></template><span v-else class="muted">—</span></template>
+          </el-table-column>
+          <el-table-column label="上卷到规格段" width="106" align="right"><template #default="{row}"><span v-if="row.open && row.s.specAll" class="num">{{ row.s.specAll - row.s.specOk }} / {{ row.s.specAll }}</span><span v-else class="muted">—</span></template></el-table-column>
+          <el-table-column label="判断" min-width="170"><template #default="{row}"><el-tag size="small" :type="row.tagType" effect="light">{{ row.tag }}</el-tag><div class="small muted" style="margin-top:2px">{{ row.note }}</div></template></el-table-column>
+        </el-table>
+        <div class="tbl-foot"><span>上卷路径固定：先去掉第二维度，再从规格到规格段，最后到品名（PV-83）。上卷率 = 被去掉第二维度的行数 ÷ 行数。上卷率持续偏高说明分段过细或池内企业偏少，应合并相邻段而不是降低阈值；调整分段须走分段字典变更（双人复核，带影响评估）。“未分段”（第二维度缺失）占比见 <a href="quality.html">数据质量监控</a>。</span></div>
+      </el-tab-pane>
     </el-tabs>
   </div>
 
@@ -254,6 +300,8 @@
     data() {
       return {
         dataDate: M.DATA_DATE, tab: 'ent',
+        dimScale: 1, dimTpl: '', bandVer: M.BAND_VER,
+        dimScales: [{ k: 0.5, t: '小型池（约 120 家）' }, { k: 1, t: '典型池（236 家）' }, { k: 2, t: '大型池（约 470 家）' }],
         scales: [{ t: '大型', a: 1460, b: 212 }, { t: '中型', a: 6240, b: 2318 }, { t: '小型', a: 6420, b: 4736 }],
         ents, f: { kw: '', grain: '', mixed: false, switched: false },
         histDlg: false, cur: null,
@@ -264,6 +312,33 @@
       };
     },
     computed: {
+      /* 逐品名按统计维度模板估算格子达标与上卷：只取格子计数，不取任何数量 */
+      dimRows() {
+        const sc = this.dimScale, out = [];
+        M.allCats.forEach((c) => c.products.forEach((p) => {
+          const d = M.dimsOf(p.name), tpl = d.steel ? M.CAT_TPL[c.name] : '其他', n = Math.max(3, Math.round(M.dimN(p.name) * sc));
+          const t = M.dimTree(p.name, n * 1000, n, {}), s = t.stat, open = c.depth >= 'L4';
+          const fine = s.specAll > 0, a1 = fine ? s.specAll : s.segAll, a1Ok = fine ? s.specOk : s.segAll - s.segRolled;
+          const cellRate = s.cellAll ? Math.round(s.cellOk / s.cellAll * 100) : null, rollRate = s.rowAll ? Math.round(s.rowRolled / s.rowAll * 100) : null;
+          const r = { tpl: d.steel ? tpl : '其他（非钢材）', ns: !d.steel, name: p.name, cat: c.name, depth: c.depth, unit: d.steel ? '吨' : p.unit, n, s, open, a1, a1Ok, a1Name: fine ? '单规格' : (tpl === '板材' ? '厚度段' : '规格段'), cellRate, rollRate,
+            finest: (d.d2 ? (tpl === '板材' ? '厚度段' : '规格') + ' × ' + d.d2.segName : '规格') + (fine || tpl === '板材' ? '' : '（第一维度到规格段）') };
+          if (!open) Object.assign(r, { tag: '暂不披露', tagType: 'info', note: '达到 L4 后自动回补并开放' });
+          else if (rollRate !== null && rollRate >= 50) Object.assign(r, { tag: '分段偏细', tagType: 'danger', note: '多数行被去掉第二维度，建议合并相邻段' });
+          else if (cellRate !== null && cellRate < 85) Object.assign(r, { tag: '部分格子合并', tagType: 'warning', note: '不足的段并入“其他”或上卷，属正常范围' });
+          else Object.assign(r, { tag: '正常', tagType: 'success', note: s.cellAll ? '格子基本达标' : '单维度模板，按规格或规格段披露' });
+          out.push(r);
+        }));
+        return out;
+      },
+      dimShown() { return this.dimTpl ? this.dimRows.filter((r) => r.tpl === this.dimTpl) : this.dimRows; },
+      dimSum() {
+        const order = ['建材', '板材', '管材', '型材', '其他', '其他（非钢材）'], dimsTxt = { 建材: '规格', 板材: '厚度 + 宽度', 管材: '规格 + 壁厚', 型材: '规格 + 公斤段或负差段（按品名）', 其他: '规格', '其他（非钢材）': '规格' };
+        return order.map((k) => {
+          const rs = this.dimRows.filter((r) => r.tpl === k && r.open), sum = (f) => rs.reduce((a, r) => a + f(r), 0);
+          const cAll = sum((r) => r.s.cellAll), cOk = sum((r) => r.s.cellOk), rAll = sum((r) => r.s.rowAll), rRoll = sum((r) => r.s.rowRolled), a1 = sum((r) => r.a1), a1Ok = sum((r) => r.a1Ok);
+          return { k, ns: k === '其他（非钢材）', dims: dimsTxt[k], cell: cAll > 0, rate: !rs.length ? null : cAll ? Math.round(cOk / cAll * 100) : a1 ? Math.round(a1Ok / a1 * 100) : null, roll: rAll ? Math.round(rRoll / rAll * 100) : rs.length ? 0 : null };
+        });
+      },
       entRows() {
         const f = this.f, kw = f.kw.trim();
         return this.ents.filter((e) => (!kw || e.name.indexOf(kw) >= 0 || e.src.indexOf(kw.toUpperCase()) >= 0 || e.srcName.indexOf(kw) >= 0) && (!f.grain || e.grain === f.grain) && (!f.mixed || e.mixed) && (!f.switched || e.n > 0));

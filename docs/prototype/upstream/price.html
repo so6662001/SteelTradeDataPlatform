@@ -69,9 +69,9 @@
             <el-select v-model="f.material" :disabled="!canMaterial" style="width:120px"><el-option label="全部材质" value="" /><el-option v-for="m in product.materials" :key="m" :label="m" :value="m" /></el-select>
           </el-tooltip>
         </el-form-item>
-        <el-form-item label="规格段">
+        <el-form-item :label="dim.d1.segName">
           <el-tooltip :disabled="canBand" content="该品类暂不提供此粒度（尚未完成规格段标准化）" placement="top">
-            <el-select v-model="f.band" :disabled="!canBand" style="width:140px"><el-option label="全部规格段" value="" /><el-option v-for="b in product.bands" :key="b" :label="b" :value="b" /></el-select>
+            <el-select v-model="f.band" :disabled="!canBand" style="width:140px"><el-option :label="'全部' + dim.d1.segName" value="" /><el-option v-for="b in product.bands" :key="b" :label="b" :value="b" /></el-select>
           </el-tooltip>
         </el-form-item>
         <el-form-item label="地区"><el-cascader v-model="f.region" :options="regionOpts" :props="{checkStrictly:true}" clearable placeholder="全国" style="width:150px" /></el-form-item>
@@ -82,7 +82,8 @@
           </el-radio-group>
         </el-form-item>
       </el-form>
-      <div v-if="coarse" class="small muted" style="margin-top:22px"><el-icon style="vertical-align:-2px"><InfoFilled /></el-icon> {{ product.cat.name }}样本较稀疏，当前最细披露粒度为“地区到省、时间到旬”，日、周粒度与地级市下钻暂不提供。</div>
+      <div class="small muted" style="margin-top:22px"><span class="dim-chip">{{ dim.tpl.name }}模板</span>统计维度：{{ dim.d1.name }}<template v-if="dim.d2"> + {{ dim.tplKey === '型材' ? dim.d2.segName + '（该品名固定）' : dim.d2.name }}（{{ canBand ? '见下方“按' + dim.d2.segName + '的均价”' : '已采集，暂不披露' }}）</template>。价格指标只对按吨位统计的钢材提供，非钢材暂不提供价格。</div>
+      <div v-if="coarse" class="small muted" style="margin-top:6px"><el-icon style="vertical-align:-2px"><InfoFilled /></el-icon> {{ product.cat.name }}样本较稀疏，当前最细披露粒度为“地区到省、时间到旬”，日、周粒度与地级市下钻暂不提供。</div>
     </div>
 
     <div class="grid c4">
@@ -151,6 +152,28 @@
         <div class="tip-box blue small mt12"><b>为什么价格的屏蔽比销量多？</b> 只有自愿上传价格的企业计入价格样本。每个价格单元格须满足：有价企业数 ≥ {{ $PV.kPrice }} 家；按有价销量计，最大一家占比 ≤ {{ $PV.dom1 }}%、前两家合计 ≤ {{ $PV.dom2 }}%；只剩 1 个被屏蔽单元格时追加屏蔽。</div>
       </div>
     </div>
+    <div class="card" v-if="dim.d2 && canBand">
+      <div class="card-title"><span>按{{ dim.d2.segName }}的均价<small>{{ dim.tpl.name }}模板 · {{ title }} · {{ periodLabel }} · 分段方案 {{ bandVer.ver }}（示例参数）</small></span>
+        <span class="right small muted">每个段须满足：有价企业数 ≥ {{ $PV.kPrice }} 家</span></div>
+      <div v-if="!d2Price" class="empty-block"><div class="big"><el-icon><Lock /></el-icon></div>当前条件下加权均价不予披露，不再按{{ dim.d2.segName }}拆分</div>
+      <table v-else class="plain-table">
+        <thead><tr><th>{{ dim.d2.segName }}</th><th class="r">加权均价（元/吨）</th><th class="r">与{{ f.band ? dim.d1.segName : '品名' }}均价的差</th><th class="c">价格覆盖率</th><th class="c">有价企业数</th></tr></thead>
+        <tbody>
+          <tr v-if="d2Price.rolled" class="roll-row">
+            <td class="roll-cell" style="text-align:left"><el-tooltip placement="top" content="样本不足，已合并到上一级"><span><el-icon><Top /></el-icon>{{ f.band || f.product }}（不分{{ dim.d2.name }}）<span class="roll-tag">已上卷</span></span></el-tooltip></td>
+            <td class="r"><b class="num">{{ $fmt(kpi.price) }}</b></td><td class="r muted">—</td><td class="c"><cover-tag :r="kpi.cover" /></td><td class="c"><contrib-tag :n="kpi.pn" label="有价 " /></td>
+          </tr>
+          <template v-else>
+            <tr v-for="r in d2Price.rows" :key="r.name" :class="{merged: r.merged}">
+              <td><template v-if="r.merged"><el-tooltip placement="top" :content="'合并成员：' + r.members.join('、')"><span>其他<span class="merged-row-tag">合并披露</span></span></el-tooltip></template><template v-else>{{ r.name }}</template></td>
+              <td class="r"><span class="num">{{ $fmt(r.price) }}</span></td><td class="r"><span class="num" :class="r.price - kpi.price > 0 ? 'up' : r.price - kpi.price < 0 ? 'down' : ''">{{ (r.price - kpi.price > 0 ? '+' : '') + (r.price - kpi.price) }}</span></td>
+              <td class="c"><cover-tag :r="kpi.cover" /></td><td class="c"><contrib-tag :n="r.n" label="有价 " /></td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+      <div class="tip-box small mt12">{{ dim.d2.name }}是连续型维度，只按平台统一定义的段披露，不披露原始取值；缺少{{ dim.d2.name }}的数据归入“未分段”。价格的门槛比销量严，段内有价样本不足时，先与最小的可见段合并，仍不足则整组<b>上卷</b>到“{{ dim.d1.segName }}（不分{{ dim.d2.name }}）”，只给上一级的均价。这里不提供各段的销量；销量按统计维度的拆分请到<a href="query.html">多维查询</a>查看。</div>
+    </div>
   </template>
 
   <!-- 首次进入：使用条款确认 -->
@@ -207,7 +230,7 @@
       const agreed = termsDone();
       return {
         cats: M.categories, f: { product: '螺纹钢', material: 'HRB400E', band: 'Φ16–25', region: [], weight: '全部', grain: '日' },
-        ruleDlg: false, termsDlg: STP.state.gate === 'open' && !agreed, agreed, check: agreed, showDays: false,
+        bandVer: M.BAND_VER, ruleDlg: false, termsDlg: STP.state.gate === 'open' && !agreed, agreed, check: agreed, showDays: false,
         regionOpts: M.provinces.map((p) => ({ value: p.name, label: p.name, children: p.muni ? undefined : p.cities.map((c) => ({ value: c[0], label: c[0] })) })),
       };
     },
@@ -223,6 +246,22 @@
     computed: {
       open() { return this.$state.gate === 'open'; },
       product() { let p; M.categories.forEach((c) => c.products.forEach((x) => { if (x.name === this.f.product) p = Object.assign({ cat: c }, x); })); return p; },
+      dim() { return M.dimsOf(this.f.product); },
+      /* 按第二维度的段拆分均价：有价企业数不足 kPrice 的段与最小可见段合并，可单独展示的段不足时整组上卷 */
+      d2Price() {
+        const d = this.dim, k = this.kpi;
+        if (!d.d2 || k.price === null) return null;
+        const key = d.name + this.f.band + this.f.material;
+        const items = d.d2.bands.map((b, j) => {
+          const sh = d.d2.share[j] * (0.75 + (hash(key + b) % 50) / 100);
+          return { name: b, v: sh, n: Math.min(k.pn, Math.max(1, Math.round(k.pn * Math.pow(sh, 0.42)))), price: k.price + (b === M.UNBANDED ? 0 : Math.round(((hash(key + b + 'p') % 9) - 4) * (1 + j * 0.5)) * 10) };
+        });
+        const j = M.judge(items, k.pn, PV.kPrice, PV.rollKeep);
+        if (j.rolled) return { rolled: true };
+        const rows = items.filter((x) => x.state === 'ok');
+        if (j.other) { const ms = items.filter((x) => x.state === 'merged'), w = ms.reduce((a, x) => a + x.v, 0); rows.push({ name: '其他', merged: true, members: j.other.members, n: j.other.n, price: Math.round(ms.reduce((a, x) => a + x.price * x.v, 0) / w / 10) * 10 }); }
+        return { rolled: false, rows };
+      },
       canMaterial() { return this.product.cat.depth >= 'L3'; },
       canBand() { return this.product.cat.depth >= 'L4'; },
       coarse() { return this.product.cat.geo === '省'; },
@@ -337,7 +376,7 @@
           return { name: x.name, n: c.n, pn: c.pn, cover: c.cover, sales: c.okVol ? x.vol : null, price: ok ? c.price : null, chg: c.chgShow ? c.chg : null };
         });
       },
-      crossDim() { return this.canBand ? '规格段' : this.canMaterial ? '材质' : '细分'; },
+      crossDim() { return this.canBand ? this.dim.d1.segName : this.canMaterial ? '材质' : '细分'; },
       crossTitle() { return [this.f.product, this.canBand ? this.f.material : '', this.f.weight === '全部' ? '' : this.f.weight, this.f.grain + '粒度'].filter(Boolean).join(' · '); },
       cross() {
         const cols = this.canBand ? this.product.bands : this.canMaterial ? this.product.materials : [];

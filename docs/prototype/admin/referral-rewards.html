@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>带动奖励规则 · 平台运营后台 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.el-descriptions__label { white-space: nowrap; }
+.demo-tag { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 11px; line-height: 18px; background: #fff8eb; color: #9a6400; border: 1px solid #f3dfb8; font-weight: 400; }
+.rule-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.rule-item { border: 1px solid var(--stp-border); border-radius: 6px; padding: 10px 12px; background: #fff; }
+.rule-item .k { font-size: 12px; color: var(--stp-sub); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rule-item .tbd { margin-left: auto; padding: 0 5px; border-radius: 3px; font-size: 11px; line-height: 16px; background: #fff8eb; color: #9a6400; border: 1px solid #f3dfb8; }
+.rule-item .ph, .ph-tag { padding: 0 5px; border-radius: 3px; font-size: 11px; line-height: 16px; background: #f4ecff; color: #7044c4; border: 1px solid #e0d1fb; font-weight: 400; }
+.rule-item .v { font-size: 17px; font-weight: 600; margin: 4px 0 2px; }
+.rule-item .v small { font-size: 12px; font-weight: 400; color: var(--stp-sub); margin-left: 4px; }
+.rule-item .d { font-size: 12px; color: #5b6778; line-height: 1.6; }
+.no-list { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.9; color: #4a5568; }
+.filter-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.mini-stats { display: flex; gap: 22px; flex-wrap: wrap; padding: 8px 12px; background: #f6f8fa; border-radius: 6px; font-size: 13px; margin-bottom: 12px; }
+.mini-stats b { font-size: 15px; margin: 0 2px; }
+.src-bar { display: flex; height: 14px; border-radius: 7px; overflow: hidden; margin: 8px 0 10px; }
+.src-bar i { display: block; height: 100%; }
+.src-leg { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12px; color: #4a5568; }
+.src-leg i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="admin" :user="me" :role="roleOf(me)" active="referral-rewards" title="带动奖励规则"
+  desc="平台不向下游贸易商发放现金分成，原分成预算改为奖励带动协议户入驻的钢厂：一期发放奖励名额，奖励折扣为二期。规则带生效日期并保留版本，修改须经双人复核；奖励按考核期由系统生成建议，运营审核后发放并通知钢厂。">
+  <template #actions>
+    <el-dropdown trigger="click" @command="v => me = v">
+      <el-button><el-icon><UserFilled /></el-icon>原型状态 · 当前操作人：{{ me }}（{{ roleOf(me) }}）<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+      <template #dropdown><el-dropdown-menu>
+        <el-dropdown-item v-for="s in staff" :key="s.n" :command="s.n" :disabled="s.n===me">{{ s.n }}（{{ s.r }}）</el-dropdown-item>
+      </el-dropdown-menu></template>
+    </el-dropdown>
+    <el-button type="primary" @click="openEdit"><el-icon><Edit /></el-icon>修改奖励规则</el-button>
+  </template>
+
+  <div class="grid c4">
+    <stat-card label="参与带动的钢厂" :value="312" unit="家" icon="OfficeBuilding"><span>占订阅钢厂 438 家的 71%</span></stat-card>
+    <stat-card label="累计带动入驻的下游" :value="srcN('钢厂带动') + srcN('一级代理带动')" unit="家" icon="Promotion"><span>钢厂带动 {{ $fmt(srcN('钢厂带动')) }}</span><span>一级代理带动 {{ $fmt(srcN('一级代理带动')) }}</span></stat-card>
+    <stat-card label="其中有效带动户" :value="12640" unit="户" icon="CircleCheck"><span>确认带动关系、完成首次有效报送，且考核期内达到 {{ rule.needCycles }} 个达标周期</span></stat-card>
+    <stat-card label="2026 Q3 已发放奖励名额" :value="386" unit="个" icon="Present"><span>在用 1,204 个 · 累计发放 1,512 个</span><span class="warn">待审核 {{ pendN }} 笔</span></stat-card>
+  </div>
+
+  <!-- 当前生效规则 -->
+  <div class="card">
+    <div class="card-title">
+      <span>当前生效规则<el-tag size="small" type="success" style="margin-left:8px">{{ cur.v }}</el-tag><small>生效日期 {{ cur.eff }}</small><span class="demo-tag" style="margin-left:8px">全部为示例参数，待业务方确定</span></span>
+      <span class="right"><a href="billing.html">订单与计费 ›</a></span>
+    </div>
+    <el-alert v-if="nextVer" type="warning" show-icon :closable="false">
+      <template #title>下一版本 <b>{{ nextVer.v }}</b> 已复核通过，将于 <b>{{ nextVer.eff }}</b> 生效：{{ nextVer.changes.join('；') }}。生效日之前的考核期仍按 {{ cur.v }} 计算。</template>
+    </el-alert>
+    <div class="rule-grid">
+      <div class="rule-item"><div class="k">有效带动户的认定<span class="tbd">N-31 待定</span></div><div class="v" style="font-size:14px">确认 + 首次有效报送 + <span class="num">{{ rule.needCycles }}</span> 个达标周期</div><div class="d">经钢厂邀请并确认带动关系、完成首次有效报送，且在考核期内达到 {{ rule.needCycles }} 个达标周期的协议户，计为 1 户有效带动</div></div>
+      <div class="rule-item"><div class="k">奖励名额的数量<span class="tbd">N-30 待定</span></div><div class="v">每满 <span class="num">{{ rule.quotaPer }}</span> 户奖 <span class="num">1</span> 个</div><div class="d">按考核期内计入奖励的带动户数计算，向下取整，不足部分不结转</div></div>
+      <div class="rule-item"><div class="k">奖励名额的有效期与属性<span class="tbd">N-33 待定</span></div><div class="v"><span class="num">{{ rule.quotaMonths }}</span> 个月<small>不计费</small></div><div class="d">来源标识为“奖励”，在名额总览中单独列示；不可转让、不可折现；分配后同样按数据池调整周期生效，受替换规则和防反推规则约束</div></div>
+      <div class="rule-item"><div class="k">奖励上限<span class="tbd">N-30 待定</span></div><div class="v">单厂 <span class="num">{{ rule.capPerMill }}</span> 个<small>每考核期</small></div><div class="d">平台每个考核期的奖励名额预算 {{ $fmt(R.budget) }} 个；超出预算时按规则版本约定的顺序发放</div></div>
+      <div class="rule-item"><div class="k">考核期与发放流程<span class="tbd">N-30、N-43 待定</span></div><div class="v">{{ rule.period }}</div><div class="d">系统按规则生成发放建议 → 平台运营审核 → 发放 → 通知钢厂。钢厂对结果有异议的可申请复核，留痕</div></div>
+      <div class="rule-item"><div class="k">奖励折扣<span class="ph">二期</span><span class="tbd">N-30 待定</span></div><div class="v num" style="color:#8b95a3">98 / 95 / 92 折</div><div class="d">以订阅费的折扣率或抵扣额发放，在续费、加购下单时使用；与数量阶梯、合同价能否叠加待定。一期不提供，分档仅为示意</div></div>
+      <div class="rule-item"><div class="k">多家钢厂邀请同一协议户<span class="tbd">N-32 待定</span></div><div class="v" style="font-size:14px">只计给最先建立带动关系的钢厂</div><div class="d">协议户可以同时确认与多家钢厂的带动关系，各钢厂都能看到接入状态和达标结果，但奖励只计一次</div></div>
+      <div class="rule-item"><div class="k">反套取<span class="tbd">N-31、N-42 待定</span></div><div class="v" style="font-size:14px">须有实质数据；关联贸易公司不计入</div><div class="d">达标只看有没有按时报送实际数据，只报库存快照也能达标。为防空壳协议户，平台内部核对有效带动户在考核期内是否有实质经营数据；该判断不向钢厂逐户披露，钢厂只看到计入奖励的汇总户数</div></div>
+      <div class="rule-item"><div class="k">协议户占用名额<span class="tbd" style="background:#e8f7ef;color:#18794e;border-color:#cfe9da">N-29 已确认</span></div><div class="v" style="font-size:14px">照常占用付费名额，带动奖励可抵用</div><div class="d">协议户选入钢厂数据池时与其他企业一样占 1 个名额；钢厂有奖励名额时先用奖励名额抵用，不够的部分用已购名额或加购。奖励名额能否用于协议户以外的企业待定（N-33）</div></div>
+    </div>
+    <div class="grid c2 mt12" style="margin-bottom:0">
+      <div class="tip-box blue small">
+        <b>带动关系怎么成立</b>
+        <ul class="no-list">
+          <li>钢厂导入协议户名单并发送邀请（专属链接、邀请码或二维码）。对已入驻的企业，在其账号内生成“带动关系确认请求”</li>
+          <li>带动关系须由被邀请企业的企业管理员在邀请落地页上主动确认；平台人员和钢厂都不能代为确认。确认之前钢厂只看到“已发送”，平台不回显对方是否已入驻</li>
+          <li>平台运营负责钢厂发起资格审核、名单抽检、带动关系争议处理和达标异议复核</li>
+        </ul>
+      </div>
+      <div class="tip-box orange small">
+        <b>规则不做的事</b>
+        <ul class="no-list">
+          <li>不向下游贸易商发放任何现金、分成或返利；下游的权益是免费的行业对标数据</li>
+          <li>不按上传的数据量、销量或被选购次数奖励；达标评定也不使用任何与业务量相关的数</li>
+          <li>不因带动关系向钢厂开放任何单家数据：钢厂只能看到接入状态和各达标周期的结果</li>
+          <li>已发放的奖励在协议户此后不达标、解除带动关系或退出时如何处理，待业务方确定</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- 待复核与版本 -->
+  <div class="card">
+    <div class="card-title"><span>规则变更复核与版本历史<small>奖励规则与报送达标参数的修改都须双人复核：提交 → 另一人复核 → 按生效日期生效。当前操作人：{{ me }}（{{ roleOf(me) }}）</small></span></div>
+    <el-table v-if="pending.length" :data="pending" border size="small" class="mb16">
+      <el-table-column prop="id" label="申请编号" width="140" />
+      <el-table-column label="变更内容" min-width="280"><template #default="{row}"><div v-for="c in row.changes" :key="c">{{ c }}</div></template></el-table-column>
+      <el-table-column prop="reason" label="变更原因" min-width="240" />
+      <el-table-column prop="eff" label="生效日期" width="110" />
+      <el-table-column label="提交人" width="140"><template #default="{row}">{{ row.by }}<div class="small muted num">{{ row.t }}</div></template></el-table-column>
+      <el-table-column label="状态" width="90" align="center"><template #default><el-tag size="small" type="warning" disable-transitions>待复核</el-tag></template></el-table-column>
+      <el-table-column label="操作" width="140" align="center">
+        <template #default="{row}">
+          <template v-if="row.by===me">
+            <el-tooltip content="提交人不能复核自己的申请，请切换为另一位复核人" placement="top"><span><el-button link type="primary" disabled>通过</el-button></span></el-tooltip>
+            <el-button link type="info" @click="finish(row, '已撤回')">撤回</el-button>
+          </template>
+          <template v-else>
+            <el-button link type="success" @click="finish(row, '通过')">通过</el-button>
+            <el-button link type="danger" @click="finish(row, '已驳回')">驳回</el-button>
+          </template>
+        </template>
+      </el-table-column>
+    </el-table>
+    <el-table :data="versions" border size="small">
+      <el-table-column label="版本" width="100"><template #default="{row}"><b>{{ row.v }}</b></template></el-table-column>
+      <el-table-column label="适用期间" width="210"><template #default="{row}"><span class="num">{{ row.eff }} 起{{ row.end ? '，至 ' + row.end : '' }}</span></template></el-table-column>
+      <el-table-column label="主要内容 / 变更" min-width="330"><template #default="{row}"><div v-for="c in row.changes" :key="c">{{ c }}</div><div v-if="row.reason" class="small muted">原因：{{ row.reason }}</div></template></el-table-column>
+      <el-table-column label="提交" width="130"><template #default="{row}">{{ row.by }}<div class="small muted num">{{ row.t }}</div></template></el-table-column>
+      <el-table-column label="复核" width="130"><template #default="{row}"><template v-if="row.rv">{{ row.rv }}<div class="small muted num">{{ row.rvT }}</div></template><span v-else class="muted">—</span></template></el-table-column>
+      <el-table-column label="状态" width="110" align="center"><template #default="{row}"><el-tag size="small" :type="row.st==='当前生效' ? 'success' : row.st==='待生效' ? 'warning' : row.st==='已驳回' ? 'danger' : 'info'" disable-transitions>{{ row.st }}</el-tag></template></el-table-column>
+    </el-table>
+    <div class="small muted mt8">历史考核期按当时生效的规则版本计算；规则变更不影响已发放的奖励。每笔发放记录都写明所用的规则版本。</div>
+  </div>
+
+  <div class="card">
+    <el-tabs v-model="tab">
+      <el-tab-pane name="grant"><template #label>发放记录 <el-badge v-if="pendN" :value="pendN" type="warning" style="margin-left:2px" /></template></el-tab-pane>
+      <el-tab-pane name="rel"><template #label>带动关系与有效带动户 <el-badge v-if="relPendN" :value="relPendN" type="warning" style="margin-left:2px" /></template></el-tab-pane>
+      <el-tab-pane name="std" label="报送达标参数"></el-tab-pane>
+      <el-tab-pane name="src" label="入驻来源"></el-tab-pane>
+    </el-tabs>
+
+    <!-- 发放记录 -->
+    <template v-if="tab === 'grant'">
+      <div class="filter-bar">
+        <el-select v-model="gf.period" style="width:130px"><el-option v-for="p in ['2026 Q3','2026 Q2']" :key="p" :label="p" :value="p" /></el-select>
+        <el-select v-model="gf.st" clearable placeholder="全部状态" style="width:140px"><el-option v-for="s in ['待审核','已发放','未达起奖','已驳回']" :key="s" :label="s" :value="s" /></el-select>
+        <el-input v-model="gf.kw" placeholder="钢厂名称" clearable style="width:200px" />
+        <span class="flex1"></span>
+        <el-button @click="$demo('已导出本期发放明细')"><el-icon><Download /></el-icon>导出</el-button>
+      </div>
+      <div class="mini-stats">
+        <span>考核期 <b>{{ gf.period }}</b></span><span>参与核算钢厂 <b class="num">{{ gf.period === '2026 Q3' ? 312 : 287 }}</b> 家</span>
+        <span>发放奖励名额 <b class="num">{{ gf.period === '2026 Q3' ? 386 : 228 }}</b> 个</span><span>预算 <b class="num">{{ $fmt(R.budget) }}</b> 个</span>
+        <span>原型展示 <b class="num">{{ grantRows.length }}</b> 条示例</span><span class="demo-tag">示例数据</span>
+      </div>
+      <el-table :data="grantRows" size="default">
+        <el-table-column label="钢厂" min-width="210"><template #default="{row}"><b style="font-weight:500">{{ row.mill }}</b><div class="small muted num">{{ row.id }} · 规则 {{ row.ver }}</div></template></el-table-column>
+        <el-table-column label="考核期" width="86" prop="period" />
+        <el-table-column label="有效带动户" width="110" align="right"><template #default="{row}"><span class="num">{{ row.valid }}</span> 户</template></el-table-column>
+        <el-table-column label="计入奖励" width="100" align="right"><template #default="{row}"><span class="num">{{ row.n }}</span> 户</template></el-table-column>
+        <el-table-column label="系统建议" min-width="240"><template #default="{row}">{{ row.text }}<div v-if="row.note" class="small" style="color:#b25e00">{{ row.note }}</div></template></el-table-column>
+        <el-table-column label="状态" width="104"><template #default="{row}"><el-tag size="small" :type="row.st==='已发放' ? 'success' : row.st==='待审核' ? 'warning' : row.st==='已驳回' ? 'danger' : 'info'" effect="plain" disable-transitions>{{ row.st }}</el-tag></template></el-table-column>
+        <el-table-column label="审核与发放" width="136"><template #default="{row}"><template v-if="row.by">{{ row.by }}<div class="small muted num">{{ row.at }}</div></template><span v-else class="muted">—</span></template></el-table-column>
+        <el-table-column label="操作" width="90">
+          <template #default="{row}">
+            <template v-if="row.st === '待审核'"><el-button link type="primary" @click="openGrant(row)">审核发放</el-button></template>
+            <el-button v-else link type="primary" @click="openGrant(row)">查看</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div class="small muted mt8">审核通过后，奖励名额直接入账到该钢厂的名额账户（来源标识为“奖励”，单独列示，不产生订单和应收），并通知钢厂。钢厂端只显示“计入奖励的带动户数”这一个汇总数，不逐户标注。</div>
+    </template>
+
+    <!-- 带动关系 -->
+    <template v-else-if="tab === 'rel'">
+      <div class="filter-bar">
+        <el-select v-model="rf.type" clearable placeholder="全部带动类型" style="width:150px"><el-option label="钢厂带动" value="钢厂带动" /><el-option label="一级代理带动" value="一级代理带动" /></el-select>
+        <el-select v-model="rf.st" clearable placeholder="全部状态" style="width:170px"><el-option v-for="s in relSts" :key="s" :label="s" :value="s" /></el-select>
+        <el-input v-model="rf.kw" placeholder="被带动企业或带动方" clearable style="width:220px" />
+        <span class="flex1"></span>
+        <span class="small muted">全平台带动关系 {{ $fmt(srcN('钢厂带动') + srcN('一级代理带动')) }} 条；原型展示 {{ rels.length }} 条示例</span>
+      </div>
+      <el-table :data="relRows" size="default">
+        <el-table-column label="被带动企业" min-width="220"><template #default="{row}"><b style="font-weight:500">{{ row.ent }}</b><div class="small muted">{{ row.loc }}</div></template></el-table-column>
+        <el-table-column label="带动类型" width="150"><template #default="{row}"><el-tag size="small" :type="row.type === '钢厂带动' ? 'primary' : 'success'" effect="plain" disable-transitions>{{ row.type }}</el-tag><span v-if="row.type !== '钢厂带动'" class="ph-tag" style="margin-left:4px">二期</span></template></el-table-column>
+        <el-table-column label="带动方" min-width="200"><template #default="{row}">{{ row.by }}<div v-if="row.mill" class="small muted">上级协议户所属钢厂：{{ row.mill }}</div></template></el-table-column>
+        <el-table-column label="确认方式与时间" width="160"><template #default="{row}">{{ row.way }}<div class="small muted num">{{ row.at }}</div></template></el-table-column>
+        <el-table-column label="接入状态与最近周期" width="170"><template #default="{row}">{{ row.stage }}</template></el-table-column>
+        <el-table-column label="是否计入奖励" min-width="230"><template #default="{row}"><span :class="'dot ' + (row.st === '计入' ? 'ok' : row.st === '待核实' ? 'warn' : 'info')"></span>{{ row.st }}<div v-if="row.why" class="small muted">{{ row.why }}</div></template></el-table-column>
+        <el-table-column label="操作" width="110">
+          <template #default="{row}"><el-button v-if="row.st === '待核实'" link type="primary" @click="verify(row)">核实</el-button><span v-else class="muted">—</span></template>
+        </el-table-column>
+      </el-table>
+      <div class="small muted mt8">运营后台可查看带动关系与报送行为记录，用于奖励核算和争议处理；企业的经营数据不在本页出现，查看单家明细须走 <a href="audit.html">明细数据访问审批</a>。“是否计入奖励”为平台内部口径，不向钢厂逐户披露。</div>
+    </template>
+
+    <!-- 报送达标参数 -->
+    <template v-else-if="tab === 'std'">
+      <el-alert type="warning" show-icon :closable="false"><template #title>报送达标参数 {{ S.ver }}（{{ S.eff }} 起生效）全部为<b>示例参数，待业务方确定</b>（N-34），现取需求文档给出的起步建议：工作日、及时率 {{ S.rate }}%、最少 {{ S.minDays }} 个应报送日。按自然日计时，只报销售的企业周末和节假日必然缺报，与“库存快照或销售数据任一即可”不符。修改须双人复核；评定只使用报送行为记录，即各业务日期在截止时点前有没有收到实际数据这一个二值，不得引入条数、吨位、数量、金额、品类数、批次数等与业务量相关的数。</template></el-alert>
+      <div class="grid c-3-2" style="margin-bottom:0">
+        <div>
+          <el-descriptions :column="2" border size="small">
+            <el-descriptions-item label="达标周期">{{ S.cycle }}</el-descriptions-item>
+            <el-descriptions-item label="应报送日">{{ S.dayType }}（{{ S.dayNote }}）；钢厂不可自定义。<a href="javascript:;" @click="calDlg = true">维护日历 ›</a></el-descriptions-item>
+            <el-descriptions-item label="报送截止时点">{{ S.cutoff }}</el-descriptions-item>
+            <el-descriptions-item label="某日算报送">截止时点前收到实际数据：库存快照或销售数据，任一即可（业务方已确认）；多来源系统任一即可</el-descriptions-item>
+            <el-descriptions-item label="实际数据的认定">过滤后入库、通过校验且量不为零的记录；待映射、隔离待确认的也算<span class="ex-tag" style="margin-left:4px">口径待确认</span></el-descriptions-item>
+            <el-descriptions-item label="及时率阈值">不低于 {{ S.rate }}%（单家及时率不对钢厂显示）</el-descriptions-item>
+            <el-descriptions-item label="最长连续缺报">不超过 {{ S.gap }} 个应报送日（非应报送日跳过）</el-descriptions-item>
+            <el-descriptions-item label="不适用">周期内应报送天数不足 {{ S.minDays }} 天、尚未接入，或无库存经营标记已生效；对钢厂注明原因类别</el-descriptions-item>
+            <el-descriptions-item label="结果发布日">{{ S.publish }}，统一发布</el-descriptions-item>
+            <el-descriptions-item label="零申报">不认可（业务方已确认）；对账申报、空批次、全部被过滤的批次不算</el-descriptions-item>
+            <el-descriptions-item label="库存快照是否必要">不是必要条件（业务方已确认）</el-descriptions-item>
+            <el-descriptions-item label="无库存经营企业">企业申报、运营核实后生效，不参加评定，显示“不适用”（业务方已确认）。<a href="enterprises.html?tab=ns">核实与复核 ›</a></el-descriptions-item>
+            <el-descriptions-item label="汇总达标率的显示">参与评定的协议户不足 {{ S.rateMinN }} 户时，钢厂端只显示户数<span class="ex-tag" style="margin-left:4px">示例参数</span></el-descriptions-item>
+            <el-descriptions-item label="暂停期间">按未报送计入评定；对钢厂显示“已暂停”</el-descriptions-item>
+            <el-descriptions-item label="报送中断">连续 {{ S.breakDays }} 个自然日没有收到任何实际数据；无库存经营企业为 {{ NS.breakDays }} 个自然日</el-descriptions-item>
+            <el-descriptions-item label="对钢厂的状态更新">每日一次，不实时</el-descriptions-item>
+          </el-descriptions>
+          <div class="small muted mt8">{{ S.last }} 周期有 18 个应报送日（国庆假期 10-01 至 10-07 不计，10-10 调休上班计入），{{ S.cur }} 周期 21 个。非应报送日上传的数据照常接收，不计入分子和分母。最近发布：{{ S.last }} 周期，{{ S.lastPub }} 发布。下次发布：{{ S.cur }} 周期，{{ S.nextPub }}。发布后的结果不因补传自动改变。</div>
+          <div class="sec-title"><i></i>全平台缺报原因分布<small>{{ S.last }} 周期 · 按“企业 × 应报送日”计 · 只在平台内部和企业自己可见，不向钢厂展示</small></div>
+          <table class="plain-table">
+            <thead><tr><th>缺报原因</th><th class="r" style="width:120px">企业日</th><th class="r" style="width:80px">占比</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr v-for="m in missDist" :key="m.k"><td>{{ m.k }}</td><td class="r num">{{ $fmt(m.n) }}</td><td class="r num">{{ (m.n / missSum * 100).toFixed(1) }}%</td><td class="small muted">{{ m.d }}</td></tr>
+              <tr class="total"><td>合计</td><td class="r num">{{ $fmt(missSum) }}</td><td class="r num">100.0%</td><td class="small muted">占全部应报送企业日的 {{ (missSum / missDue * 100).toFixed(1) }}%</td></tr>
+            </tbody>
+          </table>
+          <div class="tip-box small mt8">报送完整性的内部监控：连续多日只有销售数据而没有库存快照的企业 <b class="num">214</b> 家，只有库存快照而没有销售数据的 <b class="num">86</b> 家，由运营提醒跟进。结果不向钢厂展示，不影响达标判定。其中常年不落库的，提醒企业可以申报无库存经营。</div>
+          <div class="tip-box blue small mt8"><b>无库存经营标记的核实与复核。</b>全平台已生效 <b class="num">{{ NSP.active }}</b> 家，待核实 <b class="num">{{ NSP.pending }}</b> 件，待复核 <b class="num">{{ NSP.recheck }}</b> 家。标记生效期间不参加达标评定、不计入各钢厂的汇总达标率，也不计入有效带动户。核实、复核与监控在企业管理里办理。<a href="enterprises.html?tab=ns">去核实 ›</a></div>
+        </div>
+        <div>
+          <div class="sec-title" style="margin-top:0"><i></i>达标异议复核<small>协议户对结果有异议时发起</small></div>
+          <el-table :data="appeals" size="small">
+            <el-table-column label="企业与周期" min-width="170"><template #default="{row}">{{ row.ent }}<div class="small muted">{{ row.cyc }} 周期 · 未达标</div></template></el-table-column>
+            <el-table-column label="异议理由" min-width="170" prop="why" />
+            <el-table-column label="操作" width="110"><template #default="{row}"><el-button v-if="!row.done" link type="primary" @click="appeal(row)">复核</el-button><span v-else class="muted small">{{ row.done }}</span></template></el-table-column>
+          </el-table>
+          <div class="tip-box small mt12">复核结果更正后重新通知协议户和相关钢厂，全程留痕。平台不向钢厂出具逐日的报送证明。</div>
+        </div>
+      </div>
+    </template>
+
+    <!-- 入驻来源 -->
+    <template v-else>
+      <div class="grid c-3-2" style="margin-bottom:0">
+        <div>
+          <div class="small muted">入驻下游 {{ $fmt(srcTotal) }} 家的来源构成（截至 2026-11-24）</div>
+          <div class="src-bar"><i v-for="(s, i) in SRC" :key="s.k" :style="{ width: s.n / srcTotal * 100 + '%', background: srcColor[i] }"></i></div>
+          <div class="src-leg"><span v-for="(s, i) in SRC" :key="s.k"><i :style="{ background: srcColor[i] }"></i>{{ s.k }} {{ $fmt(s.n) }} 家（{{ (s.n / srcTotal * 100).toFixed(1) }}%）</span></div>
+          <ve-chart :option="trendOpt" height="250px" class="mt12"></ve-chart>
+        </div>
+        <div>
+          <table class="plain-table">
+            <thead><tr><th>带动户数最多的钢厂</th><th class="r">已确认带动关系</th><th class="r">已接入</th><th class="r">2026 Q3 计入奖励</th></tr></thead>
+            <tbody><tr v-for="t in top" :key="t[0]"><td>{{ t[0] }}</td><td class="r num">{{ $fmt(t[1]) }}</td><td class="r num">{{ $fmt(t[2]) }}</td><td class="r num">{{ t[3] }}</td></tr></tbody>
+          </table>
+          <div class="small muted mt8">东岳钢铁：已邀请 {{ DY.invited }} 户，已确认带动关系 {{ DY.confirmed }} 户，已接入 {{ DY.connected }} 户；2026-10 周期达标 {{ DY.ok }} 户；2026 Q3 计入奖励 {{ DY.reward.counted }} 户。一级代理带动的二级经销商为二期功能，是否计入钢厂的带动奖励待业务方确定，原型暂不计入。</div>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <!-- 修改规则 -->
+  <el-dialog v-model="ed.show" title="修改带动奖励规则" width="680px" top="6vh">
+    <el-alert type="warning" show-icon :closable="false" title="以下数值均为示例参数，待业务方确定。" style="margin-bottom:14px" />
+    <el-form label-width="190px">
+      <el-form-item label="有效带动户：达标周期数"><el-input-number v-model="ed.f.needCycles" :min="1" :max="6" /><span class="muted small" style="margin-left:8px">个（考核期内）</span></el-form-item>
+      <el-form-item label="奖励名额：每满多少户奖 1 个"><el-input-number v-model="ed.f.quotaPer" :min="1" :max="50" /><span class="muted small" style="margin-left:8px">户</span></el-form-item>
+      <el-form-item label="奖励名额有效期"><el-input-number v-model="ed.f.quotaMonths" :min="1" :max="24" /><span class="muted small" style="margin-left:8px">个月</span></el-form-item>
+      <el-form-item label="单个钢厂每考核期上限"><el-input-number v-model="ed.f.capPerMill" :min="1" :max="200" /><span class="muted small" style="margin-left:8px">个</span></el-form-item>
+      <el-form-item label="考核期"><el-radio-group v-model="ed.f.period"><el-radio value="自然季度">自然季度</el-radio><el-radio value="自然月">自然月</el-radio></el-radio-group></el-form-item>
+      <el-form-item label="生效日期"><el-date-picker v-model="ed.eff" type="date" value-format="YYYY-MM-DD" :clearable="false" style="width:180px" /></el-form-item>
+      <el-form-item label="变更原因" required><el-input v-model="ed.reason" type="textarea" :rows="2" placeholder="必填，写入审计日志" /></el-form-item>
+    </el-form>
+    <div v-if="edChanges.length" class="tip-box small"><b>本次变更：</b><div v-for="c in edChanges" :key="c">{{ c }}</div></div>
+    <div class="tip-box blue small mt8">规则带生效日期：<b>历史考核期按当时生效的规则计算</b>，已发放的奖励不受影响。提交后须由另一位平台人员复核；复核通过后提前通知全部上游钢厂，上游端“协议户邀请与接入”同步展示新规则。</div>
+    <template #footer><el-button @click="ed.show=false">取消</el-button><el-button type="primary" @click="submitEdit">提交复核</el-button></template>
+  </el-dialog>
+
+  <!-- 审核发放 -->
+  <el-dialog v-model="gd.show" :title="gd.r && gd.r.st === '待审核' ? '审核带动奖励' : '带动奖励详情'" width="640px">
+    <template v-if="gd.r">
+      <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="钢厂" :span="2">{{ gd.r.mill }}</el-descriptions-item>
+        <el-descriptions-item label="考核期">{{ gd.r.period }}</el-descriptions-item>
+        <el-descriptions-item label="规则版本">{{ gd.r.ver }}</el-descriptions-item>
+        <el-descriptions-item label="有效带动户">{{ gd.r.valid }} 户</el-descriptions-item>
+        <el-descriptions-item label="计入奖励">{{ gd.r.n }} 户</el-descriptions-item>
+        <el-descriptions-item label="奖励形式">奖励名额</el-descriptions-item>
+        <el-descriptions-item label="状态">{{ gd.r.st }}</el-descriptions-item>
+        <el-descriptions-item label="系统建议" :span="2">{{ gd.r.text }}</el-descriptions-item>
+        <el-descriptions-item v-if="gd.r.note" label="核算说明" :span="2">{{ gd.r.note }}</el-descriptions-item>
+      </el-descriptions>
+      <div class="tip-box small mt12">
+        <b>核算过程</b><br>
+        考核期内有效带动户 {{ gd.r.valid }} 户<template v-if="gd.r.valid !== gd.r.n">，其中 {{ gd.r.valid - gd.r.n }} 户不计入（反套取核查、归属其他钢厂或关联方）</template>，计入奖励 {{ gd.r.n }} 户；按 {{ gd.r.ver }} 每满 {{ gd.r.per }} 户奖励 1 个名额，向下取整 = <b>{{ Math.floor(gd.r.n / gd.r.per) }}</b> 个，不足部分不结转。奖励名额有效期 {{ rule.quotaMonths }} 个月，发放后通知钢厂。
+      </div>
+      <el-input v-if="gd.r.st === '待审核'" v-model="gd.note" type="textarea" :rows="2" placeholder="审核意见（驳回时必填）" class="mt12" />
+    </template>
+    <template #footer>
+      <template v-if="gd.r && gd.r.st === '待审核'">
+        <el-button @click="gd.show = false">取消</el-button>
+        <el-button type="danger" plain @click="doGrant(false)">驳回</el-button>
+        <el-button type="primary" @click="doGrant(true)">通过并发放</el-button>
+      </template>
+      <el-button v-else type="primary" @click="gd.show = false">关闭</el-button>
+    </template>
+  </el-dialog>
+  <!-- 应报送日历（运营维护） -->
+  <el-dialog v-model="calDlg" title="应报送日历" width="640px">
+    <div class="tip-box small" style="margin-top:0">应报送日为{{ S.dayType }}：{{ S.dayNote }}。日历由运营维护，全平台统一，钢厂不可自定义；可设免评日（如春节前后的行业休市期）。非应报送日上传的数据照常接收和聚合，不计入评定的分子和分母。<span class="ex-tag" style="margin-left:4px">示例日历</span></div>
+    <table class="plain-table mt12">
+      <thead><tr><th style="width:110px">达标周期</th><th class="r" style="width:90px">应报送日</th><th>法定节假日（不计）</th><th>调休上班日（计入）</th><th>免评日</th></tr></thead>
+      <tbody>
+        <tr><td>2026-10</td><td class="r num">18</td><td>10-01 至 10-07（国庆）</td><td>10-10（周六）</td><td class="muted">—</td></tr>
+        <tr><td>2026-11</td><td class="r num">21</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td></tr>
+        <tr><td>2026-12</td><td class="r num">23</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td></tr>
+        <tr><td>2027-02</td><td class="r num">10</td><td>02-05 至 02-11（春节）</td><td>待国务院公布后维护</td><td>02-01 至 02-04、02-12（行业休市，示例）</td></tr>
+      </tbody>
+    </table>
+    <div class="small muted mt8">应报送日不足 {{ S.minDays }} 天的周期，对全部协议户为“不适用”。日历的修改须双人复核，只对尚未发布的周期生效。</div>
+    <template #footer><el-button @click="$demo('日历变更已提交复核')">新增免评日</el-button><el-button type="primary" @click="calDlg = false">关闭</el-button></template>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const STAFF = [{ n: '林若彤', r: '运营主管' }, { n: '何志远', r: '财务' }, { n: '吴靖', r: '安全审计员' }];
+  let tick = 0;
+  const nowStr = () => { const m = 32 + (tick++) * 4; return '2026-11-24 ' + (14 + Math.floor(m / 60)) + ':' + STP.pad(m % 60); };
+  const warn = (m) => ElementPlus.ElMessage({ message: m, type: 'warning' });
+  const R = M.REF.rule, S = M.REF.std, DY = M.REF.dy, SRC = M.REF.source;
+  const RULE = { needCycles: R.needCycles, quotaPer: R.quotaPer, quotaMonths: R.quotaMonths, capPerMill: R.capPerMill, period: R.period };
+  const FIELD = { needCycles: '有效带动户：考核期内达标周期数', quotaPer: '奖励名额：每满多少户奖 1 个', quotaMonths: '奖励名额有效期', capPerMill: '单个钢厂每考核期上限', period: '考核期' };
+  const fv = (k, v) => (k === 'needCycles' ? v + ' 个' : k === 'quotaPer' ? v + ' 户' : k === 'quotaMonths' ? v + ' 个月' : k === 'capPerMill' ? v + ' 个' : v);
+  /* 发放记录：一期只发放奖励名额。RR-V2 每满 10 户 1 个，RR-V1 每满 15 户 1 个（示例参数）。
+     valid 为考核期内有效带动户，n 为计入奖励的户数（扣除反套取核查、归属其他钢厂、关联方后） */
+  const G = (id, mill, period, valid, n, st, by, at, o) => {
+    const ver = period === '2026 Q2' ? 'RR-V1' : R.ver, per = ver === 'RR-V1' ? 15 : R.quotaPer, q = Math.floor(n / per);
+    return Object.assign({ id, mill, period, valid, n, per, ver, st, by: by || '', at: at || '', note: '', text: q ? '奖励名额 ' + q + ' 个，有效期 ' + R.quotaMonths + ' 个月' : '不足 ' + per + ' 户，不发放' }, o);
+  };
+  const GRANTS = [
+    G('RW-2026Q3-0188', '秦川钢铁股份有限公司', '2026 Q3', 18, 12, '待审核', '', '', { note: '6 户被带动企业命中反套取规则（考核期内只有库存快照、没有任何销售数据），核查期间暂不计入' }),
+    G('RW-2026Q3-0203', '岷江钢铁有限公司', '2026 Q3', 22, 20, '待审核', '', '', { note: '2 户先与燕山钢铁建立带动关系，奖励只计给最先建立带动关系的钢厂' }),
+    G('RW-2026Q3-0211', '闽江钢铁集团有限公司', '2026 Q3', 11, 11, '待审核'),
+    G('RW-2026Q3-0007', '东岳钢铁集团有限公司', '2026 Q3', 44, DY.reward.counted, '已发放', '林若彤', '2026-10-12 10:20', { note: '3 户考核期内只有库存快照、没有任何销售数据，不计入' }),
+    G('RW-2026Q3-0002', '金江钢铁股份有限公司', '2026 Q3', 57, 57, '已发放', '林若彤', '2026-10-12 10:20'),
+    G('RW-2026Q3-0005', '北辰钢铁有限责任公司', '2026 Q3', 118, 112, '已发放', '林若彤', '2026-10-12 10:21', { note: '6 户归属其他钢厂' }),
+    G('RW-2026Q3-0027', '云岭钢铁集团有限公司', '2026 Q3', 14, 14, '已发放', '林若彤', '2026-10-12 10:22'),
+    G('RW-2026Q3-0051', '湘江钢铁有限公司', '2026 Q3', 23, 23, '已发放', '林若彤', '2026-10-12 10:24'),
+    G('RW-2026Q3-0063', '燕山钢铁股份有限公司', '2026 Q3', 31, 31, '已发放', '林若彤', '2026-10-12 10:24'),
+    G('RW-2026Q3-0019', '海川特钢有限公司', '2026 Q3', 10, 9, '未达起奖', '系统', '2026-10-10 02:00', { note: '1 户为关联贸易公司，不计入' }),
+    G('RW-2026Q2-0007', '东岳钢铁集团有限公司', '2026 Q2', 9, 9, '未达起奖', '系统', '2026-07-08 02:00'),
+    G('RW-2026Q2-0002', '金江钢铁股份有限公司', '2026 Q2', 49, 49, '已发放', '林若彤', '2026-07-10 11:05'),
+    G('RW-2026Q2-0051', '湘江钢铁有限公司', '2026 Q2', 17, 17, '已发放', '林若彤', '2026-07-10 11:08'),
+  ];
+  const L = (ent, loc, type, by, mill, way, at, stage, st, why) => ({ ent, loc, type, by, mill: mill || '', way, at, stage, st, why: why || '' });
+  const DYN = '东岳钢铁集团有限公司', HY = '苏州恒运钢铁贸易有限公司';
+  const RELS = [
+    L('长沙鑫盛钢铁贸易有限公司', '湖南 · 长沙', '钢厂带动', DYN, '', '邀请码，企业管理员确认', '2026-11-20', '未接入', '不计入', '尚未完成认证和接入'),
+    L('沈阳宏达钢铁有限公司', '辽宁 · 沈阳', '钢厂带动', '金江钢铁股份有限公司', '', '专属链接，企业管理员确认', '2026-11-23', '未接入', '待核实', '北辰钢铁对带动关系提出争议：称该企业在其 2026-09 的名单中；企业只确认了金江钢铁的请求'),
+    L('海川特钢销售有限公司', '江苏 · 南京', '钢厂带动', '海川特钢有限公司', '', '名单导入，企业管理员确认', '2026-02-10', '已接入 · 2026-10 达标', '不计入', '为带动方的关联贸易公司'),
+    L(HY, '江苏 · 苏州', '钢厂带动', DYN, '', '名单导入，企业管理员确认', '2025-09-05', '已接入 · 2026-10 达标', '计入'),
+    L('昆山裕丰钢铁贸易有限公司', '江苏 · 苏州', '一级代理带动', HY, DYN, '专属链接，企业管理员确认', '2026-03-20', '已接入 · 2026-10 达标', '不计入', '二级经销商是否计入钢厂奖励待定，原型暂不计入'),
+    L('嘉兴凯达物资有限公司', '浙江 · 嘉兴', '一级代理带动', HY, DYN, '专属链接，企业管理员确认', '2026-10-30', '已接入 · 2026-10 不适用', '不计入', '二级经销商是否计入钢厂奖励待定，原型暂不计入'),
+    L('长沙宏达钢铁贸易有限公司', '湖南 · 长沙', '钢厂带动', DYN, '', '名单导入，企业管理员确认', '2025-11-12', '报送中断 · 2026-10 未达标', '不计入', '考核期内达标周期数不足 ' + R.needCycles + ' 个'),
+    L('南京金汇供应链管理有限公司', '江苏 · 南京', '钢厂带动', DYN, '', '专属链接，企业管理员确认', '2026-10-28', '已接入 · 2026-10 不适用', '不计入', '带动关系在周期中途成立，尚无达标周期'),
+    L('西安恒信物贸有限公司', '陕西 · 西安', '钢厂带动', '秦川钢铁股份有限公司', '', '名单导入，企业管理员确认', '2026-08-04', '已接入 · 2026-10 达标', '待核实', '命中反套取规则：考核期内只有库存快照、没有任何销售数据，核查期间暂不计入'),
+    L('嘉兴远航供应链有限公司', '浙江 · 嘉兴', '钢厂带动', DYN, '', '专属链接，企业管理员确认', '2026-03-18', '已接入 · 2026-10 不适用（无库存经营）', '不计入', '无库存经营标记自 2026-08 周期起生效，标记生效的周期没有达标结果，不计为达标周期。一期这类企业不计入有效带动户（N-59 待定）'),
+    L('无锡瑞丰物资有限公司', '江苏 · 无锡', '钢厂带动', DYN, '', '名单导入，企业管理员确认', '2025-09-04', '已接入 · 2026-10 达标', '计入'),
+  ];
+
+  STP.mount({
+    data() {
+      return {
+        staff: STAFF, me: '林若彤', tab: 'grant', R, S, DY, SRC, NSP: M.REF.noStock.platform, rule: Object.assign({}, RULE),
+        missDue: 324360, calDlg: false, NS: M.REF.noStock,
+        missDist: [
+          { k: '未上传', n: 9570, d: '截止时点前没有收到任何批次' },
+          { k: '超过截止时点', n: 4600, d: '数据在截止时点之后到达，照常入库，当天仍计为缺报' },
+          { k: '全部被上传条件过滤', n: 1530, d: '收到了批次，但按企业自设的上传条件没有一行留下；平台不向钢厂披露' },
+          { k: '整批被拒', n: 1100, d: '批次没有通过接入校验' },
+        ],
+        appeals: [{ ent: '佛山永盛钢铁贸易有限公司', cyc: '2026-10', why: '10 月 14 日至 17 日 ERP 升级，已于 18 日补传', done: '' }, { ent: '成都嘉信物资有限公司', cyc: '2026-10', why: '10 月 10 日（调休上班的周六）没有营业，认为不应计为应报送日', done: '' }, { ent: '长沙宏达钢铁贸易有限公司', cyc: '2026-09', why: '接口证书过期导致上传失败', done: '已更正为达标（林若彤）' }],
+        pending: [{ id: 'RRC-20261123-01', changes: ['奖励名额：每满 10 户奖 1 个 → 每满 8 户奖 1 个'], patch: { quotaPer: 8 }, reason: '2026 Q3 参与核算的钢厂中，约四成计入奖励的带动户数不足 10 户、没有获得奖励，降低门槛以提高中小钢厂带动协议户的积极性。', eff: '2027-01-01', by: '何志远', t: '2026-11-23 15:26' }],
+        versions: [
+          { v: 'RR-V2', eff: '2026-07-01', end: '', changes: ['奖励名额由每满 15 户 1 个调整为每满 10 户 1 个；增加单个钢厂每考核期 30 个的上限；有效带动户改为须在考核期内达到 2 个达标周期'], reason: '报送达标改为按自然月周期评定后，与奖励考核期对齐。', by: '林若彤', t: '2026-06-08 10:12', rv: '何志远', rvT: '2026-06-09 14:30', st: '当前生效' },
+          { v: 'RR-V1', eff: '2025-07-01', end: '2026-06-30', changes: ['初始规则：每满 15 户有效带动奖 1 个名额，有效期 12 个月；按自然季度考核'], reason: '', by: '林若彤', t: '2025-06-18 11:00', rv: '何志远', rvT: '2025-06-19 10:25', st: '已失效' }],
+        ed: { show: false, f: Object.assign({}, RULE), eff: '2027-01-01', reason: '' },
+        grants: GRANTS, gf: { period: '2026 Q3', st: '', kw: '' }, gd: { show: false, r: null, note: '' },
+        rels: RELS, rf: { type: '', st: '', kw: '' }, relSts: ['计入', '不计入', '待核实'],
+        srcColor: ['#409eff', '#18a058', '#f7b500', '#a0a9b6'],
+        top: [['北辰钢铁有限责任公司', 1386, 1124, 112], ['金江钢铁股份有限公司', 571, 482, 57], ['东岳钢铁集团有限公司', DY.confirmed, DY.connected, DY.reward.counted], ['昆仑钢铁股份有限公司', 203, 151, 19], ['湘江钢铁有限公司', 142, 113, 23], ['燕山钢铁股份有限公司', 131, 98, 31]],
+      };
+    },
+    computed: {
+      missSum() { return this.missDist.reduce((a, m) => a + m.n, 0); },
+      cur() { return this.versions.find((v) => v.st === '当前生效'); },
+      nextVer() { return this.versions.find((v) => v.st === '待生效'); },
+      pendN() { return this.grants.filter((g) => g.st === '待审核').length; },
+      relPendN() { return this.rels.filter((g) => g.st === '待核实').length; },
+      srcTotal() { return SRC.reduce((s, x) => s + x.n, 0); },
+      grantRows() { const f = this.gf; return this.grants.filter((g) => g.period === f.period && (!f.st || g.st === f.st) && (!f.kw || g.mill.indexOf(f.kw) >= 0)); },
+      relRows() { const f = this.rf; return this.rels.filter((r) => (!f.type || r.type === f.type) && (!f.st || r.st === f.st) && (!f.kw || (r.ent + r.by).indexOf(f.kw) >= 0)); },
+      edChanges() { const f = this.ed.f; return Object.keys(FIELD).filter((k) => f[k] !== this.rule[k]).map((k) => FIELD[k] + '：' + fv(k, this.rule[k]) + ' → ' + fv(k, f[k])); },
+      trendOpt() {
+        const ms = ['2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11'];
+        const mill = [9480, 9930, 10310, 10840, 11390, 11870, 12360, 12890, 13420, 13930, 14420, 14870];
+        const agent = [820, 930, 1040, 1180, 1320, 1450, 1590, 1740, 1890, 2040, 2190, 2316];
+        return STP.chart.line({ x: ms, unit: '家', series: [{ name: '钢厂带动（累计）', data: mill }, { name: '一级代理带动（累计）', data: agent, color: '#18a058' }] });
+      },
+    },
+    methods: {
+      roleOf(n) { return STAFF.find((s) => s.n === n).r; },
+      srcN(k) { return SRC.find((s) => s.k === k).n; },
+      appeal(row) {
+        ElementPlus.ElMessageBox.confirm('异议理由：' + row.why + '。复核只核对报送行为记录（各业务日期是否在截止时点前收到销售数据或库存快照），不查看业务数据。', '达标异议复核：' + row.ent, { distinguishCancelAndClose: true, confirmButtonText: '更正为达标', cancelButtonText: '维持未达标', type: 'warning' })
+          .then(() => { row.done = '已更正为达标（' + this.me + '）'; this.$demo('已更正并重新通知协议户和相关钢厂，写入审计日志'); })
+          .catch((a) => { if (a === 'cancel') { row.done = '维持未达标（' + this.me + '）'; this.$demo('已维持原结果并答复企业'); } });
+      },
+      openEdit() { this.ed = { show: true, f: Object.assign({}, this.rule), eff: '2027-01-01', reason: '' }; },
+      submitEdit() {
+        const e = this.ed;
+        if (!this.edChanges.length) return warn('没有任何变更，无需提交');
+        if (!e.reason.trim()) return warn('请填写变更原因');
+        if (this.pending.length || this.nextVer) return warn('已有待复核或待生效的规则变更，请先处理完毕再提交新的变更');
+        const patch = {}; Object.keys(FIELD).forEach((k) => { if (e.f[k] !== this.rule[k]) patch[k] = e.f[k]; });
+        this.pending.unshift({ id: 'RRC-20261124-01', changes: this.edChanges.slice(), patch, reason: e.reason, eff: e.eff, by: this.me, t: nowStr() });
+        e.show = false; this.$demo('已提交，等待另一位平台人员复核。提交人不能复核自己的申请。');
+      },
+      finish(row, st) {
+        const drop = () => { this.pending = this.pending.filter((x) => x !== row); };
+        if (st === '已撤回') { drop(); return this.$demo('已撤回申请'); }
+        if (row.by === this.me) return this.$info('提交人不能复核自己的申请');
+        if (st === '已驳回') {
+          return ElementPlus.ElMessageBox.prompt('请填写驳回意见', '驳回规则变更', { confirmButtonText: '确认驳回', cancelButtonText: '取消', inputValidator: (v) => !!(v && v.trim()) || '请填写驳回意见' }).then(({ value }) => {
+            drop(); this.versions.unshift({ v: '—', eff: row.eff, end: '', changes: row.changes, reason: row.reason + '（驳回意见：' + value + '）', by: row.by, t: row.t, rv: this.me, rvT: nowStr(), st: '已驳回' });
+            this.$demo('已驳回，带动奖励规则保持不变');
+          }).catch(() => {});
+        }
+        ElementPlus.ElMessageBox.confirm('确认通过该规则变更？新版本将于 ' + row.eff + ' 生效，此前的考核期仍按当前版本计算。', '复核带动奖励规则变更', { type: 'warning', confirmButtonText: '确认通过', cancelButtonText: '取消' }).then(() => {
+          drop();
+          const n = this.versions.filter((v) => /^RR-V\d/.test(v.v)).length + 1;
+          this.versions.unshift({ v: 'RR-V' + n, eff: row.eff, end: '', changes: row.changes, reason: row.reason, by: row.by, t: row.t, rv: this.me, rvT: nowStr(), st: '待生效' });
+          this.cur.end = STP.addDays(row.eff, -1);
+          this.$demo('复核通过。RR-V' + n + ' 将于 ' + row.eff + ' 生效，系统将提前通知全部上游钢厂。');
+        }).catch(() => {});
+      },
+      openGrant(row) { this.gd = { show: true, r: row, note: '' }; },
+      doGrant(ok) {
+        const g = this.gd, r = g.r;
+        if (!ok && !g.note.trim()) return warn('驳回时请填写审核意见');
+        r.st = ok ? '已发放' : '已驳回'; r.by = this.me; r.at = nowStr().slice(0, 16);
+        if (g.note.trim()) r.note = (r.note ? r.note + '；' : '') + '审核意见：' + g.note.trim();
+        g.show = false;
+        this.$demo(ok ? '已发放：奖励名额已入账到 ' + r.mill + ' 的名额账户，并已通知钢厂' : '已驳回，已通知钢厂');
+      },
+      verify(row) {
+        ElementPlus.ElMessageBox.confirm(row.why + '。核实后选择处理结果。', '核实带动关系：' + row.ent, { distinguishCancelAndClose: true, confirmButtonText: '核实通过，按规则计入', cancelButtonText: '不计入', type: 'warning' })
+          .then(() => { row.st = /\d 达标/.test(row.stage) ? '计入' : '不计入'; row.why = '已核实（' + this.me + '）' + (row.st === '不计入' ? '；尚未完成认证和接入' : ''); this.$demo('已核实，结果写入审计日志'); })
+          .catch((a) => { if (a === 'cancel') { row.st = '不计入'; row.why = '核实后不计入（' + this.me + '）'; this.$demo('已标记为不计入'); } });
+      },
+    },
+  });
+})();
+</script>
+</body>
+</html>

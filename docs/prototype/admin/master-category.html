@@ -59,6 +59,7 @@
           <div class="small muted" style="margin-top:3px">到{{ levels[row.depth - 1].t }}<span v-if="row.backfill" style="color:#d98200"> · 历史数据回补重算中</span></div>
         </template>
       </el-table-column>
+      <el-table-column label="统计维度模板 / 计量" width="150"><template #default="{row}"><b>{{ tplOf(row.name).name }}</b><span class="unit-pill" style="margin-left:6px">吨</span><div class="small muted" style="margin-top:2px">{{ tplOf(row.name).dims.map(d => d.name).join(' + ') }}<span v-if="row.depth < 4" style="color:#b26a00"> · 采集中，未披露</span></div></template></el-table-column>
       <el-table-column label="目标深度" width="62" align="center"><template #default="{row}"><span class="level-tag" style="margin-left:0">L{{ row.target }}</span></template></el-table-column>
       <el-table-column label="最细披露粒度（地区 / 时间 / 规格）" min-width="160">
         <template #default="{row}">
@@ -89,8 +90,110 @@
       </el-table-column>
     </el-table>
     <div class="tbl-foot">
-      <span>规格层级的开放与该品类的标准化深度挂钩：未完成规格段标准化的品类不开放规格段下钻；上游下钻到未开放层级时提示“该品类暂不提供此粒度”。各大类上线时的深度为初步判断，以主数据评审为准。</span>
+      <span>规格层级的开放与该品类的标准化深度挂钩：未完成规格段标准化的品类不开放规格段下钻；上游下钻到未开放层级时提示“该品类暂不提供此粒度”。各大类上线时的深度为初步判断，以主数据评审为准。模板第二维度的段在该品类达到 L4 后开放；接口从上线起就按模板采集维度，未达 L4 的先采集、暂不披露，达到后自动回补。</span>
     </div>
+  </div>
+
+  <!-- 统计维度模板、计量单位、分段字典 -->
+  <div class="card" id="dim">
+    <div class="card-title">
+      <span>统计维度模板、计量单位与分段字典<small>决定各品类的销量、库存按什么维度统计、用什么单位；对上游的筛选项和表格列随之变化</small></span>
+      <span class="right"><span class="ex-tag">分段数值为示例参数，须经品类业务人员评审</span><el-button size="small" @click="$go('grain-monitor.html')">格子达标与上卷率监控</el-button></span>
+    </div>
+    <el-tabs v-model="dimTab">
+      <el-tab-pane name="tpl" label="统计维度模板">
+        <table class="plain-table">
+          <thead><tr><th style="width:92px">模板</th><th>维度定义（名称 · 取值类型 · 单位 · 接口字段）</th><th>披露层级路径（最细 → 最粗，格子不足时依次上卷）</th><th style="width:210px">归属的大类</th><th style="width:96px">计量类型</th><th style="width:108px">版本</th><th style="width:64px">操作</th></tr></thead>
+          <tbody>
+            <tr v-for="t in tpls" :key="t.key">
+              <td><b>{{ t.name }}</b></td>
+              <td><div v-for="(d, i) in t.dims" :key="d.name" style="line-height:1.8"><span class="dim-chip">{{ i === 0 ? '第一维度' : '第二维度' }}</span> {{ d.name }}<span class="muted small"> · {{ d.type }}{{ d.unit ? ' · ' + d.unit : '' }} · <span class="code">{{ d.key }}</span>{{ d.note ? ' · ' + d.note : '' }} · 必填</span></div></td>
+              <td><template v-for="(p, i) in t.path" :key="p"><span v-if="i" class="muted"> → </span><span>{{ p }}</span></template></td>
+              <td class="small">{{ t.cats }}</td>
+              <td><span class="unit-pill" v-if="t.key !== '其他'">吨位</span><template v-else><span class="unit-pill">吨位</span> <span class="unit-pill ns">数量</span></template></td>
+              <td class="small"><span class="code">DT-V1</span><div class="muted">2026-11-01 生效</div></td>
+              <td><el-button link type="primary" @click="$info('原型演示：模板的维度定义和层级路径变更须双人复核，并给出影响评估')">编辑</el-button></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="tip-box small mt12">模板决定三件事：下游接口按品名<b>必填哪些维度</b>（缺第一维度进待映射，缺第二维度归入“未分段”）；上游选定品类后<b>出现哪些筛选项和表格列</b>；格子不足时<b>按什么顺序上卷</b>。上卷路径固定为：先去掉第二维度，再从规格到规格段，最后到品名。型材的第二维度按品名固定为公斤段或负差段之一，在“品名归属与计量单位”页签里逐个品名配置。不锈钢、优特钢暂归“其他品类”，是否按形态改归板材、管材模板<b>待业务方确定</b>。</div>
+      </el-tab-pane>
+
+      <el-tab-pane name="unit" label="品名归属与计量单位">
+        <div class="grid c-3-2" style="margin-bottom:0">
+          <div>
+            <table class="plain-table">
+              <thead><tr><th>大类</th><th>品名</th><th style="width:150px">统计维度模板</th><th style="width:110px">计量类型</th><th style="width:130px">数量单位</th></tr></thead>
+              <tbody>
+                <tr v-for="r in unitRows" :key="r.cat">
+                  <td><b>{{ r.cat }}</b><el-tag v-if="!r.steel" size="small" type="warning" effect="plain" style="margin-left:6px">非钢材</el-tag></td>
+                  <td class="small">{{ r.prods }}</td>
+                  <td><el-select v-model="r.tpl" size="small" style="width:124px" @change="tplChange(r)"><el-option v-for="t in tpls" :key="t.key" :label="t.name" :value="t.key" /></el-select></td>
+                  <td><span class="unit-pill" :class="{ns: !r.steel}">{{ r.steel ? '吨位' : '数量' }}</span></td>
+                  <td><span v-if="r.steel" class="muted">—</span><span v-else class="small">按品名设置，见右侧</span></td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="small muted mt8">每个品名归属一个模板，并有确定的计量类型。<b>计量类型由主数据决定，不由上传方选择。</b>改归模板须双人复核；改归后历史数据按新模板重算。</div>
+          </div>
+          <div>
+            <div class="small muted mb8">非钢材品名的标准数量单位</div>
+            <table class="plain-table">
+              <thead><tr><th>品名</th><th style="width:110px">标准数量单位</th><th>可换算的上传单位</th></tr></thead>
+              <tbody>
+                <tr v-for="u in nsUnits" :key="u.name"><td>{{ u.name }}</td><td><el-select v-model="u.unit" size="small" style="width:84px" @change="$demo('数量单位变更已提交复核；生效前上传单位仍按原单位校验')"><el-option v-for="x in ['个','套','片','件','米','张']" :key="x" :label="x" :value="x" /></el-select></td><td class="small muted">{{ u.conv }}</td></tr>
+              </tbody>
+            </table>
+            <div class="tip-box orange small mt12"><b>吨位与数量分列存储，不互相换算，不合并相加。</b>不同数量单位的品名之间也不合计。上传单位与标准单位不同，且没有维护固定换算关系的，拒收（UNIT_MISMATCH）。非钢材一期不接收价格。</div>
+          </div>
+        </div>
+        <div class="card-title" style="margin:4px 0 8px"><span>型材的第二维度<small>按品名固定：逐个品名配置用公斤段还是负差段，二者取一（业务方 2026-11-25 确认）</small></span><span class="ex-tag">各品名取哪一种为示例，待主数据评审确定</span></div>
+        <table class="plain-table">
+          <thead><tr><th style="width:76px">品名</th><th style="width:118px">第二维度</th><th style="width:118px">公斤数口径</th><th>分段（示例参数）</th><th style="width:126px">下游必填字段</th><th style="width:118px">配置版本</th></tr></thead>
+          <tbody>
+            <tr v-for="s in secRows" :key="s.name">
+              <td><b>{{ s.name }}</b></td>
+              <td><el-select v-model="s.dim" size="small" style="width:100px" @change="secChange(s)"><el-option label="公斤段" value="公斤" /><el-option label="负差段" value="负差" /></el-select></td>
+              <td><el-select v-if="s.was === '公斤'" v-model="s.basis" size="small" style="width:100px" @change="basisChange(s)"><el-option label="每米重量" value="每米" /><el-option label="单支重量" value="单支" /></el-select><span v-else class="muted">—</span></td>
+              <td><el-tag v-for="b in secBands(s.was)" :key="b" size="small" effect="plain" style="margin:2px 4px 2px 0">{{ b }}</el-tag><div v-if="s.was === '公斤' && s.eg" class="small muted">例：{{ s.eg.model }} 理重 {{ s.eg.w }} kg/m，四段为 {{ s.eg.r.join('、') }} kg/m</div></td>
+              <td class="small"><span class="code">{{ s.was === '公斤' ? 'unitWeightKg' : 'negTolerancePct' }}</span></td>
+              <td class="small"><span class="num">{{ s.ver }}</span><div class="muted">{{ s.eff }} 生效</div></td>
+            </tr>
+            <tr>
+              <td><b>T 型钢</b><div class="small muted">新增品名</div></td>
+              <td><el-tag size="small" type="info" effect="plain">尚未配置</el-tag></td><td class="muted">—</td>
+              <td class="small muted">不开放第二维度，只披露到规格</td><td class="small"><span class="code">sectionModel</span></td>
+              <td><el-button size="small" link type="primary" @click="$info('原型演示：为新增品名选择公斤段或负差段（公斤段另选口径），提交后须另一人复核，生效后通过字典接口下发')">去配置</el-button></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="small muted mt8" style="line-height:1.8">一个品名只用一种，上游查询、看板、导出按这里的配置出列，不提供切换；一次查询同时选了公斤段品名和负差段品名时，第二维度按品名分别展示，不合并。配置为公斤段的品名同时配置公斤数口径；单支重量须同时有长度才能比较。公斤段按“实际重量 ÷ 理论重量”归段，各型号的公斤数区间由理论重量表换算（示例参数）。下游只传了另一种时，平台按理论重量表换算并标记“换算值”；不能换算的归入“未分段”。<br>配置带版本和生效日期，修改须<b>双人复核</b>，并通过字典接口下发。<b>改第二维度类型视同分段字典变更：公斤段与负差段互不嵌套，历史数据一律不按新类型重算</b>，生效日之前的数据仍按原类型展示，趋势图标注口径变更。</div>
+      </el-tab-pane>
+
+      <el-tab-pane name="band" label="分段字典">
+        <div class="row between mb12">
+          <div class="row">
+            <span class="small muted">品名</span>
+            <el-select v-model="bandProd" size="small" style="width:170px" filterable><el-option-group v-for="c in allCats" :key="c.name" :label="c.name"><el-option v-for="p in c.products" :key="p.name" :label="p.name" :value="p.name" /></el-option-group></el-select>
+            <span class="small">模板 <b>{{ bandInfo.tplName }}</b>　计量 <span class="unit-pill" :class="{ns: !bandInfo.steel}">{{ bandInfo.unit }}</span></span>
+          </div>
+          <span class="small muted">当前版本 <span class="code">{{ bandVer.ver }}</span>（{{ bandVer.eff }} 生效）　上一版本 <span class="code">{{ bandVer.prev }}</span>　已失效版本保留最近 {{ bandVer.keep }} 个用于历史数据回看</span>
+        </div>
+        <table class="plain-table">
+          <thead><tr><th style="width:150px">维度</th><th style="width:90px">分段类型</th><th>分段（左闭右开）</th><th style="width:150px">对上游的开放状态</th><th style="width:110px">操作</th></tr></thead>
+          <tbody>
+            <tr v-for="b in bandInfo.rows" :key="b.dim">
+              <td><b>{{ b.dim }}</b><div class="small muted">{{ b.lv }}</div></td>
+              <td>{{ b.type }}</td>
+              <td><el-tag v-for="x in b.bands" :key="x" effect="plain" :type="bandInfo.open ? 'primary' : 'info'" style="margin:2px 6px 2px 0">{{ x }}</el-tag><div v-if="b.note" class="small muted" style="margin-top:2px">{{ b.note }}</div></td>
+              <td><span v-if="bandInfo.open"><span class="dot ok"></span>已开放</span><span v-else class="muted"><span class="dot"></span>未达 L4，暂不披露</span></td>
+              <td><el-button link type="primary" @click="openBand(b)">编辑分段点</el-button></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="tip-box small mt12">分段由平台统一定义，<b>上游不能自定义分段，也不能自选边界</b>：允许自选边界等于提供了差分工具，两次查询的边界相差一点就能切出单家。分段变更须<b>双人复核</b>，变更前给出影响评估。变更默认不重算历史：历史数据按业务日期当时生效的版本展示，趋势图标注口径变更；只合并相邻段或在既有边界内细分时，才可申请重算。按分段字典归段上传的日汇总企业须重新拉取字典。同一版本内同一维度的段互不重叠且覆盖全部取值。</div>
+      </el-tab-pane>
+    </el-tabs>
   </div>
 
   <div class="grid c2">
@@ -100,7 +203,7 @@
       <div class="grid c2" style="margin-bottom:10px">
         <div class="scope-col">
           <h4><el-icon style="color:#18a058"><CircleCheck /></el-icon>受理</h4>
-          <ul><li>钢材成品：建筑钢材、热轧板卷、中厚板、冷轧及涂镀、管材、型钢、优特钢</li><li>含不锈钢</li><li>暂时无法归类的钢材成品归入各大类“其他品名”</li></ul>
+          <ul><li>钢材成品：建筑钢材、热轧板卷、中厚板、冷轧及涂镀、管材、型钢、优特钢</li><li>含不锈钢</li><li>暂时无法归类的钢材成品归入各大类“其他品名”</li><li>非钢材配套品类（按数量统计，不折算吨位）：配套辅材，目前为钢筋连接套筒、脚手架扣件、法兰</li></ul>
         </div>
         <div class="scope-col">
           <h4><el-icon style="color:#e5484d"><CircleClose /></el-icon>不受理</h4>
@@ -111,7 +214,7 @@
     </div>
     <!-- 待复核 -->
     <div class="card">
-      <div class="card-title"><span>待复核的变更<small>披露粒度、标准化深度、归口项拆分须另一人复核后生效</small></span></div>
+      <div class="card-title"><span>待复核的变更<small>披露粒度、标准化深度、归口项拆分、模板归属、型材第二维度、分段字典须另一人复核后生效</small></span></div>
       <div v-if="!pendings.length" class="empty-block">暂无待复核的变更</div>
       <div class="pend-item" v-for="p in pendings" :key="p.id">
         <el-tag size="small" :type="p.status === '待复核' ? 'warning' : p.status === '已驳回' ? 'info' : 'success'">{{ p.status }}</el-tag>
@@ -212,7 +315,7 @@
               <el-table-column prop="formula" label="理论重量换算规则" min-width="340" />
               <el-table-column label="换算启用" width="110"><template #default><el-tag size="small" type="info">一期未启用</el-tag></template></el-table-column>
             </el-table>
-            <div class="tip-box orange small mt12">聚合统一用吨。一期要求下游上传重量；二期起对只有支数、米数、张数的数据按理论重量换算，并在明细中标记“换算重量”。是否允许平台换算<b>待业务方确定</b>。</div>
+            <div class="tip-box orange small mt12">钢材聚合统一用吨；非钢材按数量聚合，不换算为吨（见上方“品名归属与计量单位”）。一期要求下游上传钢材重量；二期起对只有支数、米数、张数的数据按理论重量换算，并在明细中标记“换算重量”。是否允许平台换算<b>待业务方确定</b>。</div>
           </el-tab-pane>
 
           <el-tab-pane name="rules" label="分品类质量规则集">
@@ -298,6 +401,36 @@
   </el-dialog>
 
   <!-- 提升标准化深度 -->
+  <el-dialog v-model="bandDlg" :title="'编辑分段点 · ' + bandProd + ' · ' + (bf.b ? bf.b.dim : '')" width="640px">
+    <template v-if="bf.b">
+      <el-form label-width="92px">
+        <el-form-item label="当前分段"><el-tag v-for="x in bf.b.bands" :key="x" type="info" effect="plain" style="margin-right:6px">{{ x }}</el-tag></el-form-item>
+        <el-form-item label="调整方式">
+          <el-radio-group v-model="bf.mode"><el-radio value="merge">合并相邻两段</el-radio><el-radio value="split">拆分一段</el-radio></el-radio-group>
+        </el-form-item>
+        <el-form-item :label="bf.mode === 'merge' ? '合并的段' : '拆分的段'">
+          <el-select v-model="bf.idx" style="width:260px"><el-option v-for="(x, i) in bandPick" :key="x" :label="x" :value="i" /></el-select>
+        </el-form-item>
+        <el-form-item label="调整后"><el-tag v-for="x in bandAfter" :key="x" type="primary" effect="plain" style="margin-right:6px">{{ x }}</el-tag></el-form-item>
+        <el-form-item label="生效日期"><el-date-picker v-model="bf.date" type="date" value-format="YYYY-MM-DD" style="width:160px" :clearable="false" /><span class="small muted" style="margin-left:8px">不早于提交后第 7 日，须提前向上游公告</span></el-form-item>
+        <el-form-item label="变更原因"><el-input v-model="bf.reason" placeholder="必填，例如：该段长期不足阈值，上卷率偏高" /></el-form-item>
+      </el-form>
+      <div class="side-panel-title">影响评估<span class="ex-tag" style="margin-left:8px">原型估算</span></div>
+      <table class="plain-table">
+        <thead><tr><th>评估项</th><th class="r">变更前</th><th class="r">变更后</th></tr></thead>
+        <tbody>
+          <tr><td>该维度的段数</td><td class="r num">{{ bf.b.bands.length }}</td><td class="r num">{{ bandAfter.length }}</td></tr>
+          <tr><td>可披露格子比例（典型数据池）</td><td class="r num">{{ bandImpact.before }}%</td><td class="r num" :style="{color: bandImpact.after >= bandImpact.before ? '#18a058' : '#e5484d'}">{{ bandImpact.after }}%</td></tr>
+          <tr><td>受影响的上传企业</td><td class="r" colspan="2"><span class="num">{{ $fmt(bandImpact.ents) }}</span> 家（在传该品名）</td></tr>
+          <tr><td>受影响的数据池与已保存的查询方案</td><td class="r" colspan="2"><span class="num">{{ bandImpact.pools }}</span> 个数据池，<span class="num">{{ bandImpact.schemes }}</span> 个查询方案需按新分段重新展示</td></tr>
+          <tr><td>历史数据</td><td class="r" colspan="2">默认不重算：生效日之前的数据仍按原版本展示，趋势图标注口径变更。{{ bf.mode === 'merge' ? '本次为合并相邻段，新旧分段互相嵌套，可另行申请重算' : '本次为在既有边界内细分，新旧分段互相嵌套，可另行申请重算' }}；已导出的文件不变，文件内带分段字典版本</td></tr>
+        </tbody>
+      </table>
+      <div class="tip-box orange small mt12">{{ bf.mode === 'split' ? '拆分会让格子变细、可披露比例下降，并可能被用来与旧分段做差分：新旧分段的差分校验通过后才允许生效。' : '合并只会让格子变粗，不会增加泄露风险。' }}变更生成新版本 <span class="code">BD-2026.12</span>，须另一人复核。</div>
+    </template>
+    <template #footer><el-button @click="bandDlg = false">取消</el-button><el-button type="primary" :disabled="!bf.reason" @click="submitBand">提交复核</el-button></template>
+  </el-dialog>
+
   <el-dialog v-model="depthDlg" :title="'提升标准化深度 · ' + (cur ? cur.name : '')" width="620px">
     <template v-if="cur">
       <div class="row" style="justify-content:center;gap:16px;margin:4px 0 6px">
@@ -462,6 +595,11 @@
       const self = this;
       return {
         me: '林若彤', levels: LEVELS, cats, queue,
+        dimTab: 'tpl', bandProd: '焊管', bandVer: M.BAND_VER, allCats: M.allCats, bandDlg: false, bf: { b: null, mode: 'merge', idx: 0, date: '2026-12-01', reason: '' },
+        tpls: ['建材', '板材', '管材', '型材', '其他'].map((k) => Object.assign({}, M.DIM_TPL[k], { cats: M.allCats.filter((c) => (c.steel === false ? '其他' : M.CAT_TPL[c.name]) === k).map((c) => c.name + (c.steel === false ? '（非钢材）' : '')).join('、') })),
+        unitRows: M.allCats.map((c) => ({ cat: c.name, steel: c.steel !== false, tpl: c.steel === false ? '其他' : M.CAT_TPL[c.name], was: c.steel === false ? '其他' : M.CAT_TPL[c.name], prods: c.products.map((p) => p.name).join('、') })),
+        secRows: Object.keys(M.SEC_DIM2).map((name) => { const model = Object.keys(M.THEO_KG).find((m) => m.indexOf(name) >= 0) || (M.FINE[name] ? [].concat.apply([], M.FINE[name]).find((m) => M.THEO_KG[m]) : null); return { name, dim: M.SEC_DIM2[name], was: M.SEC_DIM2[name], basis: '每米', basisWas: '每米', ver: 'SD-2026.11', eff: '2026-11-01', eg: model ? { model, w: M.THEO_KG[model], r: M.kgRange(model) } : null }; }),
+        nsUnits: M.nonSteel[0].products.map((p) => ({ name: p.name, unit: p.unit, conv: p.unit === '个' ? '“只”“枚”按 1:1 换算' : p.unit === '套' ? '未维护换算关系，其他单位拒收' : '“块”按 1:1 换算' })),
         sel: { cat: M.categories[0], prod: M.categories[0].products[0] }, mdTab: 'material', treeKw: '',
         tree: M.categories.map((c) => ({ id: c.name, label: c.name, depth: true, children: c.products.map((p) => ({ id: c.name + '/' + p.name, label: p.name, cat: c.name })).concat([{ id: c.name + '/其他', label: '其他品名', other: true, cat: c.name }]) })),
         matCache: {},
@@ -472,6 +610,8 @@
           { id: 'MDC-1124-002', type: '披露粒度', cat: '管材', content: '管材：最细地区 地级市 → 省（原因：地级市层级屏蔽率 57%）', by: '赵启明', time: '2026-11-24 09:26', status: '待复核', reviewer: '', apply() { const c = cats.find((x) => x.name === '管材'); const r = self.cats.find((x) => x.name === c.name); r.geo = '省'; r.pending = false; } },
         ],
         logs: [
+          { time: '2026-11-25 10:20', by: '林若彤', obj: '管材 · 标准化深度', what: 'L3 材质 → L4 规格段；按统计维度模板启用“规格 × 壁厚段”（复核人 赵启明）', impact: '2,731 家企业，39,400 万行，回补 5 小时', ver: 'MD-2026.11.5', st: '已生效' },
+          { time: '2026-11-25 09:40', by: '赵启明', obj: '统计维度模板 · 分段字典', what: '启用模板 DT-V1 与分段字典 BD-2026.11（壁厚段、厚度段、宽度段、公斤段、负差段；型材第二维度按品名配置：H 型钢用负差段，工字钢、槽钢、角钢用公斤段；复核人 林若彤）；新增非钢材大类“配套辅材”，按数量统计', impact: '全部品名；非钢材 486 家企业', ver: 'MD-2026.11.4', st: '已生效' },
           { time: '2026-11-24 09:26', by: '赵启明', obj: '管材 · 披露粒度', what: '最细地区：地级市 → 省', impact: '影响 438 个数据池中的 291 个', ver: '—', st: '待复核' },
           { time: '2026-11-21 16:40', by: '赵启明', obj: '型钢 · 标准化深度', what: 'L3 材质 → L4 规格段；启用 H 型钢、工字钢、槽钢、角钢规格段方案', impact: '2,514 家企业，34,500 万行，回补 4 小时', ver: 'MD-2026.11.3', st: '已生效' },
           { time: '2026-11-19 11:05', by: '林若彤', obj: '中厚板 · 其他品名', what: '拆分归口项：新增标准品名“低合金中厚板”', impact: '1,460 家企业，回补 20,700 万行', ver: 'MD-2026.11.2', st: '已生效' },
@@ -485,6 +625,26 @@
       passCount() { return this.cats.filter((c) => c.map >= c.th).length; },
       highConf() { return this.queue.filter((q) => q.conf >= 0.9).length; },
       selCat() { return this.cats.find((c) => c.name === this.sel.cat.name); },
+      bandInfo() {
+        const d = M.dimsOf(this.bandProd), rows = [];
+        const one = d.tplKey === '板材' ? '厚度段' : '规格段';
+        rows.push({ dim: one, lv: '第一维度' + (d.d1.fine ? '（单规格之上的一层）' : ''), type: d.tplKey === '板材' ? '连续分段' : '规格归组', bands: d.d1.bands.slice(), note: d.d1.fine ? '已配置单规格 ' + d.d1.fine.reduce((a, x) => a + x.length, 0) + ' 个，单规格不足阈值时上卷到这一层' : '未配置单规格，第一维度以这一层为最细' });
+        if (d.d2) rows.push({ dim: d.d2.segName, lv: '第二维度', type: '连续分段', bands: d.d2.bands.filter((x) => x !== M.UNBANDED), note: '缺少该维度的数据归入“' + M.UNBANDED + '”，只参与更粗层级的聚合' + (d.tplKey === '型材' ? '；该品名固定用' + d.d2.segName + '，在“品名归属与计量单位”页签里配置' : '') });
+        return { tplName: d.tpl.name, unit: d.unit, steel: d.steel, open: d.open, rows };
+      },
+      bandPick() { const b = this.bf.b; if (!b) return []; return this.bf.mode === 'merge' ? b.bands.slice(0, -1).map((x, i) => x + ' 与 ' + b.bands[i + 1]) : b.bands; },
+      bandAfter() {
+        const f = this.bf, b = f.b; if (!b) return [];
+        const out = b.bands.slice(), i = Math.min(f.idx, this.bandPick.length - 1);
+        if (f.mode === 'merge') out.splice(i, 2, out[i] + ' + ' + out[i + 1]); else out.splice(i, 1, out[i] + '（前半）', out[i] + '（后半）');
+        return out;
+      },
+      bandImpact() {
+        const f = this.bf, d = M.dimsOf(this.bandProd), n = M.dimN(this.bandProd), s = M.dimTree(this.bandProd, n * 1000, n, {}).stat;
+        const before = s.cellAll ? Math.round(s.cellOk / s.cellAll * 100) : 100, delta = f.mode === 'merge' ? Math.min(100 - before, 6 + M.hash(this.bandProd + f.idx) % 9) : -(8 + M.hash(this.bandProd + f.idx) % 10);
+        const share = d.steel ? d.cat.share * d.p.share : 0.02;
+        return { before, after: Math.max(0, Math.min(100, before + delta)), ents: Math.round(21386 * Math.min(0.5, share * 1.6)), pools: 40 + M.hash(this.bandProd) % 160, schemes: 12 + M.hash(this.bandProd + 's') % 60 };
+      },
       detail() {
         const p = this.sel.prod, c = this.sel.cat, cc = this.selCat;
         const key = c.name + '/' + p.name;
@@ -559,6 +719,32 @@
         this.qSel = [];
         this.logs.unshift({ time: '2026-11-24 14:' + (20 + seq), by: this.me, obj: '待映射队列', what: '确认映射 ' + list.length + ' 项：' + list.slice(0, 3).map((r) => r.raw + ' → ' + r.rec).join('；') + (list.length > 3 ? ' 等' : ''), impact: '写入别名库，相关数据自动回补并重算', ver: '—', st: '已生效' });
         this.$demo('已确认 ' + list.length + ' 项映射，已写入别名库；相关待映射数据将自动回补并参与聚合');
+      },
+      tplOf(cat) { return M.DIM_TPL[M.CAT_TPL[cat] || '其他']; },
+      tplChange(r) {
+        const to = r.tpl, from = r.was; r.tpl = from;
+        if (to === from) return;
+        const c = this.cats.find((x) => x.name === r.cat) || { name: r.cat, pending: false };
+        this.submit('模板归属', c, r.cat + '：统计维度模板 ' + M.DIM_TPL[from].name + ' → ' + M.DIM_TPL[to].name, '历史数据按新模板重算；下游接口的必填维度随之变化，须提前公告', () => { r.tpl = r.was = to; });
+      },
+      secBands(k) { return k === '公斤' ? M.KG_BANDS : M.DIM2['H 型钢'][1]; },
+      secChange(s) {
+        const to = s.dim, from = s.was; s.dim = from;
+        if (to === from) return;
+        const c = this.cats.find((x) => x.name === '型钢');
+        this.submit('型材第二维度', c, s.name + '：第二维度 ' + from + '段 → ' + to + '段' + (to === '公斤' ? '，公斤数口径每米重量' : ''), '视同分段字典变更：历史数据不按新类型重算，生效日前仍按原类型展示；下游接口的必填字段随之变化，须提前公告并经字典接口下发', () => { s.dim = s.was = to; s.ver = 'SD-2026.12'; s.eff = '2026-12-01'; });
+      },
+      basisChange(s) {
+        const to = s.basis, from = s.basisWas; s.basis = from;
+        if (to === from) return;
+        const c = this.cats.find((x) => x.name === '型钢');
+        this.submit('型材公斤数口径', c, s.name + '：公斤数口径 ' + from + '重量 → ' + to + '重量', '下游须按新口径上传 unitWeightKg 并注明 unitWeightBasis；历史数据不重算', () => { s.basis = s.basisWas = to; s.ver = 'SD-2026.12'; s.eff = '2026-12-01'; });
+      },
+      openBand(b) { this.bf = { b, mode: 'merge', idx: 0, date: '2026-12-01', reason: '' }; this.bandDlg = true; },
+      submitBand() {
+        const f = this.bf, d = M.dimsOf(this.bandProd), c = this.cats.find((x) => x.name === d.cat.name) || { name: d.cat.name, pending: false }, after = this.bandAfter.slice(), b = f.b;
+        this.submit('分段字典', c, this.bandProd + ' · ' + b.dim + '：' + (f.mode === 'merge' ? '合并' : '拆分') + '“' + this.bandPick[Math.min(f.idx, this.bandPick.length - 1)] + '”，' + f.date + ' 生效（原因：' + f.reason + '）', '可披露格子比例 ' + this.bandImpact.before + '% → ' + this.bandImpact.after + '%；' + STP.fmt(this.bandImpact.ents) + ' 家企业', () => {});
+        this.bandDlg = false;
       },
       submit(type, cat, content, impact, apply) {
         const id = 'MDC-1124-00' + (seq++);

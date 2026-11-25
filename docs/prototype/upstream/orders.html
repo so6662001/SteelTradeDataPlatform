@@ -240,6 +240,7 @@
       <span>{{ renew.qty }} × 400 × {{ renewCalc.months }} × {{ renewCalc.cOff }} × {{ renewCalc.tier.off }}<span class="muted small">（{{ renewCalc.tier.label }} 档）</span> <span class="ex-tag">示例参数，待业务方确定</span></span>
       <span>应付 <span class="price-big num" style="font-size:22px">¥ {{ $fmt(renewCalc.total) }}</span></span>
     </div>
+    <div class="tip-box small mt8"><b>协议户照常占用付费名额。</b>本次续费的 200 个名额里，有 {{ seat.inPool }} 个由本厂协议户占用（含待生效），续费时与其他企业同价，不因带动关系减免。带动奖励一期以<b>奖励名额</b>发放（本厂现有 {{ reward.quota }} 个，未分配 {{ seat.rewardFree }} 个，有效期至 {{ reward.validTo }}），可抵用新选入企业占用的名额；单独列示、不计费，不计入续费的名额数和数量阶梯。奖励折扣为二期，届时在续费、加购下单时抵用。<a href="dealer-invite.html">协议户邀请与接入 ›</a></div>
     <template #footer>
       <el-button @click="renew.show = false">取消</el-button>
       <el-button type="primary" @click="submitRenew">提交续费订单</el-button>
@@ -312,7 +313,7 @@
 (function () {
   const P = M.PRICING;
   /* 业务方 2026-11-25 确认：订阅期内加购从新增企业生效日起计费，下单日至生效日之间不收费（需求文档 V0.3 第 8.9 节） */
-  const ADD_RULE = '周期内加购从新增企业的生效日起计费，下单日至生效日之间不收费；计费天数为生效日至原订单到期日（含首尾），到期日与主批次对齐。新增企业在下一个数据池调整周期生效，生效前为“已分配（待生效）”：不计费、不计提分成，数据不进入聚合。按日折算口径（N-24）与适用阶梯（N-25）待确认。';
+  const ADD_RULE = '周期内加购从新增企业的生效日起计费，下单日至生效日之间不收费；计费天数为生效日至原订单到期日（含首尾），到期日与主批次对齐。新增企业在下一个数据池调整周期生效，生效前为“已分配（待生效）”：不计费，数据不进入聚合。按日折算口径（N-24）与适用阶梯（N-25）待确认。';
   const ORDERS = [
     {
       id: 'DO-20261120-0052', at: '2026-11-20 16:42', by: '周立明', goods: '名额包（周期内加购）', sub: '并入主批次，到期日对齐', qty: 30, cycle: '计费 121 天（含首尾）', start: '2026-12-01', end: '2027-03-31', rule: ADD_RULE, eff: '2026-12-01', billDays: 121, freeSpan: '2026-11-20 至 2026-11-30，共 11 天', ents: '30 家（实名 22 家、匿名 8 家）', pick: '共选 43 家：13 家使用主批次的未分配名额，不属于加购，不产生费用，已列为待生效；其余 30 家为加购，计入本订单', cutoff: '须在 2026-11-28 18:00 前完成核销；逾期顺延到 2027-01-01 生效并重新计价',
@@ -339,7 +340,7 @@
     },
     {
       id: 'DO-20250926-0011', at: '2025-09-26 09:30', by: '周立明', goods: '名额包（周期内加购）', sub: '生效前申请退款，已全额退回', qty: 20, cycle: '计费 182 天（含首尾）', start: '2025-10-01', end: '2026-03-31', rule: ADD_RULE, eff: '2025-10-01', billDays: 182, freeSpan: '2025-09-26 至 2025-09-30，共 5 天', ents: '20 家',
-      amount: 36619, formula: '20 × 适用日单价约 10.06 元 × 182 天，即 20 × 400 × 12 × 0.85（年付）× 0.9（100–199 档，累计 140 个）× 182/365', pay: '在线支付', payNote: '已退款 2025-09-28', status: '已退款', contract: '', invoice: '', remark: '生效日之前取消，全额退款，退款原路退回；没有台账行，也不产生分成冲正',
+      amount: 36619, formula: '20 × 适用日单价约 10.06 元 × 182 天，即 20 × 400 × 12 × 0.85（年付）× 0.9（100–199 档，累计 140 个）× 182/365', pay: '在线支付', payNote: '已退款 2025-09-28', status: '已退款', contract: '', invoice: '', remark: '生效日之前取消，全额退款，退款原路退回',
       flow: [
         { at: '2025-09-26 09:30', t: '提交订单', who: '周立明' }, { at: '2025-09-26 09:34', t: '在线支付成功，订单已支付（待生效）', who: '货袋子收银台', type: 'success' },
         { at: '2025-09-27 16:10', t: '申请退款', who: '周立明', d: '订单尚未生效，申请全额退款', type: 'warning' }, { at: '2025-09-28 10:05', t: '退款完成', who: '平台财务', d: '36,619 元原路退回', type: 'info' },
@@ -381,11 +382,13 @@
       invoiceable() { return this.orders.filter(this.canInvoice); },
       invOrder() { return this.orders.find((o) => o.id === this.inv.orderId) || null; },
       proofOrder() { return this.orders.find((o) => o.id === this.proof.orderId) || null; },
+      reward() { return M.REF.dy.reward; },
+      seat() { return M.REF.dy.seat; },
       renewCalc() {
         const c = this.renew.cycle, q = this.renew.qty || 20;
         const cOff = c === 'year' ? P.yearOff : c === 'quarter' ? P.quarterOff : 1, months = c === 'year' ? 12 : c === 'quarter' ? 3 : 1;
-        const tier = M.tierOf(q);
-        return { cOff, months, tier, total: Math.round(q * P.base * months * cOff * tier.off), end: { year: '2028-03-31', quarter: '2027-06-30', month: '2027-04-30' }[c] };
+        const tier = M.tierOf(q), total = Math.round(q * P.base * months * cOff * tier.off);
+        return { cOff, months, tier, total, end: { year: '2028-03-31', quarter: '2027-06-30', month: '2027-04-30' }[c] };
       },
     },
     methods: {

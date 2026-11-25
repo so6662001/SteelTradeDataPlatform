@@ -203,6 +203,12 @@
           <el-input-number v-model="nf.lo" :min="0" :max="3000" controls-position="right" style="width:120px;margin-left:8px" /><span style="margin:0 6px">至</span>
           <el-input-number v-model="nf.hi" :min="0" :max="3000" controls-position="right" style="width:120px" /><span style="margin-left:8px">mm</span>
         </template>
+        <template v-else-if="dimDef.type==='drange'">
+          <el-input-number v-model="nf.dlo" :min="0" :max="3000" :step="dimDef.step" controls-position="right" style="width:130px" /><span style="margin:0 6px">至</span>
+          <el-input-number v-model="nf.dhi" :min="0" :max="3000" :step="dimDef.step" controls-position="right" style="width:130px" /><span style="margin-left:8px">{{ dimDef.unit }}</span>
+          <div class="small muted" style="width:100%">只对{{ dimDef.tpl }}模板的品名生效，其他品类不受这个条件影响。按原始值判断（左闭右开），与平台的分段无关。<template v-if="dimDef.sec">型材的第二维度按品名固定，这个条件只对配置为{{ dimDef.sec }}段的品名生效（{{ secNames(dimDef.sec) }}）。</template></div>
+        </template>
+        <template v-else-if="dimDef.type==='qty'"><el-input-number v-model="nf.qty" :min="1" :max="1000000" :step="100" controls-position="right" style="width:160px" /><span style="margin-left:8px">（该品名的标准数量单位）</span><div class="small muted" style="width:100%">对应钢材的“单笔吨位上下限”。不同数量单位的品名分别按各自的单位判断。</div></template>
         <template v-else>
           <el-input v-model="nf.codes" type="textarea" :rows="3" placeholder="每行一个 ERP 客户编码、部门编码或业务员编码" />
           <div class="small muted">平台只保存这些编码的不可逆摘要，不保存编码原文，接口也不接收对应的名称。</div>
@@ -235,14 +241,27 @@
         <div class="stat"><div class="label">{{ dtype==='sales' ? '将不再上传的吨位' : '将不再上传的日均库存' }}</div><div class="big-num num" :style="{color: trial.tons ? '#e5484d' : ''}">{{ $fmt(trial.tons) }}<small>吨</small></div></div>
         <div class="stat"><div class="label">占近 7 日已上传</div><div class="big-num num">{{ trial.pct }}<small>%</small></div></div>
       </div>
-      <p style="margin:0 0 10px;font-size:14px">按新规则，近 7 日（2026-11-17 至 2026-11-23）已上传{{ dtype==='sales' ? '数据' : '的库存快照' }}中将有 <b style="color:#e5484d">{{ $fmt(trial.rows) }}</b> 条、<b style="color:#e5484d">{{ $fmt(trial.tons) }}</b> 吨不再上传。</p>
+      <p style="margin:0 0 10px;font-size:14px">按新规则，近 7 日（2026-11-17 至 2026-11-23）已上传{{ dtype==='sales' ? '数据' : '的库存快照' }}中：<span class="unit-pill">钢材 · 吨</span> 将有 <b style="color:#e5484d">{{ $fmt(trial.rows) }}</b> 条、<b style="color:#e5484d">{{ $fmt(trial.tons) }}</b> 吨不再上传；<span class="unit-pill ns">非钢材 · 数量</span> 将有 <b style="color:#e5484d">{{ $fmt(trial.ns.reduce((a, x) => a + x.dRows, 0)) }}</b> 条<template v-for="n in trial.ns" :key="n.name">、<b style="color:#e5484d">{{ $fmt(n.dQty) }}</b> {{ n.unit }}</template>不再上传。两者分列，不合并。</p>
       <table class="plain-table">
         <thead><tr><th>大类</th><th>品名</th><th class="r">近 7 日已上传（条）</th><th class="r">{{ dtype==='sales' ? '近 7 日已上传（吨）' : '日均库存（吨）' }}</th><th class="r">不再上传（条）</th><th class="r">不再上传（吨）</th></tr></thead>
         <tbody>
           <tr v-for="p in trial.items" :key="p.name"><td>{{ p.cat }}</td><td>{{ p.name }}</td><td class="r num">{{ $fmt(p.rows) }}</td><td class="r num">{{ $fmt(p.tons) }}</td><td class="r num" :style="{color: p.dRows ? '#e5484d' : '#8a94a3'}">{{ $fmt(p.dRows) }}</td><td class="r num" :style="{color: p.dTons ? '#e5484d' : '#8a94a3'}">{{ $fmt(p.dTons) }}</td></tr>
-          <tr class="total"><td colspan="2">合计</td><td class="r num">{{ $fmt(trial.baseRows) }}</td><td class="r num">{{ $fmt(trial.baseTons) }}</td><td class="r num">{{ $fmt(trial.rows) }}</td><td class="r num">{{ $fmt(trial.tons) }}</td></tr>
+          <tr class="total"><td colspan="2">钢材合计</td><td class="r num">{{ $fmt(trial.baseRows) }}</td><td class="r num">{{ $fmt(trial.baseTons) }}</td><td class="r num">{{ $fmt(trial.rows) }}</td><td class="r num">{{ $fmt(trial.tons) }}</td></tr>
         </tbody>
       </table>
+      <table class="plain-table mt8">
+        <thead><tr><th>非钢材（按数量）</th><th>品名</th><th>单位</th><th class="r">近 7 日已上传（条）</th><th class="r">{{ dtype==='sales' ? '近 7 日已上传（数量）' : '日均库存（数量）' }}</th><th class="r">不再上传（条）</th><th class="r">不再上传（数量）</th></tr></thead>
+        <tbody><tr v-for="n in trial.ns" :key="n.name"><td>配套辅材</td><td>{{ n.name }}</td><td><span class="unit-pill ns">{{ n.unit }}</span></td><td class="r num">{{ $fmt(n.rows) }}</td><td class="r num">{{ $fmt(n.qty) }}</td><td class="r num" :style="{color: n.dRows ? '#e5484d' : '#8a94a3'}">{{ $fmt(n.dRows) }}</td><td class="r num" :style="{color: n.dQty ? '#e5484d' : '#8a94a3'}">{{ $fmt(n.dQty) }}</td></tr></tbody>
+      </table>
+      <div class="small muted mt8">非钢材不与吨位合计，不同数量单位之间也不合计。针对某一类品类统计维度的条件（如壁厚范围、厚度范围）只影响对应模板的品名。</div>
+      <!-- DN-119：此规则下有多少天没有可报送的数据 -->
+      <div class="tip-box small mt12" :class="noData.both ? 'orange' : noData.sales || noData.stock ? 'blue' : 'green'" style="line-height:1.9">
+        <b>对报送达标的影响：此规则下有多少天没有可报送的数据</b><span class="ex-tag" style="margin-left:6px">估算</span>　<span class="muted">只有本企业可见</span><br>
+        按新规则估算，近 {{ noData.days }} 日（2026-10-25 至 2026-11-23）中：没有可报送的销售数据 <b class="num" :style="{color: noData.sales ? '#b25e00' : ''}">{{ noData.sales }}</b> 天；没有可报送的库存快照 <b class="num" :style="{color: noData.stock ? '#b25e00' : ''}">{{ noData.stock }}</b> 天；<b>两者都没有的有 <span class="num" :style="{color: noData.both ? '#e5484d' : '#18a058'}">{{ noData.both }}</span> 天<template v-if="noData.both">，其中约 <span class="num" style="color:#e5484d">{{ noData.bothDue }}</span> 天是应报送日、将计为缺报</template></b>。<span class="muted">这 {{ noData.days }} 日里有 {{ noData.due }} 个应报送日（{{ std.dayType }}）。</span>
+        <template v-if="noData.both"><br><b style="color:#b83a3e">可能影响报送达标。</b>当日有实际数据才算报送，被上传条件全部过滤掉的日子计为缺报，不能用申报代替。按示例参数（应报送日为{{ std.dayType }}、及时率不低于 {{ std.rate }}%、最长连续缺报不超过 {{ std.gap }} 个应报送日）估算，{{ noData.fail ? '这样的月份将评为“未达标”' : '这样的月份仍可达标，但余量变小' }}。与你有带动关系的钢厂只看到达标或未达标，看不到原因，也看不到你设了什么条件。</template>
+        <template v-else-if="noData.sales || noData.stock"><br>另一类数据每天仍有可报送的内容，这些日子仍算报送（库存快照或销售数据任一即可）。</template>
+        <template v-else><br>每天都有可报送的数据，本次修改不影响报送达标。</template>
+      </div>
       <div v-if="diff.removed.length" class="tip-box blue small mt12">移除条件会放宽上传范围：原先被过滤的数据平台没有留存，无法试算将新增多少，生效后可在每日汇总中查看实际变化。</div>
       <div v-if="trial.erpOnly" class="tip-box orange small mt12">本次新增的条件中有“仅 ERP 端执行”的条件（日汇总模式的 SRC-WX）。试算按平台已入库数据估算，实际效果取决于 ERP 端是否在汇总前执行。</div>
       <div class="small muted mt8">试算只读取本企业已上传的数据，不改变任何数据。也可以 <a href="javascript:;" @click="$info('原型演示：选择 ERP 导出的样例文件后，按新规则在浏览器本地试算，文件不上传')">上传样例文件试算</a>。</div>
@@ -291,7 +310,7 @@
 (function () {
   const WH = ['苏州望亭库', '上海宝山库', '无锡惠山库', '常州新北库'];
   const BRANDS = M.MILLS.map((m) => (m === '海川特钢' ? m : m.replace('钢铁', '')));
-  const cats = M.categories.map((c) => c.name);
+  const cats = M.allCats.map((c) => c.name);
   const prods = [].concat(...M.categories.map((c) => c.products.map((p) => p.name)));
   const mats = Array.from(new Set([].concat(...M.categories.map((c) => [].concat(...c.products.map((p) => p.materials))))));
   const cities = [].concat(...M.provinces.slice(0, 4).map((p) => p.cities.map((c) => c[0])));
@@ -300,6 +319,12 @@
     { k: '品名', type: 'multi', ops: ['属于'], options: prods },
     { k: '材质', type: 'multi', ops: ['属于'], options: mats },
     { k: '规格范围', type: 'range', ops: ['介于'] },
+    { k: '厚度范围（板材）', type: 'drange', ops: ['介于'], attr: '厚度', unit: 'mm', tpl: '板材', step: 0.5, lo: 2, hi: 6 },
+    { k: '宽度范围（板材）', type: 'drange', ops: ['介于'], attr: '宽度', unit: 'mm', tpl: '板材', step: 50, lo: 1250, hi: 1500 },
+    { k: '壁厚范围（管材）', type: 'drange', ops: ['介于'], attr: '壁厚', unit: 'mm', tpl: '管材', step: 0.5, lo: 2, hi: 4.5 },
+    { k: '负差范围（型材）', type: 'drange', ops: ['介于'], attr: '负差', unit: '%', tpl: '型材', step: 1, lo: 3, hi: 8, sec: '负差' },
+    { k: '公斤数范围（型材）', type: 'drange', ops: ['介于'], attr: '公斤数', unit: 'kg/m', tpl: '型材', step: 1, lo: 40, hi: 50, sec: '公斤' },
+    { k: '计量类型', type: 'multi', ops: ['属于'], options: ['吨位（钢材）', '数量（非钢材）'] },
     { k: '品牌', type: 'multi', ops: ['属于'], options: BRANDS },
     { k: '仓库', type: 'multi', ops: ['属于'], options: WH },
     { k: '仓库所在地', type: 'multi', ops: ['属于'], options: ['苏州市', '上海市', '无锡市', '常州市'] },
@@ -307,12 +332,13 @@
     { k: '客户类型', type: 'multi', ops: ['属于'], options: ['终端', '贸易商'], sales: true },
     { k: '业务日期起点', type: 'date', ops: ['不早于'], only: 'in' },
     { k: '单笔吨位上下限', type: 'ton', ops: ['大于', '小于'], sales: true, erp: true },
+    { k: '单笔数量上下限（非钢材）', type: 'qty', ops: ['大于', '小于'], sales: true, erp: true },
     { k: '按 ERP 内部编码排除', type: 'codes', ops: ['命中清单'], sales: true, erp: true, only: 'ex' },
   ];
   let seq = 100;
   const R = (mode, dim, op, vals, note) => ({ id: 'r' + (++seq), mode, dim, op, vals, note: note || '' });
   const base = {
-    cat: () => R('in', '大类', '属于', ['建筑钢材', '热轧板卷']),
+    cat: () => R('in', '大类', '属于', ['建筑钢材', '热轧板卷', '配套辅材']),
     wh: () => R('in', '仓库', '属于', ['苏州望亭库', '上海宝山库', '无锡惠山库']),
     date: () => R('in', '业务日期', '不早于', ['2025-10-01']),
     brand: () => R('ex', '品牌', '为', ['北辰']),
@@ -326,7 +352,7 @@
     { v: 'v6', by: '刘雯', role: '数据管理员', at: '2026-09-28 10:15', eff: '2026-10-01 00:00', sum: '销售：新增按 ERP 客户编码排除（3 个编码）；配合 SRC-WX 切换为日汇总模式', status: '已失效', snap: snapOf(['cat', 'wh', 'date', 'brand', 'code'], ['cat', 'wh', 'brand']) },
     { v: 'v5', by: '刘雯', role: '数据管理员', at: '2026-06-22 09:30', eff: '2026-06-23 00:00', sum: '销售、库存：新增排除“品牌 为 北辰”', status: '已失效', snap: snapOf(['cat', 'wh', 'date', 'brand'], ['cat', 'wh', 'brand']) },
     { v: 'v4', by: '陈海峰', role: '企业管理员', at: '2026-03-16 14:08', eff: '2026-03-17 00:00', sum: '销售、库存：限定仓库为苏州望亭库、上海宝山库、无锡惠山库（不含常州新北库）；销售：业务日期不早于 2025-10-01', status: '已失效', snap: snapOf(['cat', 'wh', 'date'], ['cat', 'wh']) },
-    { v: 'v3', by: '陈海峰', role: '企业管理员', at: '2025-12-02 11:20', eff: '2025-12-03 00:00', sum: '销售、库存：大类增加“热轧板卷”', status: '已失效', snap: snapOf(['cat'], ['cat']) },
+    { v: 'v3', by: '陈海峰', role: '企业管理员', at: '2025-12-02 11:20', eff: '2025-12-03 00:00', sum: '销售、库存：大类增加“热轧板卷”“配套辅材”（非钢材，按数量）', status: '已失效', snap: snapOf(['cat'], ['cat']) },
     { v: 'v2', by: '陈海峰', role: '企业管理员', at: '2025-10-08 15:46', eff: '2025-10-09 00:00', sum: '套用模板“仅建材”：只上传大类为建筑钢材', status: '已失效', snap: JSON.stringify({ sales: [R('in', '大类', '属于', ['建筑钢材'])], stock: [R('in', '大类', '属于', ['建筑钢材'])] }) },
     { v: 'v1', by: '陈海峰', role: '企业管理员', at: '2025-09-25 16:02', eff: '2025-09-25 16:02', sum: '入驻时套用模板“全量上传”', status: '已失效', snap: JSON.stringify({ sales: [], stock: [] }) },
   ];
@@ -339,10 +365,18 @@
     { cat: '热轧板卷', name: '热轧卷板', sales: [254, 1567], stock: [681, 5595] },
     { cat: '热轧板卷', name: '热轧带钢', sales: [101, 624], stock: [279, 2290] },
   ];
+  /* 非钢材（按数量）的近 7 日基数：钢筋连接套筒，单位“个”。与“每日上传汇总”一致：近 7 日入库 32 行、10,500 个；库存快照 21 条，日均 39,020 个 */
+  const NS_BASE = [{ name: '钢筋连接套筒', unit: '个', sales: [32, 10500], stock: [21, 39020] }];
+  const TPL_OF = { 板材: '热轧板卷', 管材: '管材', 型材: '型钢' };
   const SHARE = { 品牌: { 东岳: 0.61, 金江: 0.35, 海川特钢: 0.03, 云岭: 0.01, 北辰: 0 }, 仓库: { 苏州望亭库: 0.54, 上海宝山库: 0.3, 无锡惠山库: 0.16, 常州新北库: 0 }, 仓库所在地: { 苏州市: 0.54, 上海市: 0.3, 无锡市: 0.16, 常州市: 0 }, 客户类型: { 终端: 0.58, 贸易商: 0.42 } };
   /* 某条新增条件使某品名“不再上传”的比例 */
   const dropFrac = (r, p) => {
     const inMode = r.mode === 'in';
+    if (r.dim === '计量类型') { const hit = r.vals.indexOf(p.ns ? '数量（非钢材）' : '吨位（钢材）') >= 0; return inMode ? (hit ? 0 : 1) : (hit ? 1 : 0); }
+    if (r.tpl) { if (p.ns || p.cat !== TPL_OF[r.tpl]) return 0; const f = 0.18 + (M.hash(r.dim + r.vals.join() + p.name) % 30) / 100; return inMode ? 1 - f : f; }
+    if (r.dim === '单笔数量') { if (!p.ns) return 0; const f = r.op === '大于' ? 0.08 : 0.92; return inMode ? 1 - f : f; }
+    if (p.ns && (r.dim === '单笔吨位' || r.dim === '规格范围')) return 0;
+    if (p.ns && r.dim === '大类') { const hit = r.vals.indexOf('配套辅材') >= 0; return inMode ? (hit ? 0 : 1) : (hit ? 1 : 0); }
     if (r.dim === '大类' || r.dim === '品名') { const hit = r.vals.indexOf(r.dim === '大类' ? p.cat : p.name) >= 0; return inMode ? (hit ? 0 : 1) : (hit ? 1 : 0); }
     if (SHARE[r.dim]) { const s = Math.min(1, r.vals.reduce((a, v) => a + (SHARE[r.dim][v] === undefined ? 0.02 : SHARE[r.dim][v]), 0)); return inMode ? 1 - s : s; }
     if (r.dim === '单笔吨位') { const n = parseFloat(r.vals[0]); const big = n >= 500 ? 0.02 : n >= 200 ? 0.07 : n >= 60 ? 0.22 : 0.6; const f = r.op === '大于' ? big : 1 - big; return inMode ? 1 - f : f; }
@@ -359,11 +393,11 @@
         src: 'SRC-HQ', dtype: 'sales',
         rules: JSON.parse(JSON.stringify(V7)), saved: JSON.stringify(V7),
         history: HISTORY, coverAlert: false,
-        addDlg: false, trialDlg: false, step: 0,
-        nf: { mode: 'in', dim: '大类', op: '属于', vals: [], date: '2026-01-01', ton: 300, attr: '直径', lo: 12, hi: 25, codes: '' },
+        addDlg: false, trialDlg: false, step: 0, std: M.REF.std,
+        nf: { mode: 'in', dim: '大类', op: '属于', vals: [], date: '2026-01-01', ton: 300, attr: '直径', lo: 12, hi: 25, dlo: 2, dhi: 6, qty: 5000, codes: '' },
         eff: { mode: 'next', at: '2026-11-26 00:00', note: '' }, newVer: {},
         templates: [
-          { k: 'all', t: '全量上传', d: '不设任何条件，全部销售与库存数据上传。数据最完整，收益分成的丰富度系数最高。', make: () => [] },
+          { k: 'all', t: '全量上传', d: '不设任何条件，全部销售与库存数据上传。数据最完整，可获得的行业对标数据范围最大。', make: () => [] },
           { k: 'build', t: '仅建材', d: '只上传大类为建筑钢材的数据（螺纹钢、盘螺、高线）。', make: () => [R('in', '大类', '属于', ['建筑钢材'])] },
           { k: 'brand', t: '仅指定品牌', d: '只上传指定品牌的数据。套用后默认为本企业代理品牌：东岳、金江。', make: () => [R('in', '品牌', '属于', ['东岳', '金江'])] },
           { k: 'wh', t: '仅指定仓库', d: '只上传指定仓库的数据。套用后默认为苏州望亭库，可再调整。', make: () => [R('in', '仓库', '属于', ['苏州望亭库'])] },
@@ -398,6 +432,8 @@
         if (d.type === 'multi') return f.vals.length ? R(f.mode, d.k, f.mode === 'ex' && f.vals.length === 1 ? '为' : '属于', f.vals.slice()) : null;
         if (d.type === 'date') return f.date ? R('in', '业务日期', '不早于', [f.date]) : null;
         if (d.type === 'ton') return f.ton ? R(f.mode, '单笔吨位', f.op, [f.ton + ' 吨']) : null;
+        if (d.type === 'drange') return f.dhi > f.dlo ? Object.assign(R(f.mode, d.attr, '介于', [f.dlo + '–' + f.dhi + ' ' + d.unit], '只对' + d.tpl + '生效'), { tpl: d.tpl }) : null;
+        if (d.type === 'qty') return f.qty ? R(f.mode, '单笔数量', f.op, [f.qty + '（按品名的数量单位）'], '只对非钢材生效') : null;
         if (d.type === 'range') return f.hi > f.lo ? R(f.mode, '规格范围', '介于', [f.attr + ' ' + f.lo + '–' + f.hi + ' mm']) : null;
         const n = f.codes.split(/\n/).filter((x) => x.trim()).length;
         return n ? R('ex', 'ERP 内部编码', '命中清单', [n + ' 个编码'], '平台只保存不可逆摘要，不接收名称') : null;
@@ -410,7 +446,24 @@
         });
         const sum = (k) => items.reduce((a, p) => a + p[k], 0);
         const baseRows = sum('rows'), baseTons = sum('tons'), rows = sum('dRows'), tons = sum('dTons');
-        return { items, baseRows, baseTons, rows, tons, pct: +(tons / baseTons * 100).toFixed(1), erpOnly: added.some((r) => this.isErpDim(r)) };
+        const ns = NS_BASE.map((p) => { const q = Object.assign({ ns: true, cat: '配套辅材' }, p), rem = added.reduce((a, r) => a * (1 - dropFrac(r, q)), 1); return { name: p.name, unit: p.unit, rows: p[key][0], qty: p[key][1], dRows: Math.round(p[key][0] * (1 - rem)), dQty: Math.round(p[key][1] * (1 - rem) / 10) * 10 }; });
+        return { ns, items, baseRows, baseTons, rows, tons, pct: +(tons / baseTons * 100).toFixed(1), erpOnly: added.some((r) => this.isErpDim(r)) };
+      },
+      /* DN-119：按近 30 日已上传数据估算新规则下没有可报送数据的天数。销售按新规则下日均剩余条数估算出现空日的概率；
+         库存快照只要还有品名留下，每天就有数据。两类数据都没有的日子才计为缺报（库存快照或销售数据任一即可） */
+      noData() {
+        const DAYS = 30, all = BASE.concat(NS_BASE.map((p) => Object.assign({ ns: true, cat: '配套辅材' }, p)));
+        const side = (key) => {
+          const added = this.diffAll[key].added;
+          if (!added.length) return 0;
+          const perDay = all.reduce((a, p) => a + p[key][0] * added.reduce((x, r) => x * (1 - dropFrac(r, p)), 1), 0) / 7;
+          if (perDay < 0.05) return DAYS;
+          return key === 'stock' ? 0 : Math.min(DAYS, Math.round(DAYS * Math.exp(-perDay)));
+        };
+        const sales = side('sales'), stock = side('stock'), both = sales === DAYS || stock === DAYS ? Math.min(sales, stock) : Math.round(sales * stock / DAYS);
+        let due = 0; for (let i = 1; i <= DAYS; i++) if (M.REF.std.isDue(STP.addDays(M.TODAY, -i))) due++;
+        const bothDue = both ? Math.max(1, Math.round(both * due / DAYS)) : 0;
+        return { days: DAYS, due, sales, stock, both, bothDue, fail: (due - bothDue) / due * 100 < M.REF.std.rate || bothDue > M.REF.std.gap * 2 };
       },
     },
     methods: {
@@ -418,20 +471,22 @@
         if (r.mode === 'ex') return '排除：';
         return this.list.findIndex((x) => x.mode === 'in') === i ? '只上传：' : '且';
       },
-      isErpDim(r) { return r.dim === '单笔吨位' || r.dim.indexOf('编码') >= 0; },
+      isErpDim(r) { return r.dim === '单笔吨位' || r.dim === '单笔数量' || r.dim.indexOf('编码') >= 0; },
       erpOnly(r) { return this.dtype === 'sales' && this.curSrc.grain === 'daily' && this.isErpDim(r); },
       execTip(r) {
         if (this.erpOnly(r)) return '日汇总记录是多张单据汇总后的结果，汇总后没有单据信息（单笔吨位、内部编码），平台无法兜底。该条件必须由 ERP 在汇总之前执行。';
         return 'ERP 拉取规则后在本地先过滤（源头过滤）；平台入口在落库前按同一规则再过滤一次（兜底）。不符合规则的数据不落盘。';
       },
+      secNames(k) { return Object.keys(M.SEC_DIM2).filter((n) => M.SEC_DIM2[n] === k).join('、'); },
       isAdded(r) { return this.diff.added.some((a) => a.id === r.id); },
       tplScroll() { const el = document.getElementById('tpl-card'); if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); },
-      addOpen() { this.nf = { mode: 'in', dim: '大类', op: '属于', vals: [], date: '2026-01-01', ton: 300, attr: '直径', lo: 12, hi: 25, codes: '' }; this.addDlg = true; },
+      addOpen() { this.nf = { mode: 'in', dim: '大类', op: '属于', vals: [], date: '2026-01-01', ton: 300, attr: '直径', lo: 12, hi: 25, dlo: 2, dhi: 6, qty: 5000, codes: '' }; this.addDlg = true; },
       dimChange() {
         const d = this.dimDef;
         this.nf.vals = []; this.nf.op = d.ops[0];
         if (d.only) this.nf.mode = d.only;
-        if (d.type === 'ton') { this.nf.mode = 'ex'; this.nf.op = '大于'; }
+        if (d.type === 'ton' || d.type === 'qty') { this.nf.mode = 'ex'; this.nf.op = '大于'; }
+        if (d.type === 'drange') { this.nf.mode = 'ex'; this.nf.dlo = d.lo; this.nf.dhi = d.hi; }
       },
       addDo() {
         const r = this.draftRule;

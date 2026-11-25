@@ -74,7 +74,7 @@
         <div class="ic" style="background:#f4f5f7;color:#5b6778"><el-icon><Hide /></el-icon></div>
         <div>
           <h4>不上架<el-tag size="small" type="warning" effect="plain">是否保留待确认</el-tag><el-tag v-if="mode==='none'" size="small" type="success">当前</el-tag></h4>
-          <p>只上传，用于自身行业对标，不出现在名录中，钢厂不能订阅。<b>不参与收益分成</b>，可获得的对标数据范围可能少于上架企业。</p>
+          <p>只上传，用于自身行业对标，不出现在名录中，钢厂不能订阅。可获得的对标数据范围可能少于上架企业。</p>
         </div>
         <el-icon v-if="pick==='none'" class="check"><CircleCheckFilled /></el-icon>
       </div>
@@ -123,7 +123,7 @@
         </el-form-item>
         <el-form-item label="数据覆盖声明">
           <el-select v-model="form.cover" style="width:100%"><el-option v-for="c in coverOpts" :key="c" :label="c" :value="c" /></el-select>
-          <div class="small muted">让钢厂知道你上传的是全部还是部分数据。应与 <a href="upload-rules.html">上传条件规则</a> 一致：当前 v7 为“仅建筑钢材、热轧板卷；仅苏州望亭库、上海宝山库、无锡惠山库”。</div>
+          <div class="small muted">让钢厂知道你上传的是全部还是部分数据。应与 <a href="upload-rules.html">上传条件规则</a> 一致：当前 v7 为“仅建筑钢材、热轧板卷和配套辅材（非钢材）；仅苏州望亭库、上海宝山库、无锡惠山库”。</div>
         </el-form-item>
         <el-form-item label="是否提供价格数据">
           <el-tag v-if="$state.dnPrice==='on'" type="success">提供</el-tag><el-tag v-else type="info">不提供</el-tag>
@@ -200,7 +200,7 @@
       <b>切换的影响</b>
       <div v-for="(t, i) in impacts" :key="i">{{ i + 1 }}. {{ t }}</div>
     </div>
-    <div class="tip-box green small mt8">不变的是：无论哪种方式，钢厂都只能看到聚合数据，看不到你的销量、库存、价格和每日是否上传；你这里也只显示订阅的钢厂家数。</div>
+    <div class="tip-box green small mt8">不变的是：无论哪种方式，钢厂都只能看到聚合数据，看不到你的销量、库存和价格；你这里也只显示订阅的钢厂家数。与你有带动关系的钢厂另外能看到接入状态和各达标周期的结果，与这里的选择无关；你匿名上架时，平台不向它显示匿名编号与协议户身份的对应。<a href="mill-relations.html">带动钢厂能看到什么 ›</a></div>
     <el-checkbox v-model="swOk" class="mt12">我已了解以上影响</el-checkbox>
     <template #footer><el-button @click="switchDlg=false">取消</el-button><el-button type="primary" :disabled="!swOk" @click="doSwitch">确认{{ pick===mode ? '保存' : '切换' }}</el-button></template>
   </el-dialog>
@@ -243,7 +243,7 @@
         brandOpts: M.MILLS.map((m) => (m === '海川特钢' ? m : m.replace('钢铁', ''))),
         scaleOpts: M.SCALE,
         coverOpts: ['全量上传', '部分上传：仅主营大类', '部分上传：指定仓库', '部分上传：指定品牌', '部分上传：仅主营大类、指定仓库', '部分上传：仅主营大类、指定品牌'],
-        cants: ['单家销量', '单家库存', '单家价格与金额', '每日是否上传', '客户信息（平台本就不采集）', '上传粒度'],
+        cants: ['单家销量', '单家库存', '单家价格与金额', '上传的条数与数据量', '客户信息（平台本就不采集）', '上传粒度'],
         mainOpts: [
           { k: 'real', t: '实名上架', icon: 'OfficeBuilding', bg: '#eef4fb', color: '#2b6fd6', d: '名录中显示企业名称和画像，全部钢厂可见、可订阅。', pts: ['便于钢厂识别并优先选购，被订阅机会最多', '钢厂知道你在它的数据池里，但看不到你的任何单家数据'] },
           { k: 'anon', t: '匿名上架', icon: 'User', bg: '#f4ecff', color: '#7044c4', d: '名录中只显示编号和画像，不显示企业名称，全部钢厂可订阅。', pts: ['钢厂只能按地区、主营大类、规模档等画像选购', '订阅后钢厂的名单里也只显示编号'] },
@@ -277,9 +277,9 @@
         const to = this.pick, out = [];
         if (to === 'anon') out.push('匿名后，钢厂在名录和它的“数据来源企业名单”中都看不到企业名称，只看到编号“华东·建材·A0321”和画像。', '对已订阅你的钢厂，下一周期（2026-12-01）起名单中的展示由企业名称改为编号；此前已经看到过名称的钢厂，平台无法让其不知情。');
         if (to === 'real') out.push('实名后，全部钢厂都能在名录中看到企业名称和画像。', '对已订阅你的钢厂，下一周期（2026-12-01）起名单中的展示由编号改为企业名称。');
-        if (to === 'white') out.push('只有所选的 ' + this.white.length + ' 家钢厂能在名录中看到并订阅你，对它们实名展示；其他钢厂在名录中看不到你。', '白名单以外、但当前已订阅你的钢厂：本周期内不受影响，下一周期（2026-12-01）起其名额释放，钢厂可免费替换（具体处理规则待业务方确定），你无需操作。被订阅家数可能减少，收益随之变化。', '为保护订阅方，平台不显示白名单内哪些钢厂已订阅你。');
-        if (to === 'none') out.push('不上架后，你不再出现在任何钢厂的名录中，不能被新订阅。', '当前 23 家订阅在本周期结束后（2026-12-01 起）终止，钢厂的名额释放并可免费替换（具体处理规则待业务方确定）。', '不上架的企业不参与收益分成：自生效之日起不再计提收益，已计提未结算的部分照常结算。可获得的行业对标数据范围可能少于上架企业。');
-        if (to !== 'none') out.push('实名、匿名、只对指定钢厂可见三种方式都参与收益分成，分成规则相同。');
+        if (to === 'white') out.push('只有所选的 ' + this.white.length + ' 家钢厂能在名录中看到并订阅你，对它们实名展示；其他钢厂在名录中看不到你。', '白名单以外、但当前已订阅你的钢厂：本周期内不受影响，下一周期（2026-12-01）起其名额释放，钢厂可免费替换（具体处理规则待业务方确定），你无需操作。被订阅家数可能减少。', '为保护订阅方，平台不显示白名单内哪些钢厂已订阅你。');
+        if (to === 'none') out.push('不上架后，你不再出现在任何钢厂的名录中，不能被新订阅。', '当前 23 家订阅在本周期结束后（2026-12-01 起）终止，钢厂的名额释放并可免费替换（具体处理规则待业务方确定）。', '不上架的企业可获得的行业对标数据范围可能少于上架企业。');
+        if (to !== 'none') out.push('实名、匿名、只对指定钢厂可见三种方式享有的行业对标权益相同。');
         return out;
       },
     },

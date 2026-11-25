@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>协议户邀请与接入 · 上游钢厂端 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.bound { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.bound .box { border: 1px solid var(--stp-border); border-radius: 6px; padding: 12px 14px; background: #fff; }
+.bound .box.yes { border-color: #cfe9da; background: #fafdfb; }
+.bound .box.no { border-color: #f3c9ca; background: #fffafa; }
+.bound h4 { margin: 0 0 8px; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+.bound ul { margin: 0; padding: 0; list-style: none; font-size: 13px; line-height: 1.9; color: #4a5568; }
+.bound li { display: flex; gap: 6px; align-items: flex-start; }
+.bound li .el-icon { margin-top: 5px; flex-shrink: 0; }
+.bound .yes .el-icon { color: #18a058; } .bound .no .el-icon { color: #e5484d; }
+.no-data-bar { display: flex; align-items: center; gap: 8px; background: #f0f6ff; border: 1px solid #cfe0f7; border-radius: 6px; padding: 9px 14px; font-size: 13px; color: #24528f; margin-bottom: 14px; }
+.funnel { display: flex; align-items: stretch; gap: 0; }
+.funnel .st { flex: 1; padding: 10px 12px; background: #f4f8ff; border: 1px solid #d9e7fb; position: relative; margin-right: 18px; border-radius: 4px; }
+.funnel .st:last-child { margin-right: 0; background: #f0faf4; border-color: #cfe9da; }
+.funnel .st:not(:last-child)::after { content: "›"; position: absolute; right: -14px; top: 50%; transform: translateY(-50%); color: #a0a9b6; font-size: 18px; }
+.funnel .k { font-size: 12px; color: var(--stp-sub); }
+.funnel .v { font-size: 22px; font-weight: 600; margin-top: 2px; }
+.funnel .v small { font-size: 12px; font-weight: 400; color: var(--stp-sub); margin-left: 4px; }
+.funnel .s { font-size: 12px; color: var(--stp-sub); margin-top: 4px; line-height: 1.5; }
+.grade { display: inline-block; padding: 0 7px; border-radius: 10px; font-size: 12px; line-height: 20px; border: 1px solid #e1e5eb; background: #f5f6f8; color: #6b7787; white-space: nowrap; }
+.grade.g { background: #f0faf4; color: #1b7a47; border-color: #cfe9da; }
+.grade.r { background: #fff3f3; color: #b83a3e; border-color: #f3c9ca; }
+.ex-tag { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 11px; line-height: 18px; background: #fff8eb; color: #9a6400; border: 1px solid #f3dfb8; font-weight: 400; white-space: nowrap; }
+.ph-tag { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 11px; line-height: 18px; background: #f4ecff; color: #7044c4; border: 1px solid #e0d1fb; font-weight: 400; white-space: nowrap; margin-left: 4px; }
+.reward-big { font-size: 28px; font-weight: 600; color: #d46b08; line-height: 1.2; }
+.reward-big small { font-size: 13px; font-weight: 400; color: var(--stp-sub); margin-left: 6px; }
+.kv2 { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13px; margin: 0; }
+.kv2 dt { color: var(--stp-sub); } .kv2 dd { margin: 0; text-align: right; }
+.na-why { font-size: 11px; color: #9aa3af; line-height: 1.3; margin-top: 2px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chips .chip { border: 1px solid var(--stp-border); border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--stp-sub); background: #fff; min-width: 96px; }
+.chips .chip b { display: block; font-size: 18px; color: #1f2d3d; }
+.clause { background: #fafbfc; border: 1px dashed #c8d0db; border-radius: 6px; padding: 12px 14px; font-size: 13px; line-height: 1.9; color: #3d4b5c; }
+.steps-line { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #a0a9b6; flex-wrap: wrap; }
+.steps-line .on { color: #1b7a47; font-weight: 600; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="upstream" active="dealer-invite" title="协议户邀请与接入"
+  desc="由本厂批量邀请自己的协议户入驻并报送数据，把数据报送写进年度代理协议；查看每家的邀请状态、接入状态和各达标周期的结果。带动协议户入驻可获得带动奖励。由企业管理员和渠道管理员使用。">
+  <template #actions>
+    <el-button @click="clauseDlg = true"><el-icon><Document /></el-icon>协议报送条款模板</el-button>
+    <el-button @click="codeDlg = true"><el-icon><Ticket /></el-icon>邀请码与二维码</el-button>
+    <el-button type="primary" @click="openInvite"><el-icon><Promotion /></el-icon>导入协议户名单</el-button>
+  </template>
+
+  <div class="no-data-bar"><el-icon><Lock /></el-icon><span><b>本页不提供任何单家数据。</b>这里只有名单、邀请状态、接入状态、各达标周期的结果和带动奖励；没有任何一家协议户的销量、库存、价格、条数、上传时间或日级报送情况，也没有从这里跳到“按某家企业筛选的聚合数据”的入口。</span><a href="javascript:;" style="margin-left:auto;white-space:nowrap" @click="boundDlg = true">可见范围说明</a></div>
+
+  <div class="grid c-2-1">
+    <div class="card" style="margin-bottom:0">
+      <div class="card-title"><span>带动进度<small>截至 2026-11-24 · 接入状态每日更新一次</small></span><span class="right small muted">接入率 = 已接入 ÷ 已确认；汇总达标率 = 达标 ÷ 参与评定的户数，是本厂全部协议户的汇总数，单家不出现任何百分比</span></div>
+      <div class="funnel">
+        <div class="st"><div class="k">已邀请</div><div class="v num">{{ D.invited }}<small>户</small></div><div class="s">待发送 {{ D.toSend }} · 已发送 {{ D.sent }} · 已拒绝 {{ D.refused }} · 已过期 {{ D.expired }}</div></div>
+        <div class="st"><div class="k">已确认带动关系</div><div class="v num">{{ D.confirmed }}<small>户</small></div><div class="s">已注册认证 {{ D.certified }} · 已签署数据授权协议 {{ D.signed }}</div></div>
+        <div class="st"><div class="k">已接入</div><div class="v num">{{ D.connected }}<small>户</small></div><div class="s">接入率 {{ D.accessRate }}% · 含报送中断 8、已暂停 5</div></div>
+        <div class="st"><div class="k">达标（{{ S.last }} 周期）</div><div class="v num" style="color:#18a058">{{ D.ok }}<small>户</small></div><div class="s"><template v-if="rateShown">汇总达标率 {{ okRate }}%</template><template v-else>参与评定不足 {{ S.rateMinN }} 户，不显示汇总达标率</template> · 未达标 {{ D.fail }} · 不适用 {{ D.na }}（其中无库存经营 {{ D.naNoStock }}）</div></div>
+      </div>
+      <div class="small muted" style="margin-top:6px">汇总达标率 = 达标 ÷ 参与评定的户数（达标 + 未达标，本周期 {{ D.ok + D.fail }} 户）；不适用的户（含无库存经营）不计入分子和分母。参与评定不足 {{ S.rateMinN }} 户时不显示汇总达标率，只显示户数。<span class="ex-tag" style="margin-left:4px">示例参数</span></div>
+      <div class="tip-box green small mt12" style="line-height:1.9">
+        <b>协议户照常占用付费名额，带动奖励可抵用。</b>已接入的 {{ D.connected }} 户中：已选入本厂数据池 <b class="num">{{ D.seat.inPool }}</b> 户，各占 1 个付费名额（计入已购的 {{ D.seat.bought }} 个，含待生效）；已对本厂上架、尚未选入 <b class="num">{{ D.seat.listedOut }}</b> 户；未对本厂上架或匿名上架未确认对应关系 <b class="num">{{ D.seat.hidden }}</b> 户，不能选入。<br>
+        把 {{ D.seat.listedOut }} 户全部选入需要 {{ D.seat.listedOut }} 个名额：已购名额没有未分配的，奖励名额可抵用 <b class="num">{{ D.seat.rewardFree }}</b> 个，其余 <b class="num">{{ D.seat.needBuy }}</b> 个须加购。　<a href="directory.html">去企业名录选入 ›</a>　<a href="quota-package.html" @click="presetAdd">加购试算 ›</a>
+      </div>
+      <div class="tip-box small mt8">
+        <b>二级经销商<span class="ph-tag">二期</span>：</b>经一级代理带动接入的二级经销商，全厂合计 <b class="num">{{ D.subConnected }}</b> 户。二级经销商由一级代理自己邀请，名单只对一级代理可见；这里只有全厂汇总户数，不显示名单，不按一级代理拆分。二级经销商本人确认与本厂建立带动关系后，才进入逐户列表。
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:0">
+      <div class="card-title"><span>我的带动奖励<small>规则 {{ R.ver }}</small></span><span class="ex-tag">示例参数，待业务方确定</span></div>
+      <div class="reward-big num">{{ D.reward.quota }} 个<small>奖励名额，{{ D.reward.last }} 考核期发放</small></div>
+      <dl class="kv2 mt12">
+        <dt>{{ D.reward.last }} 计入奖励的带动户数</dt><dd><b class="num">{{ D.reward.counted }}</b> 户</dd>
+        <dt>{{ D.reward.cur }} 考核期</dt><dd>核算中，考核期结束后公布</dd>
+        <dt>奖励名额有效期</dt><dd class="num">至 {{ D.reward.validTo }}</dd>
+        <dt>已使用</dt><dd><span class="num">{{ D.reward.used }}</span> 个　<a href="javascript:;" @click="tab = 'reward'">查看</a></dd>
+      </dl>
+      <div class="small muted mt8" style="line-height:1.7">只给计入奖励的汇总户数，不逐户标注哪一户计入。下游贸易商不获得现金奖励。</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <el-tabs v-model="tab">
+      <el-tab-pane name="list"><template #label>名单与邀请 <span class="muted small">&nbsp;{{ D.invited }}</span></template></el-tab-pane>
+      <el-tab-pane name="access"><template #label>接入状态 <span class="muted small">&nbsp;{{ D.confirmed }}</span></template></el-tab-pane>
+      <el-tab-pane name="std" label="报送达标"></el-tab-pane>
+      <el-tab-pane name="reward" label="我的带动奖励"></el-tab-pane>
+    </el-tabs>
+
+    <!-- ① 名单与邀请 -->
+    <template v-if="tab === 'list'">
+      <el-alert type="info" show-icon :closable="false" style="margin-bottom:12px">
+        <template #title><b>平台不会告知对方是否已入驻。</b>导入和发送邀请时，不提示对方是否已在平台、是否已上架、是否已与其他钢厂建立带动或订阅关系。对方确认带动关系之前，状态一律显示“已发送”；确认之后才显示后续节点。名单只对本厂可见，平台不向其他钢厂展示，也不用于推荐。</template>
+      </el-alert>
+      <div class="row between mb12">
+        <div class="row">
+          <el-input v-model="f.kw" placeholder="协议户名称" clearable style="width:190px"><template #prefix><el-icon><Search /></el-icon></template></el-input>
+          <el-select v-model="f.inv" clearable placeholder="全部邀请状态" style="width:170px"><el-option v-for="s in invStates" :key="s" :label="s" :value="s" /></el-select>
+          <el-select v-model="f.region" clearable placeholder="全部销售大区" style="width:140px"><el-option v-for="r in D.regions" :key="r[0]" :label="r[0]" :value="r[0]" /></el-select>
+          <el-button @click="f.kw = ''; f.inv = ''; f.region = ''">重置</el-button>
+        </div>
+        <div class="row">
+          <el-button @click="addDlg = true"><el-icon><Plus /></el-icon>逐条添加</el-button>
+          <el-button @click="$demo('已导出协议户名单及邀请、接入、达标状态，含“无库存经营”标签和“不适用”的原因类别。文件不含任何数值和百分比，带水印并留痕')"><el-icon><Download /></el-icon>导出名单与状态<span class="ph-tag">二期</span></el-button>
+        </div>
+      </div>
+      <el-table :data="filtered" size="default">
+        <el-table-column label="协议户" min-width="220"><template #default="{row}"><b style="font-weight:500">{{ row.name }}</b><el-tag v-if="row.ns" size="small" type="info" effect="plain" style="margin-left:6px">无库存经营</el-tag><div class="muted small">{{ row.loc }}</div></template></el-table-column>
+        <el-table-column label="销售大区" width="88" prop="region" />
+        <el-table-column label="协议年度与报送条款" width="170"><template #default="{row}">{{ row.year }}<div class="muted small">{{ row.clause ? '已约定报送条款' : '未登记报送条款' }}</div></template></el-table-column>
+        <el-table-column label="邀请方式与发送时间" width="170"><template #default="{row}">{{ row.way }}<div class="muted small num">{{ row.at || '尚未发送' }}</div></template></el-table-column>
+        <el-table-column min-width="300">
+          <template #header>邀请状态<el-tooltip placement="top" content="待发送 → 已发送 → 已确认带动关系 → 已注册认证 → 已签署数据授权协议；分支为已拒绝、已过期、已撤回。对方确认之前只显示到“已发送”"><el-icon style="vertical-align:-2px;margin-left:2px"><QuestionFilled /></el-icon></el-tooltip></template>
+          <template #default="{row}">
+            <div v-if="invStep(row.inv) >= 2" class="steps-line"><span v-for="(s, i) in ['已确认带动关系', '已注册认证', '已签署数据授权协议']" :key="s" :class="{on: invStep(row.inv) >= i + 2}">{{ i ? '›　' : '' }}<el-icon v-if="invStep(row.inv) >= i + 2" style="vertical-align:-2px"><CircleCheck /></el-icon> {{ s }}</span></div>
+            <el-tag v-else size="small" :type="invType(row.inv)" effect="plain">{{ row.inv }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="190">
+          <template #default="{row}">
+            <template v-if="row.inv === '待发送'"><el-button link type="primary" @click="send(row)">发送邀请</el-button><el-button link type="danger" @click="drop(row, '作废')">作废</el-button></template>
+            <template v-else-if="row.inv === '已发送'"><el-button link type="primary" @click="$demo('已按固定模板重发邀请')">重发</el-button><el-button link type="danger" @click="drop(row, '撤回')">撤回</el-button></template>
+            <template v-else-if="row.inv === '已过期' || row.inv === '已撤回'"><el-button link type="primary" @click="send(row)">重新邀请</el-button></template>
+            <template v-else-if="row.inv === '已拒绝'"><span class="muted small">对方已拒绝，不再发送</span></template>
+            <template v-else><el-button link type="danger" @click="remove(row)">移除协议户</el-button></template>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div class="tbl-foot">
+        <span>共 {{ D.invited }} 户，原型展示 {{ rows.length }} 户示例　|　每户一个专属邀请链接（一次性令牌，有有效期）；短信、邮件用平台固定模板，含“钢厂能看到什么、看不到什么”的说明入口</span>
+        <el-pagination layout="prev, pager, next" :total="D.invited" :page-size="16" small background />
+      </div>
+      <div class="card-title" style="margin-top:14px"><span>邀请批次<small>按批次汇总，只有户数</small></span></div>
+      <el-table :data="batches" size="small">
+        <el-table-column label="批次" min-width="170"><template #default="{row}"><span class="num">{{ row.id }}</span><span class="muted small">　{{ row.note }}</span></template></el-table-column>
+        <el-table-column label="方式" width="120" prop="way" />
+        <el-table-column label="发起时间" width="110"><template #default="{row}"><span class="num">{{ row.at }}</span></template></el-table-column>
+        <el-table-column label="名单户数" width="90" align="right"><template #default="{row}"><span v-if="row.n" class="num">{{ row.n }}</span><el-tooltip v-else content="邀请码没有预设名单，以实际确认为准" placement="top"><span class="muted">—</span></el-tooltip></template></el-table-column>
+        <el-table-column label="已确认带动关系" width="130" align="right"><template #default="{row}"><span class="num">{{ row.cf }}</span></template></el-table-column>
+        <el-table-column label="发起人" width="150"><template #default="{row}">{{ row.by }}</template></el-table-column>
+        <el-table-column label="链接有效期" width="130"><template #default="{row}"><span class="num">{{ row.exp }}</span></template></el-table-column>
+      </el-table>
+    </template>
+
+    <!-- ② 接入状态 -->
+    <template v-else-if="tab === 'access'">
+      <div class="row between mb12" style="align-items:flex-start">
+        <div class="chips">
+          <div v-for="a in D.access" :key="a[0]" class="chip"><b class="num">{{ a[1] }}</b>{{ a[0] }}</div>
+          <div v-for="a in D.left" :key="a[0]" class="chip" style="background:#fafbfc"><b class="num">{{ a[1] }}</b>{{ a[0] }}</div>
+        </div>
+        <div class="small muted" style="max-width:420px;line-height:1.7;text-align:right">前五项为已确认带动关系的 {{ D.confirmed }} 户的当前状态；已退出、已解除关联不再产生新状态。业务方已确认钢厂可见已接入、报送中断、已暂停、已退出；“未接入”是已接入的反面，“接入中”指已创建应用或联调中。“已接入”以首次有效报送为准，不显示首次报送的内容和规模；“报送中断”只表示连续 {{ S.breakDays }} 天没有收到任何实际数据（销售或库存快照）。</div>
+      </div>
+      <div class="grid c-3-2">
+        <div>
+          <el-table :data="accessRows" size="default">
+            <el-table-column label="协议户" min-width="210"><template #default="{row}"><b style="font-weight:500">{{ row.name }}</b><el-tag v-if="row.ns" size="small" type="info" effect="plain" style="margin-left:6px">无库存经营</el-tag><div class="muted small">{{ row.region }} · {{ row.loc }}</div></template></el-table-column>
+            <el-table-column label="接入状态" width="110"><template #default="{row}"><el-tag size="small" :type="accType(row.acc)" effect="plain">{{ row.acc }}</el-tag></template></el-table-column>
+            <el-table-column width="120" align="center">
+              <template #header>对本厂上架<el-tooltip placement="top" content="企业对本厂上架可见，才能选入本厂数据池。未对本厂上架，或为匿名上架且未确认与协议户身份对应的，这里不显示"><el-icon style="vertical-align:-2px;margin-left:2px"><QuestionFilled /></el-icon></el-tooltip></template>
+              <template #default="{row}"><span v-if="row.listed" class="grade g">是</span><span v-else class="muted">—</span></template>
+            </el-table-column>
+            <el-table-column label="在我的数据池" width="120" align="center"><template #default="{row}"><span v-if="!row.listed" class="muted">—</span><span v-else-if="row.pool" class="grade g">是</span><span v-else class="grade">否</span></template></el-table-column>
+            <el-table-column label="操作" width="150">
+              <template #default="{row}">
+                <el-button v-if="row.listed && !row.pool && row.acc === '已接入'" link type="primary" @click="$go('directory.html')">加入数据池</el-button>
+                <el-button v-else-if="['未接入', '接入中', '报送中断'].indexOf(row.acc) >= 0" link type="primary" @click="urge(row)">{{ row.urged ? '已催办' : '催办' }}<span v-if="!row.urged" class="ph-tag">二期</span></el-button>
+                <span v-else class="muted">—</span>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div class="tbl-foot"><span>共 {{ D.confirmed }} 户，原型展示 {{ accessRows.length }} 户示例。催办用平台固定模板，有频率上限并保留记录</span><span></span></div>
+        </div>
+        <div>
+          <div class="row between mb8"><b style="font-size:13px">分组汇总</b><el-radio-group v-model="groupBy" size="small"><el-radio-button label="销售大区" value="regions" /><el-radio-button label="协议年度" value="years" /></el-radio-group></div>
+          <table class="plain-table">
+            <thead><tr><th>{{ groupBy === 'regions' ? '销售大区' : '协议年度' }}</th><th class="r">已邀请</th><th class="r">已确认</th><th class="r">已接入</th><th class="r">接入率</th></tr></thead>
+            <tbody>
+              <tr v-for="g in D[groupBy]" :key="g[0]"><td>{{ g[0] }}</td><td class="r num">{{ g[1] }}</td><td class="r num">{{ g[2] }}</td><td class="r num">{{ g[3] }}</td><td class="r num">{{ (g[3] / g[2] * 100).toFixed(1) }}%</td></tr>
+              <tr class="total"><td>合计</td><td class="r num">{{ D.invited }}</td><td class="r num">{{ D.confirmed }}</td><td class="r num">{{ D.connected }}</td><td class="r num">{{ D.accessRate }}%</td></tr>
+            </tbody>
+          </table>
+          <div class="tip-box blue small mt12">
+            <b>协议户接入不等于进入数据池。</b>带动关系不是数据授权，也不是选购。要在看板和查询里看到包含协议户的聚合数据，须该企业对本厂上架可见，由你在 <a href="directory.html">企业名录</a> 选入数据池。<b>协议户照常占用付费名额，带动奖励的名额可以抵用</b>；按数据池调整周期统一生效；数据池仍须不少于 {{ $PV.nMin }} 家。聚合数据不提供“只看我的协议户”“按是否达标”这类切分。
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- ③ 报送达标 -->
+    <template v-else-if="tab === 'std'">
+      <div class="grid c-2-1">
+        <div>
+          <div class="row mb12" style="gap:10px;flex-wrap:wrap">
+            <div class="chips">
+              <div class="chip" style="border-color:#cfe9da;background:#fafdfb"><b class="num" style="color:#18a058">{{ D.ok }}</b>达标</div>
+              <div class="chip" style="border-color:#f3c9ca;background:#fffafa"><b class="num" style="color:#b83a3e">{{ D.fail }}</b>未达标</div>
+              <div class="chip"><b class="num">{{ D.na }}</b>不适用</div>
+              <div class="chip" style="border-style:dashed"><b class="num">{{ D.naNoStock }}</b>其中无库存经营</div>
+            </div>
+            <div class="small muted" style="line-height:1.7"><b style="color:#1f2d3d">{{ S.last }} 周期</b>，{{ S.lastPub }} 统一发布。不适用的 {{ D.na }} 户：尚未接入 {{ D.naNotIn }} 户，带动关系在周期中途成立或应报送天数不足 {{ D.naShort }} 户，无库存经营 {{ D.naNoStock }} 户。<br>{{ S.cur }} 周期进行中，{{ S.nextPub }} 发布；发布前不显示任何进度。“无库存经营”标签随周期结果在发布日更新。</div>
+          </div>
+        </div>
+        <div class="tip-box small" style="margin:0 0 12px">
+          <b>达标怎么评<span class="ex-tag" style="margin-left:6px">示例参数</span></b><br>
+          按{{ S.cycle }}评定，应报送日为{{ S.dayType }}（{{ S.dayNote }}）：周期内按时完成报送的天数不少于应报送天数的 {{ S.rate }}%，且最长连续缺报不超过 {{ S.gap }} 个应报送日，即为达标。<b>当日有实际数据才算报送</b>：{{ S.cutoff }}前平台收到该业务日期的销售数据或库存快照，两者有其一即可（业务方已确认）；当天没有销售的，报了库存快照就算。没有实际数据的日子计为缺报，不能用申报代替（平台不提供零申报）。常年不落库的协议户经本企业申报、平台核实生效后带“无库存经营”标签，不参加评定，显示“不适用”。带动关系在周期中途成立、应报送天数不足 {{ S.minDays }} 天或尚未接入的，为“不适用”。
+        </div>
+      </div>
+      <div class="row between mb12">
+        <div class="row">
+          <el-input v-model="f.kw" placeholder="协议户名称" clearable style="width:190px"><template #prefix><el-icon><Search /></el-icon></template></el-input>
+          <el-select v-model="f.res" clearable :placeholder="S.last + ' 周期全部结果'" style="width:190px"><el-option v-for="s in ['达标', '未达标', '不适用']" :key="s" :label="s" :value="s" /></el-select>
+        </div>
+        <span class="small muted"><el-icon style="vertical-align:-2px"><Lock /></el-icon> 单家只有周期结果：没有及时率数值、日历、缺报天数、缺报日期、缺报原因和上传时间</span>
+      </div>
+      <el-table :data="stdRows" size="default">
+        <el-table-column label="协议户" min-width="220"><template #default="{row}"><b style="font-weight:500">{{ row.name }}</b><el-tooltip v-if="row.ns" placement="top" :content="'该企业自己申报并经平台核实为无库存经营（常年不落库），自 ' + row.ns + ' 周期起不参加报送达标评定。企业申报时已确认知晓本厂会看到这个标签。标签不含任何数量，随周期结果在发布日更新'"><el-tag size="small" type="info" effect="plain" style="margin-left:6px">无库存经营</el-tag></el-tooltip><div class="muted small">{{ row.region }} · {{ row.acc }}</div></template></el-table-column>
+        <el-table-column v-for="(c, i) in S.cycles" :key="c" :label="c" width="104" align="center">
+          <template #default="{row}"><span class="grade" :class="row.cyc[i] === '达标' ? 'g' : row.cyc[i] === '未达标' ? 'r' : ''">{{ row.cyc[i] }}</span><div v-if="row.cyc[i] === '不适用'" class="na-why">{{ naWhy(row, i) }}</div></template>
+        </el-table-column>
+        <el-table-column width="130" align="center">
+          <template #header>连续达标周期<el-tooltip placement="top" content="截至最近一个已发布周期，连续达标的周期个数"><el-icon style="vertical-align:-2px;margin-left:2px"><QuestionFilled /></el-icon></el-tooltip></template>
+          <template #default="{row}"><span v-if="row.streak">连续 {{ row.streak }} 期</span><span v-else class="muted">—</span></template>
+        </el-table-column>
+        <el-table-column label="操作" width="150"><template #default="{row}"><el-button v-if="row.cyc[4] === '未达标'" link type="primary" @click="urge(row)">{{ row.urged ? '已催办' : '催办' }}<span v-if="!row.urged" class="ph-tag">二期</span></el-button><el-button v-else-if="row.ns" link type="primary" @click="objDlg = { show: true, row, why: '' }">{{ row.objected ? '异议处理中' : '对标签提出异议' }}<span v-if="!row.objected" class="ph-tag">二期</span></el-button><span v-else class="muted">—</span></template></el-table-column>
+      </el-table>
+      <div class="tbl-foot"><span>共 {{ D.confirmed }} 户，原型展示 {{ stdRows.length }} 户示例　|　结果发布后不因补传自动改变；协议户提出异议的，经平台复核后更正并留痕　|　“不适用”下方注明原因类别；不对无库存经营的协议户发送“未达标”催办</span><span></span></div>
+      <div class="tip-box blue small mt12">
+        <b>为什么单家只有“达标”或“未达标”，没有及时率和缺报原因。</b>评定只看各业务日期有没有实际数据这一个二值，不使用条数、吨位、数量、金额、品类数、批次数；库存快照和销售数据任一项都算，所以有销售的日子和没有销售、只报了库存的日子，在评定里没有区别。如果显示单家的及时率或缺报日期，结果就可以和聚合数的日间变化对照。“不适用”表示本周期不评定：尚未接入、带动关系在周期中途成立、应报送天数不足，或该户是经核实的无库存经营企业（名称旁有标记）。它们都不计入汇总达标率。<br>
+        <b>读这个结果时要知道的局限。</b>业务方不认可零申报后，没有实际数据的日子一律计为缺报。对每天都有库存的协议户，达标只反映报送行为。常年不落库的协议户可以申报无库存经营，核实后显示“不适用”；尚未申报的、只报销售不报库存的、或上传范围很窄的协议户，未达标也可能只是那几天没有可报送的数据。本页不区分原因，也不提示协议户报的是哪一类数据。结果按周期统一、滞后发布，不给日级状态，是为了不让“某家哪天没报”和聚合数的日间变化互相对照。协议户暂停上传时，接入状态显示“已暂停”，暂停期间按未报送计入评定。
+      </div>
+    </template>
+
+    <!-- ④ 我的带动奖励 -->
+    <template v-else>
+      <el-alert type="warning" show-icon :closable="false">
+        <template #title>带动奖励规则 {{ R.ver }}（{{ R.eff }} 起生效）的全部数值为<b>示例参数，待业务方确定</b>。平台不向下游贸易商发放现金分成；原分成预算改为奖励带动协议户入驻的钢厂，形式为名额或折扣。</template>
+      </el-alert>
+      <div class="grid c2">
+        <div class="option-card on" style="cursor:default">
+          <el-icon class="check"><CircleCheckFilled /></el-icon>
+          <h4>奖励名额<el-tag size="small" type="success" effect="plain">当前形式</el-tag></h4>
+          <p>每个考核期（{{ R.period }}）内，计入奖励的带动户数每满 <b>{{ R.quotaPer }}</b> 户，奖励 <b>1</b> 个名额，有效期 {{ R.quotaMonths }} 个月，不计费；单个钢厂每个考核期最多 {{ R.capPerMill }} 个。</p>
+          <ul>
+            <li>来源标识为“奖励”，在名额总览中单独列示，不计入已购名额数，不参与数量阶梯定档</li>
+            <li>不可转让、不可折现；分配后同样在数据池调整周期统一生效，同样受替换规则和防反推规则约束</li>
+            <li><b>可抵用协议户入池占用的名额</b>：协议户照常占用付费名额，有奖励名额时先用奖励名额，不够的部分用已购名额或加购</li>
+            <li>能否用于协议户以外的企业、是否分先后使用，待业务方确定；原型暂不限制</li>
+          </ul>
+        </div>
+        <div class="option-card" style="cursor:default;opacity:.85">
+          <h4>奖励折扣<span class="ph-tag">二期</span></h4>
+          <p>以订阅费的折扣率或抵扣额发放，在续费、加购下单时使用。与数量阶梯、合同价能否叠加待定。二期提供，以下分档仅为示意。</p>
+          <table class="plain-table" style="font-size:12px;margin-top:8px">
+            <thead><tr><th>计入奖励的带动户数</th><th class="r">折扣（示意）</th></tr></thead>
+            <tbody><tr v-for="t in R.tiers" :key="t.label"><td>{{ t.label }}</td><td class="r num">{{ (t.off * 100).toFixed(0) }} 折</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="grid c-2-1" style="margin-bottom:0">
+        <div>
+          <div class="card-title"><span>奖励记录<small>系统按规则生成建议 → 平台运营审核 → 发放 → 通知</small></span><el-button link type="primary" @click="$demo('异议已提交，平台将在 5 个工作日内复核并留痕')">对核算结果有异议</el-button></div>
+          <el-table :data="rewards" size="default">
+            <el-table-column label="考核期" width="100" prop="period" />
+            <el-table-column label="规则版本" width="90" prop="ver" />
+            <el-table-column label="计入奖励的带动户数" width="160" align="right"><template #default="{row}"><span v-if="row.n !== null"><span class="num">{{ row.n }}</span> 户</span><span v-else class="muted">核算中</span></template></el-table-column>
+            <el-table-column label="奖励" min-width="190" prop="text" />
+            <el-table-column label="状态" width="100"><template #default="{row}"><el-tag size="small" :type="row.st === '已发放' ? 'success' : row.st === '核算中' ? 'warning' : 'info'" effect="plain">{{ row.st }}</el-tag></template></el-table-column>
+            <el-table-column label="发放时间" width="120"><template #default="{row}"><span class="num">{{ row.at }}</span></template></el-table-column>
+          </el-table>
+          <div class="card-title" style="margin-top:14px"><span>奖励名额的使用</span><a href="pool.html" style="font-weight:400;font-size:13px">名额总览（数据池管理）›</a></div>
+          <table class="plain-table">
+            <thead><tr><th>来源</th><th class="r">名额</th><th class="r">已分配</th><th class="r">未分配</th><th>有效期</th><th>操作</th></tr></thead>
+            <tbody><tr><td>{{ D.reward.last }} 带动奖励</td><td class="r num">{{ D.reward.quota }}</td><td class="r num">{{ D.reward.used }}</td><td class="r num">{{ D.reward.quota - D.reward.used }}</td><td class="num">{{ D.reward.grantedAt }} 至 {{ D.reward.validTo }}</td><td><a href="directory.html">去企业名录分配</a></td></tr></tbody>
+          </table>
+        </div>
+        <div>
+          <div class="tip-box small" style="margin-top:0">
+            <b>哪些户计入奖励<span class="ex-tag" style="margin-left:6px">示例参数</span></b><br>
+            经本厂邀请并确认带动关系、完成首次有效报送，且在考核期内达到 {{ R.needCycles }} 个达标周期的协议户，计为有效带动户。同一协议户被多家钢厂邀请时，只计给最先建立带动关系的钢厂。本厂的关联贸易公司不计入。
+          </div>
+          <div class="tip-box blue small mt12">
+            <b>为什么只有汇总户数。</b>报送达标只看有没有按时报送实际数据，只报库存快照也能达标。为防止用空壳协议户来套取奖励，平台在内部还会核对有效带动户在考核期内是否有实质经营数据。这一判断不逐户告知，所以“计入奖励的带动户数”可能小于达标户数，页面只给这一个汇总数，不标注哪一户计入、哪一户不计入。
+          </div>
+          <div class="tip-box small mt12">协议户此后不达标、解除带动关系或退出时，已发放的奖励如何处理，待业务方确定；原型暂按“已发放的不收回，对应企业断传或退出时可免费替换、不顺延有效期”展示。</div>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <!-- 可见范围说明 -->
+  <el-dialog v-model="boundDlg" title="本功能的可见范围" width="820px">
+    <div class="bound">
+      <div class="box yes"><h4><el-icon><View /></el-icon>你能看到的</h4><ul><li v-for="t in canSee" :key="t"><el-icon><CircleCheck /></el-icon><span>{{ t }}</span></li></ul></div>
+      <div class="box no"><h4><el-icon><Hide /></el-icon>你看不到的</h4><ul><li v-for="t in cannotSee" :key="t"><el-icon><CircleClose /></el-icon><span>{{ t }}</span></li></ul></div>
+    </div>
+    <div class="tip-box small mt12"><b>关于“无库存经营”标记。</b>常年不落库的企业（厂家直发、订单贸易为主）没有库存快照可报，没有销售的日子会被计为缺报。这类企业可以自己申报，经平台核实后标记为“无库存经营”：不参加报送达标评定，显示“不适用”，不计入汇总达标率的分子和分母，接入状态照常显示。企业申报时已逐项确认知晓本厂会看到这个标签。标签只说明经营模式，不含任何数量，随达标周期结果在发布日更新；它只对与该企业有带动关系的钢厂显示，不进企业名录，也不作为聚合数据的维度、筛选条件或分组，平台不提供“剔除这类企业”或“只含这类企业”的指标口径。本厂看不到申报时间、申报内容和材料、核实过程；某户曾经申请、被驳回、撤销的原因也不显示，撤销或到期后只是标签消失、恢复评定。钢厂不能替协议户申报。<span class="ph-tag" style="margin-left:4px">二期</span>本厂认为某协议户实际持有库存时，可对标签提出异议，平台只回复“维持”或“已撤销”。</div>
+    <div class="tip-box blue small mt8">协议户在自己的工作台和邀请落地页上看到的说明与这里一致。协议户保留的权利不因带动关系或代理协议在平台上受限：自设上传条件、暂停、退出、解除带动关系、选择上架方式。平台不向钢厂披露协议户是否设置了上传条件及其内容。</div>
+    <template #footer><el-button type="primary" @click="boundDlg = false">知道了</el-button></template>
+  </el-dialog>
+
+  <!-- 对无库存经营标签提出异议（UP-102，二期） -->
+  <el-dialog v-model="objDlg.show" width="560px">
+    <template #header><span style="font-size:16px">对“无库存经营”标签提出异议</span><span class="ph-tag" style="margin-left:8px">二期</span></template>
+    <template v-if="objDlg.row">
+      <div class="small" style="line-height:1.9"><b>{{ objDlg.row.name }}</b><br>本厂认为该协议户实际持有库存时，可以说明理由，转入平台复核。</div>
+      <el-input v-model="objDlg.why" class="mt8" type="textarea" :rows="3" maxlength="200" show-word-limit placeholder="说明理由，例如：该户在当地有自有或租用的库房" />
+      <div class="tip-box small mt12" style="margin-bottom:0">平台只回复“维持”或“已撤销”，不提供核实依据和任何数据内容。同一协议户的异议有频率上限（示例：每个达标周期 1 次）。异议与处理结果留痕。</div>
+    </template>
+    <template #footer><el-button @click="objDlg.show = false">取消</el-button><el-button type="primary" :disabled="!objDlg.why" @click="objDlg.row.objected = true; objDlg.show = false; $demo('异议已提交，平台复核后回复“维持”或“已撤销”')">提交异议</el-button></template>
+  </el-dialog>
+
+  <!-- 名单导入 -->
+  <el-dialog v-model="inv.show" title="导入协议户名单" width="720px" top="7vh">
+    <el-steps :active="inv.step" finish-status="success" simple style="margin-bottom:14px">
+      <el-step title="上传名单" /><el-step title="导入结果" /><el-step title="发送邀请" />
+    </el-steps>
+    <template v-if="inv.step === 0">
+      <el-upload drag action="#" :auto-upload="false" :limit="1" accept=".xlsx,.csv">
+        <el-icon style="font-size:36px;color:#a0a9b6"><UploadFilled /></el-icon>
+        <div>把名单文件拖到这里，或点击选择</div>
+        <template #tip><div class="muted small">Excel 模板，单次不超过 2,000 户。字段：企业名称、统一社会信用代码、联系人、手机号、所属销售大区（选填）、协议年度。<a href="javascript:;" @click="$demo('已开始下载《协议户名单模板.xlsx》')">下载模板</a></div></template>
+      </el-upload>
+      <div class="tip-box blue small mt12"><b>平台不会告知对方是否已入驻。</b>导入只校验格式并在名单内去重。名单是本厂的渠道信息，只对本厂可见；联系人和手机号加密存储，只用于发送邀请和催办。原型演示：不选择文件也可继续，使用示例名单（30 户）。</div>
+    </template>
+    <template v-else-if="inv.step === 1">
+      <table class="plain-table">
+        <thead><tr><th>逐行导入结果</th><th class="r">户数</th><th>处理方式</th></tr></thead>
+        <tbody>
+          <tr><td><span class="dot ok"></span>格式正确，可发送邀请</td><td class="r num">26</td><td>下一步发送；发送后状态为“已发送”</td></tr>
+          <tr><td><span class="dot warn"></span>名单内重复（信用代码相同）</td><td class="r num">3</td><td>保留一条，其余跳过</td></tr>
+          <tr><td><span class="dot err"></span>信用代码或手机号格式有误</td><td class="r num">1</td><td>跳过，可下载错误清单修改后重新导入</td></tr>
+          <tr class="total"><td>合计</td><td class="r num">30</td><td></td></tr>
+        </tbody>
+      </table>
+      <div class="small muted mt8" style="line-height:1.7">结果里没有“对方是否已在平台”这一类信息。对已入驻的企业，平台会在对方账号内生成“带动关系确认请求”；对未入驻的企业发送邀请短信和邮件。两种情况在本厂这里都显示为“已发送”，对方确认后才显示后续节点。</div>
+    </template>
+    <template v-else>
+      <el-form label-width="96px">
+        <el-form-item label="邀请对象">26 户，每户一个专属邀请链接（一次性令牌）</el-form-item>
+        <el-form-item label="通知方式"><el-checkbox-group v-model="inv.notify"><el-checkbox value="短信">平台发送短信</el-checkbox><el-checkbox value="邮件">平台发送邮件</el-checkbox><el-checkbox value="自行转发">导出链接，由本厂自行转发</el-checkbox></el-checkbox-group></el-form-item>
+        <el-form-item label="链接有效期"><el-select v-model="inv.exp" style="width:160px"><el-option label="30 天" value="30" /><el-option label="60 天" value="60" /><el-option label="90 天" value="90" /></el-select></el-form-item>
+        <el-form-item label="邀请内容"><div class="clause" style="line-height:1.8">【货袋子】东岳钢铁集团有限公司邀请贵司加入钢贸上下游数据平台并报送销售与库存数据。接入后，东岳钢铁只能看到包含贵司在内的聚合数据，以及贵司是否已接入、报送是否达标，看不到贵司的销量、库存和价格。详情与确认：（专属链接）　回 T 退订</div><div class="small muted" style="margin-top:4px">固定模板，不可修改；被邀请人拒绝后不再接收。</div></el-form-item>
+      </el-form>
+    </template>
+    <template #footer>
+      <el-button @click="inv.show = false">取消</el-button>
+      <el-button v-if="inv.step > 0" @click="inv.step--">上一步</el-button>
+      <el-button v-if="inv.step < 2" type="primary" @click="inv.step++">下一步</el-button>
+      <el-button v-else type="primary" :disabled="!inv.notify.length" @click="sendInvite">发送邀请</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 邀请码与二维码 -->
+  <el-dialog v-model="codeDlg" title="钢厂级邀请码与二维码" width="620px">
+    <div class="row" style="gap:18px;align-items:flex-start">
+      <div style="width:132px;height:132px;border:1px solid var(--stp-border);border-radius:6px;display:grid;grid-template-columns:repeat(9,1fr);padding:8px;gap:2px;flex-shrink:0">
+        <span v-for="i in 81" :key="i" :style="{background: qr(i) ? '#1f2d3d' : '#fff'}"></span>
+      </div>
+      <el-descriptions :column="1" border size="small" style="flex:1">
+        <el-descriptions-item label="当前邀请码"><b class="num" style="font-size:18px;letter-spacing:2px">DY2026A</b>　<el-button link type="primary" @click="$demo('邀请码已复制')">复制</el-button></el-descriptions-item>
+        <el-descriptions-item label="有效期">至 2026-12-31　<el-button link type="primary" @click="$demo('邀请码 DY2026A 已作废，可重新生成')">作废</el-button></el-descriptions-item>
+        <el-descriptions-item label="用法">印在通知或年度协议附件里。协议户注册并开通数据板块时填写，或扫码进入邀请落地页</el-descriptions-item>
+      </el-descriptions>
+    </div>
+    <div class="tip-box small mt12">凭邀请码或二维码进入的企业，在邀请落地页上看到“谁邀请、钢厂能看到什么、看不到什么、本企业保留哪些权利”，由其企业管理员主动确认后带动关系才成立；平台人员和钢厂都不能代为确认。二维码为原型示意图。</div>
+    <template #footer><el-button type="primary" @click="codeDlg = false">关闭</el-button></template>
+  </el-dialog>
+
+  <!-- 逐条添加 -->
+  <el-dialog v-model="addDlg" title="添加协议户" width="560px">
+    <el-form label-width="130px">
+      <el-form-item label="企业名称"><el-input v-model="add.name" placeholder="与营业执照一致" /></el-form-item>
+      <el-form-item label="统一社会信用代码"><el-input v-model="add.code" placeholder="18 位" /></el-form-item>
+      <el-form-item label="联系人"><el-input v-model="add.contact" style="width:160px" /></el-form-item>
+      <el-form-item label="手机号"><el-input v-model="add.phone" style="width:200px" /></el-form-item>
+      <el-form-item label="所属销售大区"><el-select v-model="add.region" clearable placeholder="选填" style="width:160px"><el-option v-for="r in D.regions" :key="r[0]" :label="r[0]" :value="r[0]" /></el-select></el-form-item>
+      <el-form-item label="协议年度"><el-select v-model="add.year" style="width:200px"><el-option label="2026 年度新签" value="2026 年度新签" /><el-option label="2025 年度签约并延续" value="2025 年度签约并延续" /></el-select></el-form-item>
+      <el-form-item label="已约定报送条款"><el-switch v-model="add.clause" /></el-form-item>
+    </el-form>
+    <div class="small muted">添加后状态为“待发送”。平台不会提示这家企业是否已入驻。</div>
+    <template #footer><el-button @click="addDlg = false">取消</el-button><el-button type="primary" :disabled="!add.name" @click="addOne">添加</el-button></template>
+  </el-dialog>
+
+  <!-- 协议条款模板 -->
+  <el-dialog v-model="clauseDlg" title="年度代理协议 · 数据报送条款参考模板" width="820px" top="6vh">
+    <div class="grid c-3-2" style="margin-bottom:0">
+      <div>
+        <div class="clause">
+          <b>第 X 条　数据报送</b><br>
+          1. <b>报送范围</b>：乙方（协议户）同意在货袋子钢贸上下游数据平台完成企业认证，并按双方约定的范围报送销售出库与库存数据（约定方式：＿＿＿）。<br>
+          2. <b>报送频率与达标</b>：按日报送；是否达标以平台公示的报送达标定义为准；当日有实际数据（销售数据或库存快照）才算报送，当日没有销售的照常报送库存快照。<br>
+          3. <b>甲方可见范围</b>：甲方（钢厂）只能查看包含乙方在内的聚合数据，以及乙方是否已接入（含报送中断、已暂停、已退出）、各周期报送是否达标；无权通过平台查看乙方单家的销量、库存、价格和日级报送情况。<br>
+          4. <b>乙方保留的权利</b>：乙方可按平台规则自设上传条件、选择上架方式、选择是否上传价格，并可随时暂停、退出或解除带动关系。
+        </div>
+        <div class="row mt12">
+          <el-button @click="$demo('已开始下载《年度代理协议数据报送条款（参考模板）.docx》')"><el-icon><Download /></el-icon>下载参考模板</el-button>
+          <span class="small muted">模板须经法务审定后提供；需本厂法务确认后使用</span>
+        </div>
+      </div>
+      <div>
+        <div class="tip-box orange small" style="margin-top:0"><b>平台不是协议当事方。</b>协议约定的后果由协议双方处理：平台不因未达标对协议户采取限制措施，不核验协议约定的报送范围，也不出具逐日的报送证明。</div>
+        <div class="tip-box small mt12"><b>登记协议年度与条款。</b>在名单里可登记每户的协议年度和是否已约定报送条款，用于按协议年度统计接入率。</div>
+        <div class="tip-box small mt12"><b>平台运营做什么。</b>邀请由钢厂自己发起。平台运营只做支持和审核：钢厂发起资格审核、名单抽检、被邀请企业的接入辅导、带动关系争议处理、达标异议复核，以及带动奖励的审核与发放。</div>
+      </div>
+    </div>
+    <template #footer><el-button type="primary" @click="clauseDlg = false">关闭</el-button></template>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const D = M.REF.dy, R = M.REF.rule, S = M.REF.std;
+  const OK = '达标', NO = '未达标', NA = '不适用';
+  /* 协议户示例名单（企业名称均为虚构）。只有名单、邀请状态、接入状态和各达标周期的结果，没有任何数值字段。
+     listed：是否对本厂上架（匿名上架且未确认与协议户身份对应的不显示）；pool：是否已在本厂数据池；
+     ns：经核实的无库存经营企业，值为标记生效的达标周期，自该周期起达标为“不适用”（与 M.REF.noStock.list 一致）。
+     青岛海岳的申报还在待核实，核实通过之前钢厂看到的仍是正常的达标或未达标，看不到“申报中” */
+  const A = (name, loc, region, year, clause, way, at, inv, acc, cyc, streak, o) => Object.assign({ name, loc, region, year, clause, way, at, inv, acc, cyc: cyc || [NA, NA, NA, NA, NA], streak, listed: false, pool: false, urged: false, ns: '', objected: false }, o);
+  const Y25 = '2025 年度签约并延续', Y26 = '2026 年度新签', SIGNED = '已签署数据授权协议';
+  const ROWS = [
+    A('苏州恒运钢铁贸易有限公司', '江苏 · 苏州', '华东', Y25, true, '名单导入', '2025-09-02', SIGNED, '已接入', [OK, OK, OK, OK, OK], M.REF.hy.streak, { listed: true, pool: true }),
+    A('无锡瑞丰物资有限公司', '江苏 · 无锡', '华东', Y25, true, '名单导入', '2025-09-02', SIGNED, '已接入', [OK, OK, OK, OK, OK], 12, { listed: true }),
+    A('杭州华昌金属材料有限公司', '浙江 · 杭州', '华东', Y25, true, '名单导入', '2025-09-02', SIGNED, '已接入', [OK, OK, NO, OK, OK], 2),
+    A('南昌天润实业有限公司', '江西 · 南昌', '华中', Y25, true, '名单导入', '2025-09-02', SIGNED, '已接入', [OK, OK, OK, OK, OK], 11, { listed: true }),
+    A('长沙宏达钢铁贸易有限公司', '湖南 · 长沙', '华中', Y25, false, '名单导入', '2025-11-10', SIGNED, '报送中断', [OK, OK, OK, NO, NO], 0, { listed: true }),
+    A('济南同创物贸有限公司', '山东 · 济南', '华东', Y26, true, '邀请码', '2026-06-08', SIGNED, '已暂停', [NA, OK, OK, OK, NO], 0),
+    A('合肥永泰钢铁有限公司', '安徽 · 合肥', '华东', Y26, true, '专属链接', '2026-03-15', SIGNED, '已接入', [OK, OK, OK, OK, OK], 6),
+    A('南京金汇供应链管理有限公司', '江苏 · 南京', '华东', Y26, true, '专属链接', '2026-10-28', SIGNED, '已接入', null, 0, { listed: true }),
+    A('嘉兴远航供应链有限公司', '浙江 · 嘉兴', '华东', Y26, true, '专属链接', '2026-03-15', SIGNED, '已接入', [NO, NO, NA, NA, NA], 0, { ns: '2026-08' }),
+    A('襄阳汉江物资贸易有限公司', '湖北 · 襄阳', '华中', Y25, false, '名单导入', '2025-11-10', SIGNED, '已接入', [NO, NA, NA, NA, NA], 0, { ns: '2026-07', listed: true }),
+    A('青岛海岳钢铁贸易有限公司', '山东 · 青岛', '华东', Y26, true, '邀请码', '2026-06-08', SIGNED, '已接入', [NA, NO, OK, NO, NO], 0),
+    A('常州联合金属材料有限公司', '江苏 · 常州', '华东', Y25, false, '名单导入', '2025-11-10', SIGNED, '已退出', [OK, OK, NO, NA, NA], 0),
+    A('宁波顺通实业有限公司', '浙江 · 宁波', '华东', Y26, true, '名单导入', '2026-09-01', SIGNED, '接入中', null, 0),
+    A('徐州广源钢铁贸易有限公司', '江苏 · 徐州', '华东', Y26, false, '名单导入', '2026-09-01', '已注册认证', '未接入', null, 0),
+    A('长沙鑫盛钢铁贸易有限公司', '湖南 · 长沙', '华中', Y26, true, '邀请码', '2026-11-20', '已确认带动关系', '未接入', null, 0),
+    A('武汉嘉禾物资有限公司', '湖北 · 武汉', '华中', Y26, true, '名单导入', '2026-11-18', '已发送', '', null, 0),
+    A('天津港兴钢铁贸易有限公司', '天津', '华北', Y26, true, '名单导入', '2026-11-18', '已发送', '', null, 0),
+    A('郑州万隆金属材料有限公司', '河南 · 郑州', '华中', Y26, false, '名单导入', '2026-09-01', '已过期', '', null, 0),
+    A('上海正阳钢铁有限公司', '上海', '华东', Y26, false, '专属链接', '2026-10-12', '已拒绝', '', null, 0),
+    A('石家庄德盛物资有限公司', '河北 · 石家庄', '华北', Y26, false, '逐条添加', '', '待发送', '', null, 0),
+  ];
+  const BATCHES = [
+    { id: 'INV-20261118-01', note: '华中、华北新签协议户', way: '名单导入', at: '2026-11-18', n: 30, cf: 4, by: '郑晓岚（渠道管理员）', exp: '至 2026-12-18' },
+    { id: 'INV-20260901-01', note: '2026 年下半年新签协议户', way: '名单导入', at: '2026-09-01', n: 52, cf: 31, by: '郑晓岚（渠道管理员）', exp: '已到期' },
+    { id: 'DY2026A', note: '钢厂级邀请码', way: '邀请码、二维码', at: '2026-06-01', n: 0, cf: 23, by: '周立明（企业管理员）', exp: '至 2026-12-31' },
+    { id: 'LNK-2026', note: '年度代理商大会后逐户发送', way: '专属链接', at: '2026-03-15', n: 58, cf: 29, by: '周立明（企业管理员）', exp: '已到期' },
+    { id: 'INV-20251110-01', note: '华中、华南协议户', way: '名单导入', at: '2025-11-10', n: 60, cf: 49, by: '周立明（企业管理员）', exp: '已到期' },
+    { id: 'INV-20250902-01', note: '首批一级代理', way: '名单导入', at: '2025-09-02', n: 120, cf: 112, by: '周立明（企业管理员）', exp: '已到期' },
+  ];
+  const INV = ['待发送', '已发送', '已确认带动关系', '已注册认证', SIGNED, '已拒绝', '已过期', '已撤回'];
+
+  STP.mount({
+    data() {
+      return {
+        D, R, S, tab: 'list', rows: ROWS, batches: BATCHES, invStates: INV, f: { kw: '', inv: '', region: '', res: '' }, groupBy: 'regions',
+        objDlg: { show: false, row: null, why: '' }, boundDlg: false, codeDlg: false, clauseDlg: false, addDlg: false,
+        add: { name: '', code: '', contact: '', phone: '', region: '', year: Y26, clause: true },
+        inv: { show: false, step: 0, notify: ['短信', '邮件'], exp: '30' },
+        canSee: [
+          '协议户名单（由本厂导入）和每户的邀请状态',
+          '每家是否已接入，以及报送中断、已暂停、已退出（接入前为未接入或接入中；解除后为已解除关联）',
+          '每家各达标周期的结果：达标或未达标（不满评定条件的周期为不适用），以及连续达标的周期数',
+          '每家是否被标记为“无库存经营”：仅在该企业自己申报并经平台核实之后；标记期间达标显示“不适用”',
+          '已邀请、已确认、已接入、达标的汇总户数，以及计入带动奖励的汇总户数',
+          '把企业选入数据池后的聚合数据，规则与其他钢厂完全相同，门槛不因带动关系放宽',
+        ],
+        cannotSee: [
+          '任何一家协议户的销量、库存、价格和金额',
+          '单家的条数、吨位、数量、批次数、品类数、仓库数',
+          '单家的及时率数值、上传时间、日级报送情况、缺报日期和缺报原因、报的是销售还是库存，以及当前周期的进度',
+          '单家是否设置了上传条件、规则内容、被过滤的比例，以及质量评分明细',
+          '对方确认带动关系之前，它是否已在平台、是否与其他钢厂有带动或订阅关系',
+          '一级代理邀请了哪些二级经销商（只有全厂汇总户数）',
+          '哪一户计入了带动奖励（只有汇总户数）',
+        ],
+        rewards: [
+          { period: '2026 Q4', ver: R.ver, n: null, text: '考核期结束后核算', st: '核算中', at: '预计 2027-01-10' },
+          { period: '2026 Q3', ver: R.ver, n: D.reward.counted, text: '奖励名额 ' + D.reward.quota + ' 个（每满 ' + R.quotaPer + ' 户 1 个）', st: '已发放', at: D.reward.grantedAt },
+          { period: '2026 Q2', ver: 'RR-V1', n: 9, text: '不足 15 户（RR-V1 每满 15 户 1 个），未发放', st: '未达起奖', at: '—' },
+        ],
+      };
+    },
+    computed: {
+      filtered() { const f = this.f; return this.rows.filter((r) => (!f.kw || r.name.indexOf(f.kw) >= 0) && (!f.inv || r.inv === f.inv) && (!f.region || r.region === f.region)); },
+      rateShown() { return this.D.ok + this.D.fail >= this.S.rateMinN; },
+      okRate() { return (this.D.ok / (this.D.ok + this.D.fail) * 100).toFixed(1); },
+      accessRows() { return this.rows.filter((r) => r.acc); },
+      stdRows() { const f = this.f; return this.rows.filter((r) => r.acc && (!f.kw || r.name.indexOf(f.kw) >= 0) && (!f.res || r.cyc[4] === f.res)); },
+    },
+    methods: {
+      invStep(s) { return INV.indexOf(s) <= 4 ? INV.indexOf(s) : -1; },
+      invType(s) { return s === SIGNED ? 'success' : s === '已确认带动关系' || s === '已注册认证' ? 'primary' : s === '已发送' ? 'warning' : s === '待发送' ? 'info' : 'danger'; },
+      accType(s) { return s === '已接入' ? 'success' : s === '接入中' ? 'primary' : s === '未接入' || s === '已退出' || s === '已解除关联' ? 'info' : s === '已暂停' ? 'warning' : 'danger'; },
+      qr(i) { return i <= 3 || (i > 6 && i <= 9) || [10, 12, 16, 18, 19, 20, 21, 25, 26, 27, 55, 57, 64, 66, 73, 74, 75].indexOf(i) >= 0 || M.hash('DY2026A' + i) % 5 < 2; },
+      presetAdd() { try { sessionStorage.setItem('stp-qp-preset', JSON.stringify({ qty: D.seat.needBuy })); } catch (e) { /* ignore */ } },
+      openInvite() { this.inv.step = 0; this.inv.show = true; },
+      send(row) { row.inv = '已发送'; row.at = M.TODAY; this.$demo('已按固定模板向 ' + row.name + ' 发送邀请，专属链接 30 天内有效'); },
+      drop(row, word) {
+        ElementPlus.ElMessageBox.confirm(word + '后 ' + row.name + ' 的专属邀请链接失效，可稍后重新邀请。', word + '邀请', { confirmButtonText: '确认' + word, cancelButtonText: '取消', type: 'warning' })
+          .then(() => { if (word === '作废') this.rows.splice(this.rows.indexOf(row), 1); else row.inv = '已撤回'; this.$demo('已' + word); }).catch(() => {});
+      },
+      remove(row) {
+        ElementPlus.ElMessageBox.confirm('移除后，本厂不再看到 ' + row.name + ' 的新状态；带动关系解除，对方会收到通知。已发布的历史周期结果的保留期限待业务方确定。对方也可以单方解除带动关系。', '移除协议户', { confirmButtonText: '确认移除', cancelButtonText: '取消', type: 'warning' })
+          .then(() => { row.inv = '已撤回'; row.acc = '已解除关联'; this.$demo('已移除，带动关系已解除'); }).catch(() => {});
+      },
+      naWhy(row, i) {
+        if (row.ns && S.cycles[i] >= row.ns) return '无库存经营';
+        const first = row.cyc.findIndex((c) => c !== NA);
+        if (first >= 0 ? i < first : (row.acc !== '已接入' || i < S.cycles.length - 1)) return '尚未接入';
+        return '中途成立或天数不足';
+      },
+      urge(row) { if (row.urged) return; row.urged = true; this.$demo('已按固定模板向 ' + row.name + ' 的企业管理员发送提醒（每户每 7 天最多 1 次）。提醒内容不含任何数据'); },
+      addOne() { this.rows.push(A(this.add.name, '—', this.add.region || '—', this.add.year, this.add.clause, '逐条添加', '', '待发送', '', null, 0)); this.addDlg = false; this.add.name = ''; this.$demo('已添加到名单，状态为“待发送”'); },
+      sendInvite() { this.inv.show = false; this.tab = 'list'; this.batches.unshift({ id: 'INV-20261124-01', note: '本次导入', way: '名单导入', at: M.TODAY, n: 26, cf: 0, by: '周立明（企业管理员）', exp: '至 ' + STP.addDays(M.TODAY, +this.inv.exp) }); this.$demo('已向 26 户发送邀请，状态均为“已发送”'); },
+    },
+  });
+})();
+</script>
+</body>
+</html>

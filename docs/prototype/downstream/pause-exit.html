@@ -61,7 +61,7 @@
       <div class="state-facts">
         <div class="f"><div class="l">接口</div><div class="v"><span class="dot" :class="status==='normal' ? 'ok' : status==='paused' ? 'warn' : 'err'"></span>{{ status==='normal' ? '正常接收' : status==='paused' ? '拒收（已暂停）' : '拒收（退出中）' }}</div><div class="s">最近一次成功上传 2026-11-23 23:58</div></div>
         <div class="f"><div class="l">被订阅</div><div class="v">23 家钢厂</div><div class="s">{{ status==='normal' ? '名额生效中' : status==='paused' ? '23 个名额已冻结' : '名额已冻结，退出完成后释放' }}</div></div>
-        <div class="f"><div class="l">收益计提</div><div class="v">{{ status==='normal' ? '正常计提' : '停止计提' }}</div><div class="s">{{ status==='normal' ? '本月有效上传 23 天' : '冻结期间不计提分成' }}</div></div>
+        <div class="f"><div class="l">带动钢厂看到的接入状态</div><div class="v">{{ status==='normal' ? '已接入' : '已暂停' }}</div><div class="s">{{ status==='normal' ? '与你有带动关系的 1 家钢厂（东岳钢铁）可见；2026-10 周期达标' : '对方看不到原因；暂停期间按未报送计入达标评定' }}</div></div>
         <div class="f"><div class="l">已上传数据</div><div class="v">保留在平台</div><div class="s">自 2025-09-26 起，共 14 个月</div></div>
       </div>
     </div>
@@ -83,8 +83,9 @@
       <ul class="eff-list">
         <li><el-icon class="o"><CircleClose /></el-icon><span><b>接口拒收数据。</b>暂停期间 ERP 推送的销售、库存数据全部拒收，返回业务状态错误码 <span class="code">3002</span>（企业已暂停上传，HTTP 403），不落盘。</span></li>
         <li><el-icon class="g"><CircleCheck /></el-icon><span><b>已上传的数据保留。</b>历史数据继续留在平台，不删除；暂停日之后没有新数据进入聚合。</span></li>
-        <li><el-icon class="o"><Lock /></el-icon><span><b>名额冻结。</b>订阅本企业的 23 家钢厂的名额进入冻结，钢厂可免费替换或顺延；<b>冻结期间不计提分成</b>。钢厂只会看到“名额冻结”，看不到原因。</span></li>
-        <li><el-icon class="g"><RefreshRight /></el-icon><span><b>可随时恢复。</b>恢复后接口立即接收数据，名额解冻、恢复计提；暂停期间的数据可在 ERP 端按业务日期补传。</span></li>
+        <li><el-icon class="o"><Lock /></el-icon><span><b>名额冻结。</b>订阅本企业的 23 家钢厂的名额进入冻结，钢厂可免费替换或顺延。订阅你的钢厂只会看到“名额冻结”，看不到原因。</span></li>
+        <li><el-icon class="o"><View /></el-icon><span><b>与你有带动关系的 1 家钢厂将看到此状态。</b>东岳钢铁在“协议户邀请与接入”里看到本企业的接入状态变为“已暂停”，<b>看不到原因</b>。暂停期间按未报送计入达标评定，本周期结果可能为“未达标”，在周期结束后统一发布。<a href="mill-relations.html">它能看到什么 ›</a></span></li>
+        <li><el-icon class="g"><RefreshRight /></el-icon><span><b>可随时恢复。</b>恢复后接口立即接收数据，名额解冻；暂停期间的数据可在 ERP 端按业务日期补传。</span></li>
       </ul>
       <div class="act-foot">
         <template v-if="status==='normal'">
@@ -113,7 +114,7 @@
       </a>
       <a class="light" href="visibility.html">
         <span class="ic"><el-icon><View /></el-icon></span>
-        <span><div class="tt">改为匿名上架</div><div class="ds">在钢厂的企业名录里只显示匿名编号，或只对指定钢厂可见。对分成没有影响。</div></span>
+        <span><div class="tt">改为匿名上架</div><div class="ds">在钢厂的企业名录里只显示匿名编号，或只对指定钢厂可见。不影响行业对标权益。</div></span>
         <el-icon class="go"><ArrowRight /></el-icon>
       </a>
       <a class="light" href="upload-settings.html">
@@ -147,8 +148,8 @@
           <li><el-icon class="r"><CircleClose /></el-icon><span><b>停止对外提供。</b>本企业的数据不再进入任何钢厂的聚合结果，并从企业名录下架；23 个名额释放，钢厂可免费替换。</span></li>
           <li><el-icon class="r"><Delete /></el-icon><span><b>按协议删除明细数据。</b>销售与库存明细、汇总记录、价格与金额、物料映射在 {{ P.del }} 天内删除，含备份中的副本按备份周期滚动清除。</span></li>
           <li><el-icon><InfoFilled /></el-icon><span><b>已生成并已披露的历史聚合结果不回溯修改。</b>那些数里早已不能分辨出本企业；回溯重算反而会让“重算前后之差”暴露本企业的数。<span class="demo-param">待业务方确认 D-12</span></span></li>
-          <li><el-icon><Money /></el-icon><span><b>收益结清。</b>自申请日起停止计提；已计提未结算的金额照常出结算单并付款，不受起付金额限制。</span></li>
-          <li><el-icon><Document /></el-icon><span><b>保留的内容。</b>协议签署记录、结算与发票记录、操作审计日志按法规要求保留，不含业务明细。</span></li>
+          <li><el-icon><Histogram /></el-icon><span><b>权益停止。</b>退出完成后不再提供行业对标数据；与你有带动关系的 1 家钢厂（东岳钢铁）将看到“已退出”，带动关系随之终止。本企业邀请的下级经销商不受影响。</span></li>
+          <li><el-icon><Document /></el-icon><span><b>保留的内容。</b>协议签署记录、操作审计日志按法规要求保留，不含业务明细。</span></li>
         </ul>
       </div>
       <div>
@@ -160,7 +161,7 @@
             <tr><th>已上传数据</th><td>保留</td><td>明细按协议删除</td></tr>
             <tr><th>历史聚合</th><td>不变</td><td>不回溯修改</td></tr>
             <tr><th>订阅名额</th><td>冻结，恢复后解冻</td><td>释放</td></tr>
-            <tr><th>收益分成</th><td>冻结期间不计提</td><td>停止计提，已计提部分结清</td></tr>
+            <tr><th>带动钢厂看到的</th><td>已暂停（看不到原因）；暂停期间按未报送计入达标评定</td><td>已退出</td></tr>
             <tr><th>行业对标</th><td>保留，本企业数据停更</td><td>停止提供</td></tr>
             <tr><th>是否可逆</th><td><b style="color:#18a058">随时可恢复</b></td><td>冷静期内可撤回；完成后需重新认证、签约、联调</td></tr>
           </tbody>
@@ -198,8 +199,9 @@
     <ul class="eff-list mt12">
       <li><el-icon class="o"><CircleClose /></el-icon><span>接口拒收数据，ERP 收到业务状态错误码 <span class="code">3002</span>（企业已暂停上传）。建议同时通知 ERP 厂商停用定时任务，避免产生大量报错。</span></li>
       <li><el-icon class="g"><CircleCheck /></el-icon><span>已上传的数据保留，不删除。</span></li>
-      <li><el-icon class="o"><Lock /></el-icon><span>订阅本企业的 <b>23 家</b>钢厂名额冻结，冻结期间<b>不计提分成</b>。按近期水平，每暂停一天约少计提 <b>71 元</b>。</span></li>
-      <li><el-icon class="g"><RefreshRight /></el-icon><span>可随时恢复，恢复后名额解冻、恢复计提。</span></li>
+      <li><el-icon class="o"><Lock /></el-icon><span>订阅本企业的 <b>23 家</b>钢厂名额冻结，钢厂可免费替换或顺延；替换后该钢厂不再订阅本企业。</span></li>
+      <li><el-icon class="o"><View /></el-icon><span>与你有带动关系的 1 家钢厂（东岳钢铁）会看到本企业的接入状态为<b>已暂停</b>，看不到暂停原因；暂停期间按未报送计入达标评定。</span></li>
+      <li><el-icon class="g"><RefreshRight /></el-icon><span>可随时恢复，恢复后名额解冻。</span></li>
     </ul>
     <el-form label-width="88px" class="mt12">
       <el-form-item label="暂停原因">
@@ -218,7 +220,7 @@
   <el-dialog v-model="resumeDlg" title="恢复上传" width="500px">
     <ul class="eff-list">
       <li><el-icon class="g"><CircleCheck /></el-icon><span>接口立即恢复接收数据。</span></li>
-      <li><el-icon class="g"><CircleCheck /></el-icon><span>收到第一批有效数据后，23 个名额解冻并恢复计提分成。</span></li>
+      <li><el-icon class="g"><CircleCheck /></el-icon><span>收到第一批有效数据后，23 个名额解冻；带动钢厂看到的接入状态恢复为“已接入”，此后周期的达标结果按恢复后的报送情况评定。</span></li>
       <li><el-icon><InfoFilled /></el-icon><span>暂停期间的数据可在 ERP 端按业务日期补传（补传窗口为近 90 天）。</span></li>
     </ul>
     <template #footer>
@@ -245,7 +247,7 @@
       <el-descriptions-item label="对外提供">冷静期（{{ P.cool }} 天）结束后停止，届时从企业名录下架，23 个名额释放</el-descriptions-item>
       <el-descriptions-item label="明细数据">停止对外提供后 {{ P.del }} 天内按协议删除，完成后出具数据删除确认书</el-descriptions-item>
       <el-descriptions-item label="历史聚合">已生成并已披露的历史聚合结果不回溯修改</el-descriptions-item>
-      <el-descriptions-item label="收益">自今日起停止计提；已计提未结算部分照常结清</el-descriptions-item>
+      <el-descriptions-item label="权益与带动关系">退出完成后停止提供行业对标数据；与你有带动关系的 1 家钢厂（东岳钢铁）将看到“已退出”</el-descriptions-item>
     </el-descriptions>
     <el-form label-position="top" class="mt16">
       <el-form-item label="退出原因">
@@ -289,11 +291,11 @@
         pauseForm: { reason: 'ERP 系统升级或切换', note: '', notify: true },
         exitForm: { reason: '业务调整，不再需要', name: '', read: false },
         pauseReasons: ['ERP 系统升级或切换', '内部数据核查', '对数据使用方式有疑虑，先暂停', '业务淡季或停业', '其他'],
-        exitReasons: ['业务调整，不再需要', '对数据安全有顾虑', '对接和维护成本高', '收益不及预期', '企业注销或合并', '其他'],
+        exitReasons: ['业务调整，不再需要', '对数据安全有顾虑', '对接和维护成本高', '行业对标数据用处不大', '企业注销或合并', '其他'],
         respText: 'HTTP/1.1 403\n\n{\n  "code": 3002,\n  "message": "企业已暂停上传",\n  "requestId": "req-5b0d93e1a7c24f16",\n  "data": null\n}',
         logs: [
-          { at: '2026-08-11 08:40', act: '恢复上传', type: 'success', by: ME, reason: 'ERP 升级完成', effect: '接口恢复接收；22 个名额于当日解冻并恢复计提；2026-08-09、08-10 的数据已补传' },
-          { at: '2026-08-09 07:55', act: '暂停上传', type: 'warning', by: ME, reason: 'ERP 系统升级或切换', effect: '接口拒收 2 天；22 个名额冻结 2 天，当月少计提 44 个名额日；已上传数据保留' },
+          { at: '2026-08-11 08:40', act: '恢复上传', type: 'success', by: ME, reason: 'ERP 升级完成', effect: '接口恢复接收；22 个名额于当日解冻；2026-08-09、08-10 的数据已补传' },
+          { at: '2026-08-09 07:55', act: '暂停上传', type: 'warning', by: ME, reason: 'ERP 系统升级或切换', effect: '接口拒收 2 天；22 个名额冻结 2 天；已上传数据保留' },
           { at: '2025-09-26 10:20', act: '开始上传', type: 'primary', by: ME, reason: '联调通过，转为生产', effect: '接口开始接收生产数据；同日以实名方式上架' },
           { at: '2025-09-19 10:26', act: '签署协议', type: 'info', by: ME, reason: '签署《数据授权协议》', effect: '取得上传与上架资格' }],
       };
@@ -311,12 +313,12 @@
       openPause() { this.pauseForm = { reason: 'ERP 系统升级或切换', note: '', notify: true }; this.pauseDlg = true; },
       doPause() {
         this.status = 'paused'; this.pausedAt = NOW; this.pauseDlg = false;
-        this.logs.unshift({ at: NOW, act: '暂停上传', type: 'warning', by: ME, reason: this.pauseForm.reason + (this.pauseForm.note ? '：' + this.pauseForm.note : ''), effect: '接口拒收并返回错误码 3002；23 个名额冻结，冻结期间不计提分成；已上传数据保留' });
+        this.logs.unshift({ at: NOW, act: '暂停上传', type: 'warning', by: ME, reason: this.pauseForm.reason + (this.pauseForm.note ? '：' + this.pauseForm.note : ''), effect: '接口拒收并返回错误码 3002；23 个名额冻结；带动钢厂看到“已暂停”；已上传数据保留' });
         this.$demo('已暂停上传，可随时恢复');
       },
       doResume() {
         this.status = 'normal'; this.resumeDlg = false;
-        this.logs.unshift({ at: NOW, act: '恢复上传', type: 'success', by: ME, reason: '企业主动恢复', effect: '接口恢复接收；收到首批有效数据后 23 个名额解冻并恢复计提' });
+        this.logs.unshift({ at: NOW, act: '恢复上传', type: 'success', by: ME, reason: '企业主动恢复', effect: '接口恢复接收；收到首批有效数据后 23 个名额解冻' });
         this.$demo('已恢复上传');
       },
       openExit() { this.exitForm = { reason: '业务调整，不再需要', name: '', read: false }; this.exitDlg = true; },

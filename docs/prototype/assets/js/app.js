@@ -30,7 +30,7 @@
   const dayList = (end, n) => Array.from({ length: n }, (_, i) => addDays(end, i - n + 1));
 
   /* 防反推展示规则（与运营后台“防反推参数”页的默认值一致） */
-  const PV = { nMin: 20, k: 5, dom1: 50, dom2: 80, bands: ['5–9', '10–19', '20–49', '50+'], roundTon: 1, roundPrice: 10, kPrice: 8, otherBrands: 3, coverBands: ['低于 30%', '30%–60%', '高于 60%'] };
+  const PV = { nMin: 20, k: 5, dom1: 50, dom2: 80, bands: ['5–9', '10–19', '20–49', '50+'], roundTon: 1, roundPrice: 10, kPrice: 8, rollKeep: 2, otherBrands: 3, coverBands: ['低于 30%', '30%–60%', '高于 60%'] };
   /* 价格覆盖率（有价销量 ÷ 全部销量）只以区间展示 */
   const coverBand = (r) => (r == null ? null : r < 0.3 ? '低于 30%' : r <= 0.6 ? '30%–60%' : '高于 60%');
   const band = (n) => (n == null || n < PV.k ? null : n < 10 ? '5–9' : n < 20 ? '10–19' : n < 50 ? '20–49' : '50+');
@@ -52,9 +52,10 @@
   };
 
   /* ------------------------------------------------------------------ 原型状态（跨页面保持）
-   * gate：上游价格功能闸口（运营后台控制，默认关闭）；dnPrice：下游示例企业的价格上传开关（默认关闭）。
+   * gate：上游价格功能闸口（运营后台控制，默认关闭）；dnPrice：下游示例企业的价格上传开关（默认关闭）；
+   * ns：下游示例企业的无库存经营申报状态（off 未申报、wait 待核实、on 已生效），用于演示标记期间各页面的样子。
    * 同时写入 localStorage 与链接 hash，保证在各浏览器以 file:// 打开时都能跨页保持。 */
-  const STATE_DEFAULT = { gate: 'closed', dnPrice: 'off' };
+  const STATE_DEFAULT = { gate: 'closed', dnPrice: 'off', ns: 'off' };
   const state = Vue.reactive(Object.assign({}, STATE_DEFAULT));
   const stateHash = () => {
     const diff = Object.keys(STATE_DEFAULT).filter((k) => state[k] !== STATE_DEFAULT[k]).map((k) => k + ':' + state[k]);
@@ -70,12 +71,12 @@
     try { localStorage.setItem('stp-proto-state', JSON.stringify(state)); } catch (e) { /* ignore */ }
     try { history.replaceState(null, '', location.pathname + location.search + (stateHash() || '#')); } catch (e) { /* ignore */ }
   };
-  const withState = (u) => (/^[^#:?]+\.html$/.test(u) ? u + stateHash() : u);
+  const withState = (u) => (/^[^#:?]+\.html(\?[^#]*)?$/.test(u) ? u + stateHash() : u);
   document.addEventListener('click', (e) => {
     const a = e.target.closest && e.target.closest('a[href]');
     if (!a) return;
     const h = a.getAttribute('href');
-    if (/^[^#:?]+\.html$/.test(h) && stateHash()) { e.preventDefault(); location.href = h + stateHash(); }
+    if (/^[^#:?]+\.html(\?[^#]*)?$/.test(h) && stateHash()) { e.preventDefault(); location.href = h + stateHash(); }
   });
 
   /* ------------------------------------------------------------------ 三端菜单 */
@@ -92,6 +93,8 @@
           { key: 'pool', title: '数据来源企业名单', icon: 'OfficeBuilding' },
           { key: 'directory', title: '企业名录选购', icon: 'ShoppingCart' },
           { key: 'quota-package', title: '批量购买名额包', icon: 'Box' } ] },
+        { group: '协议户带动', items: [
+          { key: 'dealer-invite', title: '协议户邀请与接入', icon: 'Promotion' } ] },
         { group: '订单与账务', items: [
           { key: 'orders', title: '订单与订阅', icon: 'Tickets' } ] },
         { group: '试用', items: [
@@ -115,9 +118,10 @@
           { key: 'visibility', title: '名称可见性设置', icon: 'View' },
           { key: 'ledger', title: '数据使用透明账本', icon: 'Notebook' },
           { key: 'pause-exit', title: '暂停与退出', icon: 'SwitchButton' } ] },
-        { group: '权益回馈', items: [
+        { group: '权益与带动', items: [
           { key: 'benchmark', title: '行业对标数据', icon: 'Histogram' },
-          { key: 'revenue', title: '我的收益', icon: 'Coin' } ] },
+          { key: 'mill-relations', title: '带动关系与报送达标', icon: 'Link' },
+          { key: 'invite', title: '邀请下级经销商', icon: 'Share', phase: '二期' } ] },
       ],
     },
     admin: {
@@ -136,10 +140,9 @@
           { key: 'grain-monitor', title: '上传粒度监控', icon: 'Operation' },
           { key: 'privacy-params', title: '防反推参数', icon: 'Lock' },
           { key: 'price-control', title: '价格数据管控', icon: 'PriceTag' } ] },
-        { group: '交易与结算', items: [
+        { group: '交易与奖励', items: [
           { key: 'billing', title: '订单与计费', icon: 'Tickets' },
-          { key: 'share-rules', title: '分成规则与台账', icon: 'Notebook' },
-          { key: 'settlement', title: '分成结算', icon: 'Wallet' } ] },
+          { key: 'referral-rewards', title: '带动奖励规则', icon: 'Present' } ] },
         { group: '安全审计', items: [
           { key: 'audit', title: '审计日志', icon: 'Memo' } ] },
       ],
@@ -182,7 +185,7 @@
           <div class="stp-menu-group">{{ g.group }}</div>
           <template v-for="m in g.items" :key="m.key">
             <a v-if="show(m)" class="stp-menu-item" :class="{active: m.key===active}" :href="m.key + '.html'">
-              <el-icon><component :is="m.icon" /></el-icon><span>{{ m.title }}</span>
+              <el-icon><component :is="m.icon" /></el-icon><span>{{ m.title }}</span><span v-if="m.phase" class="stp-menu-phase">{{ m.phase }}</span>
             </a>
           </template>
         </template>
@@ -273,6 +276,78 @@
         <span class="cover-tag">覆盖率 {{ b }}</span>
       </el-tooltip>`,
   };
+  /* 分品类统计维度表：按统计维度模板的固定路径展示（第一维度 × 第二维度的段 → 第一维度 → 规格段 → 品名）。
+     披露与上卷结果来自 M.dimTree，看板、查询、导出预览与运营后台共用，同一范围、同一层级只有一种划分 */
+  const DimTable = {
+    props: { name: String, total: { type: Number, default: 0 }, n: { type: Number, default: 0 }, metric: { type: String, default: '销量' }, level: { type: String, default: '' }, seed: { type: String, default: '' },
+      segW: Array, nScale: Number, segFilter: { type: Array, default: () => [] }, d2Filter: { type: Array, default: () => [] }, note: { type: Boolean, default: true }, compact: Boolean },
+    computed: {
+      d() { return M.dimsOf(this.name); },
+      t() { return M.dimTree(this.name, this.total, this.n, { level: this.level, seed: this.seed, segW: this.segW, nScale: this.nScale }); },
+      grouped() { return this.t.groups.some((g) => g.seg); },
+      cols() { return this.t.cols.map((c, i) => ({ name: c, label: c, i })).filter((c) => !this.d2Filter.length || this.d2Filter.indexOf(c.name) >= 0); },
+      groups() { return this.t.groups.filter((g) => !g.seg || !this.segFilter.length || this.segFilter.indexOf(g.seg) >= 0).map((g) => Object.assign({}, g, { rows: g.rows.filter((r) => g.seg || r.kind !== 'seg' || !this.segFilter.length || this.segFilter.indexOf(r.name) >= 0) })); },
+      span() { return this.cols.length + (this.t.hasOther ? 1 : 0); },
+      d2Name() { return this.d.d2 ? this.d.d2.name : ''; },
+      pathText() { return this.d.tpl.path.join(' → '); },
+      filtered() { return this.segFilter.length > 0 || this.d2Filter.length > 0; },
+    },
+    methods: {
+      fmt, band,
+      lvOf(r) { return r.merged ? '合并披露' : r.state === 'cells' ? this.t.levelName.replace(' × ', '×') : r.kind === 'seg' ? this.d.d1.segName : this.d.d1.name; },
+      memberText(ms) { return ms.join('、'); },
+    },
+    template: `<div class="dim-table">
+      <div class="dim-cap">指标：<b>{{ metric }}</b>　单位：<span class="unit-pill" :class="{ns: !d.steel}">{{ t.unit }}</span>　披露层级：<b>{{ t.prodRolled ? '品名' : t.levelName }}</b></div>
+      <table class="plain-table cross" :class="{compact}">
+        <thead><tr>
+          <th v-if="grouped">{{ d.d1.segName }}</th>
+          <th>{{ grouped ? d.d1.name : d.d1.segName }}</th>
+          <th v-for="c in cols" :key="c.name" class="r">{{ c.label }}</th>
+          <th v-if="t.cols.length && t.hasOther" class="r"><el-tooltip placement="top" :content="'同一' + d.rowName + '下不满足披露条件的' + d2Name + '段，与最小的可见段合并为一项披露'"><span>其他<br>（合并披露）</span></el-tooltip></th>
+          <th class="r nowrap">{{ t.cols.length ? (grouped ? d.d1.name : d.d1.segName) + '合计' : metric }}（{{ t.unit }}）</th>
+          <th v-if="!t.cols.length" class="r">占比</th>
+          <th class="c">贡献企业数</th>
+        </tr></thead>
+        <tbody>
+          <tr v-if="t.prodRolled">
+            <td :colspan="1 + (grouped ? 1 : 0) + span"><b>{{ name }}</b><el-tooltip placement="top" content="样本不足，已合并到上一级"><span class="roll-tag">已上卷</span></el-tooltip></td>
+            <td class="r"><b class="num">{{ fmt(t.total) }}</b></td><td v-if="!t.cols.length" class="r">100%</td><td class="c"><contrib-tag :n="t.n" /></td>
+          </tr>
+          <template v-for="g in groups" :key="g.seg || 'all'">
+            <tr v-if="g.rolled" class="roll-row">
+              <td class="nowrap seg-cell">{{ g.seg }}</td>
+              <td :colspan="1 + span" class="roll-cell"><el-tooltip placement="top" content="样本不足，已合并到上一级"><span><el-icon><Top /></el-icon>{{ d.d1.segName }}<span class="roll-tag">已上卷</span></span></el-tooltip></td>
+              <td class="r"><b class="num">{{ fmt(g.total) }}</b></td><td v-if="!t.cols.length" class="r"><span class="num">{{ (g.total / t.total * 100).toFixed(1) }}%</span></td><td class="c"><contrib-tag :n="g.n" /></td>
+            </tr>
+            <tr v-else v-for="(r, ri) in g.rows" :key="g.seg + r.name" :class="{merged: r.merged}">
+              <td v-if="grouped && ri === 0" :rowspan="g.rows.length" class="nowrap seg-cell">{{ g.seg }}</td>
+              <td class="nowrap"><template v-if="r.merged"><el-tooltip placement="top" :content="'合并成员：' + r.members.join('、')"><span>其他<span class="merged-row-tag">合并披露</span></span></el-tooltip></template><template v-else>{{ r.name }}</template></td>
+              <template v-if="t.cols.length">
+                <td v-if="r.state === 'rolled'" :colspan="span" class="roll-cell"><el-tooltip placement="top" content="样本不足，已合并到上一级"><span><el-icon><Top /></el-icon>{{ r.merged ? '不分' + d2Name : (r.kind === 'seg' ? d.d1.segName : d.d1.name) + '（不分' + d2Name + '）' }}<span class="roll-tag">已上卷</span></span></el-tooltip></td>
+                <template v-else>
+                  <td v-for="c in cols" :key="c.name" class="r">
+                    <el-tooltip v-if="r.cells[c.i].state === 'ok'" placement="top" :content="'贡献企业数：' + band(r.cells[c.i].n) + ' 家'"><span class="num">{{ fmt(r.cells[c.i].v) }}</span></el-tooltip>
+                    <el-tooltip v-else placement="top" content="已并入本行的“其他（合并披露）”"><span class="merge-mark">已合并</span></el-tooltip>
+                  </td>
+                  <td v-if="t.hasOther" class="r"><el-tooltip v-if="r.other" placement="top" :content="'合并成员：' + memberText(r.other.members) + '；贡献企业数：' + band(r.other.n) + ' 家'"><span class="num">{{ fmt(r.other.v) }}</span></el-tooltip><span v-else class="muted">—</span></td>
+                </template>
+              </template>
+              <td class="r"><b class="num">{{ fmt(r.total) }}</b></td>
+              <td v-if="!t.cols.length" class="r"><span class="num">{{ (r.total / t.total * 100).toFixed(1) }}%</span></td>
+              <td class="c"><contrib-tag :n="r.n" /></td>
+            </tr>
+          </template>
+          <tr class="total"><td :colspan="1 + (grouped ? 1 : 0) + span">{{ name }}合计<span v-if="filtered" class="muted small">（全部{{ d.d1.name }}{{ d.d2 ? '、全部' + d2Name : '' }}，不随筛选变化）</span></td><td class="r"><b class="num">{{ fmt(t.total) }}</b></td><td v-if="!t.cols.length" class="r">100%</td><td class="c"><contrib-tag :n="t.n" /></td></tr>
+        </tbody>
+      </table>
+      <div v-if="note && (t.anyRolled || t.prodRolled || t.hasOther)" class="tip-box orange small mt8">
+        带<span class="roll-tag" style="margin:0 4px">已上卷</span>的行：样本不足，已合并到上一级。上卷顺序固定为 <b>{{ pathText }}</b>，由平台统一判定，不能自选方向或自定分段边界；同一查询范围在看板、查询、导出中的划分完全相同。<template v-if="t.cols.length">各行的合并方式不同，因此不提供按{{ d2Name }}段的列合计。</template>扩大数据池，或放宽地区、时间范围，可以看到更细的层级。
+      </div>
+      <div v-else-if="note" class="small muted mt8">本次查询范围内各行均满足披露条件，按“{{ t.levelName }}”完整展示。鼠标悬停数值可看贡献企业数区间。</div>
+    </div>`,
+  };
+
   const StatCard = {
     props: { label: String, value: { default: null }, unit: String, d: { type: Number, default: 0 }, mom: { default: undefined }, yoy: { default: undefined }, momLabel: { type: String, default: '环比' }, tip: String, icon: String, note: String },
     methods: { pct },
@@ -393,6 +468,7 @@
     app.component('contrib-tag', ContribTag);
     app.component('cover-tag', CoverTag);
     app.component('stat-card', StatCard);
+    app.component('dim-table', DimTable);
     app.component('sample-note', SampleNote);
     app.component('ve-chart', VeChart);
     const g = app.config.globalProperties;

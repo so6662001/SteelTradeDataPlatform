@@ -59,6 +59,13 @@
     </div>
   </div>
 
+  <div class="tip-box green small" style="margin:-4px 0 14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+    <span><el-tag size="small" type="success" effect="plain">来源：奖励</el-tag>　<b>奖励名额 {{ reward.quota }} 个</b></span>
+    <span>已分配 <b class="num">{{ reward.used }}</b></span><span>未分配 <b class="num">{{ reward.quota - reward.used }}</b></span><span>有效期 <span class="num">{{ reward.grantedAt }}</span> 至 <span class="num">{{ reward.validTo }}</span></span>
+    <span class="muted">{{ reward.last }} 带动奖励发放，不计费；单独列示，不计入已购的 200 个，也不参与数量阶梯。<b style="color:#1f2d3d">协议户照常占用付费名额，奖励名额可以抵用</b>：已选入数据池的协议户 {{ seat.inPool }} 户（含待生效）各占 1 个已购名额；还有 {{ seat.listedOut }} 户已对本厂上架、尚未选入，全部选入时奖励名额抵用 {{ seat.rewardFree }} 个，其余 {{ seat.needBuy }} 个须加购。分配后同样按数据池调整周期统一生效，受相同的替换规则和防反推规则约束。<span class="ex-tag" style="display:inline-block;padding:0 6px;border-radius:3px;font-size:11px;line-height:18px;background:#fff8eb;color:#9a6400;border:1px solid #f3dfb8">示例参数</span></span>
+    <a href="dealer-invite.html" style="margin-left:auto">我的带动奖励 ›</a>
+  </div>
+
   <el-alert v-if="frozenTodo" type="warning" show-icon :closable="false">
     <template #title>
       有 {{ frozenTodo }} 家企业的名额处于冻结状态且尚未处理（冻结原因：连续 10 天无有效上传，或企业主动暂停）。冻结期间不参与聚合；可免费替换且不占用替换额度，或选择剩余天数顺延。
@@ -401,6 +408,8 @@
         return { replace: p.filter((x) => x.type === '替换' && !x.free).length, free: p.filter((x) => x.free).length, add: p.filter((x) => x.type === '新增').length, remove: p.filter((x) => x.type === '移出').length };
       },
       freeQuota() { return 14 - this.pendCount.add; },
+      reward() { return M.REF.dy.reward; },
+      seat() { return M.REF.dy.seat; },
       regionOpts() {
         const map = {};
         this.rows.forEach((e) => { (map[e.prov] = map[e.prov] || {})[e.city] = 1; });

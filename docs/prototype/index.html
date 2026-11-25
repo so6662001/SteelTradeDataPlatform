@@ -51,11 +51,11 @@ body { background: #f3f5f8; }
 <body>
 <div class="portal-hero">
   <div class="portal-wrap">
-    <span class="ver">高保真原型 · 对应需求文档 V0.2 · 2026-11-24</span>
+    <span class="ver">高保真原型 · 对应需求文档 V0.6 · 2026-11-25</span>
     <h1>钢贸上下游数据平台</h1>
     <p>货袋子平台的数据板块：下游钢贸企业通过 ERP 接口按自己设定的条件上传进销存数据，平台做清洗、标准化与聚合脱敏，上游钢厂按“数据池内的下游企业数”付费，只能看到聚合后的销量与库存。本原型覆盖三个端的主流程，全部为静态页面，可离线打开。</p>
     <div class="facts">
-      <span><b>3</b>个端</span><span><b>34</b>个页面</span><span><b>全部</b>为模拟数据，企业名称均为虚构</span><span>页面内的弹窗、抽屉、状态切换均可点击</span>
+      <span><b>3</b>个端</span><span><b>35</b>个页面</span><span><b>全部</b>为模拟数据，企业名称均为虚构</span><span>页面内的弹窗、抽屉、状态切换均可点击</span>
     </div>
   </div>
 </div>
@@ -66,13 +66,14 @@ body { background: #f3f5f8; }
       <h2><span class="ic" style="background:#409eff">钢</span>上游钢厂端</h2>
       <div class="who">演示身份：东岳钢铁集团有限公司 · 周立明（企业管理员）</div>
       <ul>
-        <li>聚合看板、多维查询、导出中心</li>
+        <li>聚合看板、多维查询、导出中心（筛选项和表格列随品类变化）</li>
         <li>数据来源企业名单（只到数据池级别）</li>
         <li>企业名录选购、批量购买名额包、订单与订阅</li>
+        <li>协议户邀请与接入（只看接入状态与各周期是否达标）、带动奖励</li>
         <li>量价视图（受法务闸口控制，默认未开放）</li>
         <li>模拟数据演示看板</li>
       </ul>
-      <div class="flow">主流程：<a data-p href="upstream/demo.html">演示看板</a> → <a data-p href="upstream/directory.html">选购企业</a> → <a data-p href="upstream/quota-package.html">购买名额包</a> → <a data-p href="upstream/orders.html">订单</a> → <a data-p href="upstream/pool.html">数据池名单</a> → <a data-p href="upstream/dashboard.html">看板</a> → <a data-p href="upstream/query.html">查询</a> → <a data-p href="upstream/export.html">导出</a></div>
+      <div class="flow">主流程：<a data-p href="upstream/demo.html">演示看板</a> → <a data-p href="upstream/directory.html">选购企业</a> → <a data-p href="upstream/quota-package.html">购买名额包</a> → <a data-p href="upstream/orders.html">订单</a> → <a data-p href="upstream/pool.html">数据池名单</a> → <a data-p href="upstream/dashboard.html">看板</a> → <a data-p href="upstream/query.html">查询</a> → <a data-p href="upstream/export.html">导出</a> → <a data-p href="upstream/dealer-invite.html">邀请协议户</a></div>
       <a class="enter" data-p style="background:#409eff" href="upstream/dashboard.html">进入上游钢厂端</a>
     </div>
     <div class="portal-card">
@@ -83,9 +84,9 @@ body { background: #f3f5f8; }
         <li>上传条件规则、上传粒度、价格上传开关</li>
         <li>名称可见性（实名、匿名、定向可见）</li>
         <li>每日上传汇总、已上传数据自查</li>
-        <li>透明账本、行业对标、我的收益、暂停与退出</li>
+        <li>透明账本、行业对标、带动关系与报送达标、暂停与退出</li>
       </ul>
-      <div class="flow">主流程：<a data-p href="downstream/api-access.html">接口接入</a> → <a data-p href="downstream/upload-rules.html">上传规则</a> → <a data-p href="downstream/upload-settings.html">上传设置</a> → <a data-p href="downstream/visibility.html">可见性</a> → <a data-p href="downstream/daily-summary.html">每日汇总</a> → <a data-p href="downstream/data-check.html">自查</a> → <a data-p href="downstream/ledger.html">账本</a> → <a data-p href="downstream/revenue.html">收益</a></div>
+      <div class="flow">主流程：<a data-p href="downstream/api-access.html">接口接入</a> → <a data-p href="downstream/upload-rules.html">上传规则</a> → <a data-p href="downstream/upload-settings.html">上传设置</a> → <a data-p href="downstream/visibility.html">可见性</a> → <a data-p href="downstream/daily-summary.html">每日汇总</a> → <a data-p href="downstream/data-check.html">自查</a> → <a data-p href="downstream/ledger.html">账本</a> → <a data-p href="downstream/benchmark.html">行业对标</a> → <a data-p href="downstream/mill-relations.html">带动关系与达标</a></div>
       <a class="enter" data-p style="background:#18a058" href="downstream/home.html">进入下游钢贸端</a>
     </div>
     <div class="portal-card">
@@ -94,11 +95,11 @@ body { background: #f3f5f8; }
       <ul>
         <li>企业管理、数据池管理</li>
         <li>全品类主数据工作台、地区与仓库</li>
-        <li>数据质量监控、上传粒度监控</li>
+        <li>数据质量监控、上传粒度与维度格子监控</li>
         <li>防反推参数、价格数据管控（法务闸口）</li>
-        <li>订单与计费、分成规则与台账、分成结算、审计日志</li>
+        <li>订单与计费、带动奖励规则、审计日志</li>
       </ul>
-      <div class="flow">主流程：<a data-p href="admin/workbench.html">工作台</a> → <a data-p href="admin/enterprises.html">企业审核</a> → <a data-p href="admin/master-category.html">主数据</a> → <a data-p href="admin/quality.html">质量</a> → <a data-p href="admin/privacy-params.html">防反推</a> → <a data-p href="admin/billing.html">计费</a> → <a data-p href="admin/settlement.html">结算</a> → <a data-p href="admin/audit.html">审计</a></div>
+      <div class="flow">主流程：<a data-p href="admin/workbench.html">工作台</a> → <a data-p href="admin/enterprises.html">企业审核</a> → <a data-p href="admin/master-category.html">主数据</a> → <a data-p href="admin/quality.html">质量</a> → <a data-p href="admin/privacy-params.html">防反推</a> → <a data-p href="admin/billing.html">计费</a> → <a data-p href="admin/referral-rewards.html">带动奖励</a> → <a data-p href="admin/audit.html">审计</a></div>
       <a class="enter" data-p style="background:#f0a020" href="admin/workbench.html">进入平台运营后台</a>
     </div>
   </div>
@@ -120,6 +121,13 @@ body { background: #f3f5f8; }
         <a class="lk" data-p href="downstream/upload-settings.html">打开上传设置</a>
         <a class="lk" data-p href="downstream/benchmark.html">行业对标</a>
       </div>
+      <div class="sw">
+        <h4>下游无库存经营标记 <span class="st" id="st-ns"></span></h4>
+        <p>示例下游企业的“无库存经营”申报状态，<b>默认未申报</b>。已生效时，“带动关系与报送达标”显示“不适用（无库存经营）”、不显示当期进度和缺报日历，“每日上传汇总”不做缺报提醒。示例企业每天上传库存快照，本不属于适用对象，这个开关只用来演示标记期间各页面的样子。</p>
+        <span class="seg" id="seg-ns"><button data-v="off">未申报（默认）</button><button data-v="wait">待核实</button><button data-v="on">已生效</button></span>
+        <a class="lk" data-p href="downstream/mill-relations.html">带动关系与报送达标</a>
+        <a class="lk" data-p href="downstream/daily-summary.html">每日上传汇总</a>
+      </div>
     </div>
     <div class="small muted" style="margin-top:8px">两个开关也可以在对应页面内切换（上游端顶栏、运营后台“价格数据管控”、下游“上传设置”）。状态保存在浏览器本地并随链接传递，跨页面保持。</div>
   </div>
@@ -127,54 +135,55 @@ body { background: #f3f5f8; }
   <div class="portal-section">
     <h3>全部页面</h3>
     <div class="pl">
-      <div class="hd"><i style="background:#409eff"></i>上游钢厂端<small>9 个页面 · 目录 upstream/</small></div>
+      <div class="hd"><i style="background:#409eff"></i>上游钢厂端<small>10 个页面 · 目录 upstream/</small></div>
       <table>
         <tr><th>分组</th><th>页面</th><th>内容</th><th>文件</th></tr>
         <tr><td class="g" rowspan="4">数据洞察</td><td class="n"><a data-p href="upstream/dashboard.html">聚合看板</a></td><td>概览指标、地区地图（省到地级市下钻）、销量与库存趋势、品类结构、本厂品牌视图；含“数据池低于最小规模”空状态</td><td class="f">dashboard.html</td></tr>
-        <tr><td class="n"><a data-p href="upstream/query.html">多维查询</a></td><td>地区、品类、规格、品牌、时间自由组合；合并披露、追加屏蔽、多选提示；各品类可查粒度；交叉表与图表视图</td><td class="f">query.html</td></tr>
+        <tr><td class="n"><a data-p href="upstream/query.html">多维查询</a></td><td>地区、品类、规格、品牌、时间自由组合；合并披露、追加屏蔽、多选提示；各品类可查粒度；交叉表与图表视图。V0.4：按品类统计维度出表（管材规格 × 壁厚段、板材厚度段 × 宽度段等），型材按品名固定为公斤段或负差段，格子不足自动上卷；钢材按吨、非钢材按数量分表</td><td class="f">query.html</td></tr>
         <tr><td class="n"><a data-p href="upstream/price.html">量价视图</a><span class="tag-new">V0.2</span><span class="tag-gate">受闸口控制</span></td><td>“未开放”与“已开放”两种状态；加权均价、涨跌、覆盖率区间；量价联动、品牌价差、分地区量价；首次进入确认条款</td><td class="f">price.html</td></tr>
-        <tr><td class="n"><a data-p href="upstream/export.html">导出中心</a></td><td>导出任务、定时发送、配额与水印、导出规则说明</td><td class="f">export.html</td></tr>
+        <tr><td class="n"><a data-p href="upstream/export.html">导出中心</a></td><td>导出任务、定时发送、配额与水印、导出规则说明；导出文件带维度列、单位列，钢材与非钢材分工作表</td><td class="f">export.html</td></tr>
         <tr><td class="g" rowspan="3">数据池与选购</td><td class="n"><a data-p href="upstream/pool.html">数据来源企业名单</a></td><td>池内企业名单与名额状态（只到数据池级别，不含任何单家数据）、调整记录、冻结与替换</td><td class="f">pool.html</td></tr>
         <tr><td class="n"><a data-p href="upstream/directory.html">企业名录选购</a></td><td>按地区、品类、规模、质量筛选下游企业，实名与匿名展示，加入清单并计价</td><td class="f">directory.html</td></tr>
         <tr><td class="n"><a data-p href="upstream/quota-package.html">批量购买名额包</a></td><td>阶梯价、订阅周期、下单与支付步骤</td><td class="f">quota-package.html</td></tr>
+        <tr><td class="g">协议户带动</td><td class="n"><a data-p href="upstream/dealer-invite.html">协议户邀请与接入</a><span class="tag-new">V0.4</span></td><td>批量邀请协议户（名单导入、邀请链接、邀请码），邀请状态、接入状态（已接入、报送中断、已暂停、已退出）、各周期达标或未达标（单家不显示及时率；V0.6：无库存经营的协议户带标签、显示“不适用”并注明原因类别，汇总区单列户数；参与评定不足 5 户时不显示汇总达标率；对标签提出异议为二期；列表没有任何数值列，没有单家经营数据），协议户占用名额与带动奖励抵用</td><td class="f">dealer-invite.html</td></tr>
         <tr><td class="g">订单与账务</td><td class="n"><a data-p href="upstream/orders.html">订单与订阅</a></td><td>订阅批次、订单、续费与加购、合同与发票</td><td class="f">orders.html</td></tr>
         <tr><td class="g">试用</td><td class="n"><a data-p href="upstream/demo.html">模拟数据演示看板</a></td><td>购买前的演示看板，带醒目“模拟数据”标识，不提供导出与名单</td><td class="f">demo.html</td></tr>
       </table>
     </div>
     <div class="pl" style="margin-top:16px">
-      <div class="hd"><i style="background:#18a058"></i>下游钢贸端<small>12 个页面 · 目录 downstream/</small></div>
+      <div class="hd"><i style="background:#18a058"></i>下游钢贸端<small>13 个页面 · 目录 downstream/</small></div>
       <table>
         <tr><th>分组</th><th>页面</th><th>内容</th><th>文件</th></tr>
-        <tr><td class="g">总览</td><td class="n"><a data-p href="downstream/home.html">工作台</a></td><td>上传状态、被订阅家数、待办、质量评级与收益概览</td><td class="f">home.html</td></tr>
+        <tr><td class="g">总览</td><td class="n"><a data-p href="downstream/home.html">工作台</a></td><td>上传状态、被订阅家数、待办、质量评级，邀请我的钢厂与报送达标概览</td><td class="f">home.html</td></tr>
         <tr><td class="g" rowspan="4">数据接入</td><td class="n"><a data-p href="downstream/api-access.html">ERP 接口接入</a></td><td>应用密钥、IP 白名单、沙箱与正式环境、联调状态、批次记录</td><td class="f">api-access.html</td></tr>
-        <tr><td class="n"><a data-p href="downstream/api-docs.html">接口文档中心</a></td><td>鉴权签名、各接口字段、示例代码、错误码</td><td class="f">api-docs.html</td></tr>
-        <tr><td class="n"><a data-p href="downstream/upload-rules.html">上传条件规则</a></td><td>按仓库、品类、品牌、客户类型等配置上传范围，规则试算与生效记录</td><td class="f">upload-rules.html</td></tr>
-        <tr><td class="n"><a data-p href="downstream/upload-settings.html">上传设置</a><span class="tag-new">V0.2</span></td><td>上传粒度（单据行级或按日汇总，按来源系统选择）与价格金额上传开关（默认关闭）</td><td class="f">upload-settings.html</td></tr>
-        <tr><td class="g" rowspan="2">数据自查</td><td class="n"><a data-p href="downstream/daily-summary.html">每日上传汇总</a></td><td>按业务日期核对批次、条数、吨位、隔离与对账结果</td><td class="f">daily-summary.html</td></tr>
-        <tr><td class="n"><a data-p href="downstream/data-check.html">已上传数据自查</a></td><td>逐条查看已上传数据与平台标准化结果，作废、更正、导出</td><td class="f">data-check.html</td></tr>
+        <tr><td class="n"><a data-p href="downstream/api-docs.html">接口文档中心</a></td><td>鉴权签名、各接口字段、示例代码、错误码；按品类的统计维度字段、吨位与数量；V0.5：型材第二维度按品名固定，当日报送的判定与报送状态查询，对账申报不算报送</td><td class="f">api-docs.html</td></tr>
+        <tr><td class="n"><a data-p href="downstream/upload-rules.html">上传条件规则</a></td><td>按仓库、品类、品牌、客户类型及品类维度（壁厚、厚度、宽度等）配置上传范围，规则试算（钢材与非钢材分列）与生效记录；V0.5：试算提示此规则下有多少天没有可报送的数据</td><td class="f">upload-rules.html</td></tr>
+        <tr><td class="n"><a data-p href="downstream/upload-settings.html">上传设置</a><span class="tag-new">V0.2</span></td><td>上传粒度（单据行级或按日汇总，按来源系统选择）、日汇总的汇总键与维度取值方式、价格金额上传开关（默认关闭）</td><td class="f">upload-settings.html</td></tr>
+        <tr><td class="g" rowspan="2">数据自查</td><td class="n"><a data-p href="downstream/daily-summary.html">每日上传汇总</a></td><td>按业务日期核对批次、条数、吨位、隔离与对账结果；非钢材按数量单列；V0.5：今日是否已计为报送（分别标出库存快照和销售数据是否已收到），取消日结申报与零申报；V0.6：非应报送日不计入评定，无库存经营标记生效期间不做缺报提醒</td><td class="f">daily-summary.html</td></tr>
+        <tr><td class="n"><a data-p href="downstream/data-check.html">已上传数据自查</a></td><td>逐条查看已上传数据与平台标准化结果（含各维度的原始值、解析值、所属段），维度填报情况，作废、更正、导出</td><td class="f">data-check.html</td></tr>
         <tr><td class="g" rowspan="3">数据安全中心</td><td class="n"><a data-p href="downstream/visibility.html">名称可见性设置</a></td><td>实名、匿名、定向可见，名录中的展示预览</td><td class="f">visibility.html</td></tr>
         <tr><td class="n"><a data-p href="downstream/ledger.html">数据使用透明账本</a></td><td>被订阅家数（不显示钢厂名称）、钢厂能看到什么、平台人员访问记录</td><td class="f">ledger.html</td></tr>
         <tr><td class="n"><a data-p href="downstream/pause-exit.html">暂停与退出</a></td><td>暂停上传、恢复、退出板块及数据处置</td><td class="f">pause-exit.html</td></tr>
-        <tr><td class="g" rowspan="2">权益回馈</td><td class="n"><a data-p href="downstream/benchmark.html">行业对标数据</a></td><td>本企业与同地区同品类聚合水平的对比</td><td class="f">benchmark.html</td></tr>
-        <tr><td class="n"><a data-p href="downstream/revenue.html">我的收益</a><span class="tag-new">V0.2</span></td><td>收益分成规则、预计收益、结算单、开票与提现</td><td class="f">revenue.html</td></tr>
+        <tr><td class="g" rowspan="3">权益与带动</td><td class="n"><a data-p href="downstream/benchmark.html">行业对标数据</a></td><td>本企业与同地区同品类聚合水平的对比</td><td class="f">benchmark.html</td></tr>
+        <tr><td class="n"><a data-p href="downstream/mill-relations.html">带动关系与报送达标</a><span class="tag-new">V0.4</span></td><td>是哪家钢厂邀请了本企业、确认或拒绝带动关系、钢厂能看到和看不到什么、我的报送达标（日历只有本企业可见；V0.5：缺报的日子显示原因）、V0.6：应报送日为工作日，无库存经营申报（适用对象、七项告知逐项确认、申报内容三步；待核实、已生效等状态）、邀请落地页预览</td><td class="f">mill-relations.html</td></tr>
+        <tr><td class="n"><a data-p href="downstream/invite.html">邀请下级经销商</a><span class="tag-new">V0.4</span><span class="tag-new">二期</span></td><td>一级代理邀请二级经销商并查看邀请状态（二期功能的设计预览；钢厂只见二级经销商的汇总户数）</td><td class="f">invite.html</td></tr>
       </table>
     </div>
     <div class="pl" style="margin-top:16px">
-      <div class="hd"><i style="background:#f0a020"></i>平台运营后台<small>13 个页面 · 目录 admin/</small></div>
+      <div class="hd"><i style="background:#f0a020"></i>平台运营后台<small>12 个页面 · 目录 admin/</small></div>
       <table>
         <tr><th>分组</th><th>页面</th><th>内容</th><th>文件</th></tr>
-        <tr><td class="g">总览</td><td class="n"><a data-p href="admin/workbench.html">运营工作台</a></td><td>平台规模、T+1 发布状态、各模块待办</td><td class="f">workbench.html</td></tr>
-        <tr><td class="g" rowspan="2">企业与数据池</td><td class="n"><a data-p href="admin/enterprises.html">企业管理</a></td><td>上下游准入审核、身份认定、画像与上架审核</td><td class="f">enterprises.html</td></tr>
+        <tr><td class="g">总览</td><td class="n"><a data-p href="admin/workbench.html">运营工作台</a></td><td>平台规模、入驻来源（钢厂带动等）、T+1 发布状态、各模块待办（含钢厂发起资格审核、名单抽检、达标异议复核；V0.6：无库存经营待核实、标记复核）</td><td class="f">workbench.html</td></tr>
+        <tr><td class="g" rowspan="2">企业与数据池</td><td class="n"><a data-p href="admin/enterprises.html">企业管理</a></td><td>上下游准入审核（记录钢厂带动来源；带动关系由企业自行确认，平台不代为确认）、身份认定、画像与上架审核；V0.6：无库存经营的待核实队列、标记复核与监控</td><td class="f">enterprises.html</td></tr>
         <tr><td class="n"><a data-p href="admin/pools.html">数据池管理</a></td><td>各上游的名额与数据池、被动减员、补偿处理</td><td class="f">pools.html</td></tr>
-        <tr><td class="g" rowspan="2">主数据</td><td class="n"><a data-p href="admin/master-category.html">全品类主数据工作台</a><span class="tag-new">V0.2</span></td><td>分品类标准化深度、披露粒度、映射队列、拆分合并</td><td class="f">master-category.html</td></tr>
+        <tr><td class="g" rowspan="2">主数据</td><td class="n"><a data-p href="admin/master-category.html">全品类主数据工作台</a><span class="tag-new">V0.2</span></td><td>分品类标准化深度、披露粒度、映射队列、拆分合并；V0.4：统计维度模板、品名归属与计量单位（含型材逐个品名配置公斤段或负差段）、分段字典（示例参数）</td><td class="f">master-category.html</td></tr>
         <tr><td class="n"><a data-p href="admin/master-region.html">地区与仓库</a></td><td>行政区划、仓库归属地映射</td><td class="f">master-region.html</td></tr>
         <tr><td class="g" rowspan="4">数据治理</td><td class="n"><a data-p href="admin/quality.html">数据质量监控</a></td><td>质量指标、断传跟进、隔离数据、补传审核、质量规则</td><td class="f">quality.html</td></tr>
-        <tr><td class="n"><a data-p href="admin/grain-monitor.html">上传粒度监控</a><span class="tag-new">V0.2</span></td><td>行级与日汇总的分布、切换记录、对聚合维度的影响</td><td class="f">grain-monitor.html</td></tr>
+        <tr><td class="n"><a data-p href="admin/grain-monitor.html">上传粒度监控</a><span class="tag-new">V0.2</span></td><td>行级与日汇总的分布、切换记录、对聚合维度的影响；V0.4：统计维度格子达标与上卷率</td><td class="f">grain-monitor.html</td></tr>
         <tr><td class="n"><a data-p href="admin/privacy-params.html">防反推参数</a></td><td>最小数据池、最小贡献企业数、优势度、区间、修约等参数，双人复核与影响试算</td><td class="f">privacy-params.html</td></tr>
         <tr><td class="n"><a data-p href="admin/price-control.html">价格数据管控</a><span class="tag-new">V0.2</span></td><td>上游价格法务闸口（默认关闭，双人复核开启，可立即关闭）、价格披露参数</td><td class="f">price-control.html</td></tr>
-        <tr><td class="g" rowspan="3">交易与结算</td><td class="n"><a data-p href="admin/billing.html">订单与计费</a></td><td>订单、对公收款确认、退款、价目与优惠</td><td class="f">billing.html</td></tr>
-        <tr><td class="n"><a data-p href="admin/share-rules.html">分成规则与台账</a><span class="tag-new">V0.2</span></td><td>分成规则版本、名额日台账、计提明细、冻结与复核</td><td class="f">share-rules.html</td></tr>
-        <tr><td class="n"><a data-p href="admin/settlement.html">分成结算</a><span class="tag-new">V0.2</span></td><td>结算单生成、下游确认与开票、付款批次、对账</td><td class="f">settlement.html</td></tr>
+        <tr><td class="g" rowspan="2">交易与奖励</td><td class="n"><a data-p href="admin/billing.html">订单与计费</a></td><td>订单、对公收款确认、退款、价目与优惠</td><td class="f">billing.html</td></tr>
+        <tr><td class="n"><a data-p href="admin/referral-rewards.html">带动奖励规则</a><span class="tag-new">V0.4</span></td><td>带动奖励规则配置与版本（一期奖励名额，折扣为二期；示例参数）、发放记录与审核、带动关系与有效带动户、报送达标参数与异议复核（V0.5：按实际数据判定、缺报原因分布；V0.6：示例参数改为工作日、及时率 80%，应报送日历）、入驻来源</td><td class="f">referral-rewards.html</td></tr>
         <tr><td class="g">安全</td><td class="n"><a data-p href="admin/audit.html">审计日志</a></td><td>上游查询与导出记录、异常查询告警、平台人员明细访问审批</td><td class="f">audit.html</td></tr>
       </table>
     </div>
@@ -195,7 +204,7 @@ body { background: #f3f5f8; }
   <div class="portal-section">
     <h3>说明</h3>
     <ul class="notes">
-      <li>全部数据为程序生成的模拟数据，企业、钢厂、人员名称均为虚构；价目、分成比例、披露参数标注为“示例参数”的，取自需求文档的建议值，尚待业务方确认。</li>
+      <li>全部数据为程序生成的模拟数据，企业、钢厂、人员名称均为虚构；价目、带动奖励规则、披露参数、分段数值标注为“示例参数”的，取自需求文档的建议值，尚待业务方确认。</li>
       <li>纯静态文件，不依赖网络与后端：Vue 3、Element Plus、ECharts 与地图数据都保存在 <span class="code">assets/lib/</span>，双击本页即可使用。建议使用 Chrome 或 Edge，窗口宽度不小于 1366 像素。</li>
       <li>页面右上角的“原型导航”可随时回到本页，“切换身份”可在三个端之间跳转。表单提交、支付、导出等操作只做演示提示，不会产生真实数据。</li>
     </ul>
@@ -205,9 +214,9 @@ body { background: #f3f5f8; }
 
 <script>
 (function () {
-  var DEF = { gate: 'closed', dnPrice: 'off' };
-  var LABEL = { gate: { closed: '未开放', open: '已开放' }, dnPrice: { off: '不上传', on: '已开启' } };
-  var st = { gate: DEF.gate, dnPrice: DEF.dnPrice };
+  var DEF = { gate: 'closed', dnPrice: 'off', ns: 'off' };
+  var LABEL = { gate: { closed: '未开放', open: '已开放' }, dnPrice: { off: '不上传', on: '已开启' }, ns: { off: '未申报', wait: '待核实', on: '已生效' } };
+  var st = { gate: DEF.gate, dnPrice: DEF.dnPrice, ns: DEF.ns };
   try { var s = JSON.parse(localStorage.getItem('stp-proto-state') || '{}'); for (var k in DEF) if (typeof s[k] === 'string') st[k] = s[k]; } catch (e) { /* ignore */ }
   var m = /#s=([^&]*)/.exec(location.hash || '');
   if (m) m[1].split(',').forEach(function (kv) { var a = kv.split(':'); if (a[0] in DEF && a[1]) st[a[0]] = a[1]; });

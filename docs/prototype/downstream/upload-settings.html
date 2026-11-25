@@ -90,6 +90,31 @@
       <b>上传粒度不对上游展示，也不是上游的维度或筛选条件。</b>两种粒度的数据在平台内先合并到“企业 × 日”层再做聚合与披露判定，<b>对上游的聚合结果相同</b>。钢厂无法知道你用的是哪种粒度，也无法按粒度筛选数据。
     </div>
 
+    <div class="side-panel-title" style="margin-top:18px">日汇总的汇总键与统计维度<span class="level-tag" style="margin-left:8px">只对日汇总模式的来源系统有意义</span></div>
+    <div class="grid c-3-2" style="margin-bottom:12px">
+      <div>
+        <div class="tip-box small" style="margin-top:0"><b>汇总键</b> = 业务日期 + 仓库所在市 + 品名 + 材质 + 钢厂 + <b>该品名统计维度模板的维度</b> + 已上传的选填维度 + 价格口径（上传金额时）。同一汇总键下不得同时出现吨位和数量。缺少模板维度的汇总记录会被拒收（3008 汇总键不完整）。</div>
+        <table class="plain-table mt8">
+          <thead><tr><th>模板</th><th>汇总键中的模板维度</th><th>计量</th><th>本企业在传的品名</th></tr></thead>
+          <tbody>
+            <tr v-for="t in tplRows" :key="t.k"><td><b>{{ t.k }}</b></td><td>{{ t.dims }}</td><td><span class="unit-pill" :class="{ns: t.unit !== '吨'}">{{ t.unit }}</span></td><td :class="{muted: !t.mine}">{{ t.mine || '当前没有在传的品名' }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div>
+        <div class="small" style="margin-bottom:6px"><b>连续维度（厚度、宽度、壁厚、公斤数、负差率）的取值方式</b></div>
+        <el-radio-group v-model="bandMode" style="display:flex;flex-direction:column;align-items:flex-start;gap:6px">
+          <el-radio value="raw">按原始值汇总，由平台归段<span class="muted small">　分段字典变更后平台可以重新归段</span></el-radio>
+          <el-radio value="band">按平台下发的分段字典归段后汇总<span class="muted small">　暴露的信息更少，报文带 bandDictVersion</span></el-radio>
+        </el-radio-group>
+        <div class="tip-box small mt8" :class="bandMode === 'band' ? 'orange' : 'blue'">
+          <template v-if="bandMode === 'raw'">SRC-WX 当前按原始值汇总。平台按分段字典 <b>{{ bandVer.ver }}</b>（{{ bandVer.eff }} 生效，分段数值为示例参数）归段；对上游只按段披露，原始值不出平台。</template>
+          <template v-else>ERP 须通过 <span class="code">GET /dicts/bands</span> 拉取分段字典并在本地归段。分段字典变更后，历史数据无法重新归段；所用版本失效时接口返回 3007，需重新拉取后重传。</template>
+        </div>
+        <div class="small muted mt8">两种方式是否都允许，待业务方确定；离散维度（规格、型号）始终用原始值。行级模式逐行上传原始值，不涉及这项设置。<a href="api-docs.html">接口文档 ›</a></div>
+      </div>
+    </div>
+
     <div class="side-panel-title" style="margin-top:18px">切换记录</div>
     <el-table :data="switchLog" border size="small">
       <el-table-column label="操作时间" width="150"><template #default="{row}"><span class="num">{{ row.at }}</span></template></el-table-column>
@@ -190,7 +215,7 @@
               </tr>
             </tbody>
           </table>
-          <div class="small muted mt8">默认只有企业管理员可见，可授予数据管理员。接口对接员、只读成员、财务不可授予。</div>
+          <div class="small muted mt8">默认只有企业管理员可见，可授予数据管理员。接口对接员、只读成员不可授予。</div>
         </div>
       </div>
 
@@ -332,9 +357,18 @@
           { k: 'SRC-HQ', name: '总部 ERP', grain: 'line', since: '2025-09-26', vol: '260 行', pending: null, locked: false },
           { k: 'SRC-WX', name: '无锡分公司进销存', grain: 'daily', since: '2026-10-01', vol: '40 条汇总记录', pending: null, locked: false },
         ],
+        bandMode: 'raw', bandVer: M.BAND_VER,
+        tplRows: [
+          { k: '建材', dims: '规格', unit: '吨', mine: '螺纹钢、盘螺、高线' },
+          { k: '板材', dims: '厚度、宽度', unit: '吨', mine: '热轧卷板、热轧带钢' },
+          { k: '管材', dims: '规格、壁厚', unit: '吨', mine: '' },
+          { k: '型材', dims: '规格、公斤数或负差率（按品名固定其一）', unit: '吨', mine: '' },
+          { k: '其他品类', dims: '规格', unit: '吨', mine: '' },
+          { k: '其他品类（非钢材）', dims: '规格', unit: '数量', mine: '钢筋连接套筒（个），由 SRC-HQ 行级上传' },
+        ],
         cmp: [
           ['上传什么', '销售出库与退货的每一行单据（单据号可传脱敏值），接口为销售出库批量上传', '按业务日期和维度组合汇总后的净销量，每天一批完整数据，接口为销售日汇总上传'],
-          ['平台能看到什么', '单据行：单据号、行号、仓库、品名、材质、规格、钢厂、吨位。不含客户名称、业务员、成本', '只有汇总后的数量：某天、某仓库所在市、某品名规格、某钢厂卖了多少吨。看不到单据和单笔吨位，仓库可只报所在市'],
+          ['平台能看到什么', '单据行：单据号、行号、仓库、品名、材质、规格及该品类的统计维度、钢厂、吨位或数量。不含客户名称、业务员、成本', '只有汇总后的数量：某天、某仓库所在市、某品名规格（及该品类的统计维度）、某钢厂卖了多少吨或多少数量。看不到单据和单笔吨位，仓库可只报所在市'],
           ['可用的规则条件', '全部条件，ERP 端与平台双重执行', '“单笔吨位上下限”“按内部编码排除”只能在 ERP 端执行，其余条件双重执行'],
           ['自查能看到什么', '单据行，原始值与平台标准化后的值并列', '汇总记录及其来源批次，没有单据号'],
           ['更正方式', '单行更新、单行作废', '重传该业务日期的完整汇总批次，平台整批替换；不支持单条作废'],
@@ -358,7 +392,7 @@
           { name: '刘雯', role: '数据管理员', can: true, on: false },
           { name: '钱永康', role: '数据管理员（无锡分公司）', can: true, on: false },
           { name: '周凯', role: '接口对接员' },
-          { name: '顾晓燕', role: '财务' },
+          { name: '顾晓燕', role: '只读成员' },
         ],
         plog: on ? [
           { at: '2026-10-20 09:14', type: '范围', text: '设置上传范围：' + scopeText(DEFAULT_SCOPE), by: ME },

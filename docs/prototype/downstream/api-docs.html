@@ -160,6 +160,22 @@
         <p>各接口共用的字段含义与枚举取值。品类、材质、钢厂、地区等标准字典通过 <span class="code">GET /dicts/{{ '{' }}type{{ '}' }}</span> 同步；ERP 上传原文即可，由平台映射为标准值，映射结果可在“已上传数据自查”中与原始值并列查看。</p>
         <h3>禁止字段</h3>
         <div class="tip-box red">客户名称、客户联系方式、业务员姓名、成本价、毛利、报价（未成交价格）。接口不设这些字段；ERP 如果传了，以及任何未定义字段，平台<b>收到即丢弃、不落盘</b>，并在批次结果中提示。</div>
+        <h3>统计维度字段（specAttrs）<el-tag size="small" type="warning" effect="plain" style="margin-left:6px">v1.2 计划</el-tag></h3>
+        <p>销量和库存按品类使用不同的统计维度。三个上传接口的 <span class="code">specAttrs</span> 按品名所属模板条件必填；键名为建议，联调前定稿。“必备”的判定：结构化字段已传，或平台能从规格原文 <span class="code">spec</span> 解析得到，满足其一即可。</p>
+        <table class="plain-table">
+          <thead><tr><th style="width:90px">模板</th><th style="width:150px">统计维度</th><th style="width:300px">必备的键</th><th>示例</th></tr></thead>
+          <tbody><tr v-for="f in dimFields" :key="f[0]"><td><b>{{ f[0] }}</b></td><td>{{ f[1] }}</td><td class="f">{{ f[2] }}</td><td class="f" style="font-size:12px">{{ f[3] }}</td></tr></tbody>
+        </table>
+        <div class="tip-box small mt8">第一维度（规格、厚度、型号）缺失且无法解析：该行为 PENDING_MAPPING，原因码 DIM_REQUIRED_MISSING，补齐后回补。第二维度（壁厚、宽度、公斤数或负差率）缺失：该行仍为 ACCEPTED，带提示 DIM_UNBANDED，在第二维度上归入“未分段”，只能参与更粗层级的聚合。型材的第二维度按品名固定：每个品名用公斤段还是负差段由平台在品类主数据里配置，通过 <span class="code">GET /dicts/dimension-templates</span> 下发（字段 <span class="code">secondDim</span>）。只传了另一种时，平台按理论重量表换算成该品名配置的那一种并提示 DIM_CONVERTED；换算不了的按第二维度缺失处理，归入“未分段”。两项可以都传，以配置的那一项为准；品名尚未映射时两项至少传一项，映射后再按配置校验。ERP 归段后上传的，只能按配置的那一种分段归段。</div>
+        <h3>计量字段<el-tag size="small" type="warning" effect="plain" style="margin-left:6px">v1.2 计划</el-tag></h3>
+        <table class="plain-table">
+          <thead><tr><th style="width:130px">计量类型</th><th>行级销售、库存快照</th><th>销售日汇总</th></tr></thead>
+          <tbody>
+            <tr><td>吨位（钢材）</td><td><span class="f">weight</span> 必填；<span class="f">quantity</span>、<span class="f">quantityUnit</span> 选填</td><td><span class="f">netWeight</span> 必填</td></tr>
+            <tr><td>数量（非钢材）</td><td><span class="f">quantity</span>、<span class="f">quantityUnit</span> 必填；<span class="f">weight</span> 选填，不参与吨位聚合</td><td><span class="f">netQuantity</span>、<span class="f">quantityUnit</span> 必填；可分列 <span class="f">outQuantity</span>、<span class="f">returnQuantity</span></td></tr>
+          </tbody>
+        </table>
+        <div class="tip-box small mt8">计量类型由品名映射后的主数据决定，不由上传方选择。品名尚未映射时，重量与数量至少传一项，映射后再校验。数量单位须与该品名的标准数量单位一致，或属于平台维护了固定换算关系的单位，否则拒收（UNIT_MISMATCH）。吨位和数量是两个独立的度量，平台不互相换算、不合并相加。非钢材暂不接收价格和金额字段，收到按 PRICE_DROPPED 处理。</div>
         <h3>价格与金额字段</h3>
         <p>全部选填。<b>仅在企业开启价格上传且该行在其设定范围内时接收</b>；只采集销售成交的单价与金额，不采集成本、毛利、库存金额、报价。库存快照不设任何价格、金额字段。</p>
         <table class="plain-table">
@@ -177,6 +193,8 @@
           <tbody>
             <tr><td>日期与时间</td><td>日期用 yyyy-MM-dd；时间用 ISO 8601 带时区，如 2026-11-23T16:42:10+08:00</td></tr>
             <tr><td>重量</td><td>单位吨，最多 3 位小数</td></tr>
+            <tr><td>数量</td><td>整数或最多 3 位小数；必须同时传 quantityUnit</td></tr>
+            <tr><td>维度数值</td><td>直径、厚度、宽度、壁厚、外径、边长单位毫米；公斤数单位千克并注明口径（每米或单支）；负差率为百分数，如 4.5 表示 4.5%</td></tr>
             <tr><td>价格与金额</td><td>单价单位元/吨，金额单位元，最多 2 位小数</td></tr>
             <tr><td>行政区划代码</td><td>6 位国家标准代码，到地级市，如 320500（苏州市）</td></tr>
             <tr><td>单据号</td><td>仅用于幂等与自查，可传脱敏后的值，只要稳定唯一</td></tr>
@@ -279,7 +297,9 @@
     { code: 3002, cat: '3xxx 业务状态', http: 403, t: '企业已暂停上传', fix: '暂停期间接口拒收数据，恢复后补传' },
     { code: 3003, cat: '3xxx 业务状态', http: 422, t: '超出补传窗口（近 90 天）', fix: '更早的数据需联系平台运营审批' },
     { code: 3004, cat: '3xxx 业务状态', http: 409, t: '上传粒度与当前设置不符', fix: '用 GET /settings 查询当前粒度，改用对应接口', isNew: true },
-    { code: 3005, cat: '3xxx 业务状态', http: 422, t: '商品不在受理范围内', fix: '平台只受理钢材成品，范围见品类字典', isNew: true },
+    { code: 3005, cat: '3xxx 业务状态', http: 422, t: '商品不在受理范围内', fix: '范围见品类字典：钢材成品，以及已纳入主数据的非钢材品名', isNew: true },
+    { code: 3007, cat: '3xxx 业务状态', http: 409, t: '分段字典版本失效', fix: '归段后上传所用的 bandDictVersion 已失效，重新拉取 GET /dicts/bands 后重传', isNew: true },
+    { code: 3008, cat: '3xxx 业务状态', http: 422, t: '汇总键不完整', fix: '日汇总记录缺少该品名统计维度模板要求的维度，按模板补齐后重传', isNew: true },
     { code: 3006, cat: '3xxx 业务状态', http: 404, t: '批次不存在', fix: '核对批次号与环境' },
     { code: 4001, cat: '4xxx 限流与配额', http: 429, t: '调用过于频繁（默认每秒 20 次）', fix: '按响应头 Retry-After 等待后重试' },
     { code: 5001, cat: '5xxx 平台内部', http: 500, t: '平台内部错误', fix: '可重试，建议指数退避；带上 requestId 反馈' },
@@ -292,11 +312,14 @@
     ['categoryName / productName', '是', 'ERP 品类、品名原文'],
     ['material', '是', '材质（牌号）原文'],
     ['spec', '是', '规格原文'],
-    ['specAttrs', '否', '结构化规格：直径、厚度、宽度、长度、型号等'],
+    ['specAttrs', '条件必填', '结构化规格，按品名所属的统计维度模板填写：建材 diameter；板材 thickness、width；管材 outerDiameter 或 nominalSize，加 wallThickness；型材 sectionModel，加该品名配置的那一项（公斤段品名 unitWeightKg，负差段品名 negTolerancePct；两项可以都传，以配置的为准）。结构化字段已传，或平台能从规格原文解析得到，满足其一即可。见“字段字典 · 统计维度字段”'],
     ['millName', '是', '产地（钢厂或品牌）原文'],
   ];
   const SALE1 = { sourceSystem: 'SRC-HQ', docNo: 'XS2611230158', lineNo: 1, opType: 'UPSERT', docType: 'SALE_OUT', bizDate: '2026-11-23', warehouseCode: 'WH01', warehouseName: '苏州望亭库', destRegionCode: '320500', deliveryMode: '自提', itemCode: 'LW-400E-20-9', categoryName: '建筑钢材', productName: '螺纹钢', material: 'HRB400E', spec: 'Φ20×9m', specAttrs: { diameter: 20, length: 9 }, millName: '东岳', weight: 34.56, weightMode: '理计', quantity: 16, quantityUnit: '件', customerType: '终端', customerIndustry: '房屋建筑', updatedAt: '2026-11-23T16:42:10+08:00' };
-  const SALE2 = { sourceSystem: 'SRC-HQ', docNo: 'XS2611230161', lineNo: 1, opType: 'UPSERT', docType: 'SALE_OUT', bizDate: '2026-11-23', warehouseCode: 'WH01', warehouseName: '苏州望亭库', categoryName: '热轧板卷', productName: '热轧卷板', material: 'Q235B', spec: '5.75×1500×C', millName: '金江', weight: 61.92, weightMode: '磅计', updatedAt: '2026-11-23T17:05:44+08:00', unitPrice: 3560, amount: 220435.2, taxIncluded: true, priceTerm: 'EX_WAREHOUSE', provisional: false };
+  /* 管材（规格 + 壁厚）与非钢材（按数量）的示例行 */
+  const SALE3 = { sourceSystem: 'SRC-HQ', docNo: 'XS2611230166', lineNo: 1, opType: 'UPSERT', docType: 'SALE_OUT', bizDate: '2026-11-23', warehouseCode: 'WH02', warehouseName: '上海宝山库', categoryName: '管材', productName: '焊管', material: 'Q235B', spec: 'DN100×3.75×6m', specAttrs: { nominalSize: 100, wallThickness: 3.75, length: 6 }, millName: '东岳', weight: 12.48, weightMode: '理计', quantity: 190, quantityUnit: '支', updatedAt: '2026-11-23T17:12:31+08:00' };
+  const SALE4 = { sourceSystem: 'SRC-HQ', docNo: 'XS2611230171', lineNo: 2, opType: 'UPSERT', docType: 'SALE_OUT', bizDate: '2026-11-23', warehouseCode: 'WH01', warehouseName: '苏州望亭库', categoryName: '配套辅材', productName: '钢筋连接套筒', material: '45#', spec: 'Φ25 直螺纹', millName: '其他', quantity: 400, quantityUnit: '个', updatedAt: '2026-11-23T17:20:05+08:00' };
+  const SALE2 = { sourceSystem: 'SRC-HQ', docNo: 'XS2611230161', lineNo: 1, opType: 'UPSERT', docType: 'SALE_OUT', bizDate: '2026-11-23', warehouseCode: 'WH01', warehouseName: '苏州望亭库', categoryName: '热轧板卷', productName: '热轧卷板', material: 'Q235B', spec: '5.75×1500×C', specAttrs: { thickness: 5.75, width: 1500 }, millName: '金江', weight: 61.92, weightMode: '磅计', updatedAt: '2026-11-23T17:05:44+08:00', unitPrice: 3560, amount: 220435.2, taxIncluded: true, priceTerm: 'EX_WAREHOUSE', provisional: false };
 
   const APIS = [
     { k: 'ping', m: 'GET', short: '/ping', path: '/openapi/v1/ping', t: '连通性与鉴权检查', desc: '校验密钥与签名是否正确。不产生任何业务数据，联调第一步使用。', groups: [],
@@ -310,7 +333,7 @@
           ['opType', '是', 'UPSERT 新增或更新；VOID 作废'], ['docType', '是', 'SALE_OUT 销售出库；SALE_RETURN 销售退货'], ['bizDate', '是', '出库日期'],
           ['warehouseCode / warehouseName', '是', 'ERP 仓库编码与名称，用于映射标准仓库'], ['warehouseRegionCode', '否', '仓库所在地行政区划代码；未传则由仓库映射得出'],
           ['destRegionCode', '否', '流向地（收货地）行政区划代码，到市'], ['deliveryMode', '否', '自提、配送、厂家直发']].concat(COMMON_ITEM, [
-          ['weight', '是', '结算重量，吨'], ['weightMode', '否', '理计、磅计'], ['quantity / quantityUnit', '否', '件数、支数及单位'],
+          ['weight', '条件必填', '结算重量，吨。按吨位统计的钢材必填；非钢材选填，不参与吨位聚合'], ['weightMode', '否', '理计、磅计'], ['quantity / quantityUnit', '条件必填', '按数量统计的非钢材必填，单位须与该品名的标准数量单位一致；钢材选填（件数、支数）'],
           ['customerType', '否', '终端、贸易商'], ['customerIndustry', '否', '下游行业枚举'], ['updatedAt', '是', 'ERP 中该行最后修改时间，用于多版本取最新']]) },
         { title: '价格与金额字段（v1.1 新增，全部选填）', note: '仅在企业开启价格上传且该行在其设定范围内时接收。', fields: [
           ['unitPrice', '否', '成交单价，元/吨'], ['amount', '否', '成交金额，元。与 unitPrice 至少传一项；都传时校验一致性'],
@@ -318,13 +341,13 @@
           ['priceTerm', '否', '价格条件：EX_WAREHOUSE 仓库自提价；DELIVERED 送到价（含运费）'], ['provisional', '否', '是否暂估价（后结算、未最终定价）。暂估价不进入默认口径'],
           ['paymentTerm', '否', '结算方式：现款、账期。二期用于区分口径']] },
       ],
-      req: http('POST', '/sales/batch', { items: [SALE1, SALE2] }, 'B-HQ-20261123-001'), res: res('202 Accepted', { batchId: 'B-HQ-20261123-001' }, '已受理'),
-      resNote: '示例中第 2 行带有价格与金额字段：企业未开启价格上传或该行超出范围时，这些字段被丢弃不落盘，批次结果中该行带 PRICE_DROPPED 提示。',
+      req: http('POST', '/sales/batch', { items: [SALE1, SALE2, SALE3, SALE4] }, 'B-HQ-20261123-001'), res: res('202 Accepted', { batchId: 'B-HQ-20261123-001' }, '已受理'),
+      resNote: '示例 4 行依次为建材（规格）、板材（厚度 + 宽度）、管材（规格 + 壁厚）和非钢材（按数量，单位“个”，不传重量）。型材示例见“字段字典 · 统计维度字段”。示例中第 2 行带有价格与金额字段：企业未开启价格上传或该行超出范围时，这些字段被丢弃不落盘，批次结果中该行带 PRICE_DROPPED 提示。',
       errs: [2001, 2002, 2003, 3002, 3003, 3004, 3005, 4001] },
     { k: 'daily', m: 'POST', short: '/sales/daily-summary', path: '/openapi/v1/sales/daily-summary', t: '销售日汇总上传', isNew: true, desc: '日汇总模式：按业务日期分片上传当日汇总记录，末片带结束标记，整批替换。',
       notes: [
         ['blue', '语义：一条记录代表“某业务日期、某一组维度取值”下的销售净量。同一企业、同一来源系统、同一业务日期内，维度组合不得重复。每次上传都是该日的完整集合，以最新的完整批次为准；更正即重传当日，没有单条更新和单条作废。'],
-        ['orange', '维度不得粗于：业务日期、仓库所在市、品名、材质、规格、钢厂。选填维度未传的，在聚合中归入“未填报”。上传条件规则中依赖单据信息的条件（单笔吨位上下限、按内部编码排除）必须在 ERP 端汇总之前执行。']],
+        ['orange', '汇总键 = 业务日期 + 仓库所在市 + 品名 + 材质 + 钢厂 + 该品名统计维度模板的维度（管材为规格和壁厚，板材为厚度和宽度，建材为规格，型材为规格加该品名配置的公斤数或负差率）+ 已上传的选填维度。离散维度用原始值；连续维度可按原始值汇总由平台归段，或按分段字典归段后汇总并带 bandDictVersion。选填维度未传的，在聚合中归入“未填报”。上传条件规则中依赖单据信息的条件（单笔吨位上下限、按内部编码排除）必须在 ERP 端汇总之前执行。']],
       groups: [
         { title: '请求体', fields: [
           ['sourceSystem', '是', '来源系统标识'], ['bizDate', '是', '业务日期（出库日期）'], ['summaryBatchNo / seq / isLast', '是', '汇总批次号、分片序号、是否末片'], ['items', '是', '汇总记录数组，每个元素的字段见下表']] },
@@ -332,15 +355,16 @@
           ['warehouseRegionCode', '是', '仓库所在地行政区划代码，到市'], ['warehouseCode / warehouseName', '否', '可不传，以减少暴露；传了则可用于仓库级自查'],
           ['destRegionCode', '否', '流向地，到市'], ['deliveryMode', '否', '自提、配送、厂家直发']].concat(COMMON_ITEM, [
           ['weightMode', '否', '理计、磅计'], ['customerType', '否', '终端、贸易商'], ['customerIndustry', '否', '下游行业枚举'],
-          ['netWeight', '是', '净销量 = 出库重量 − 退货重量，吨。可为负'], ['outWeight / returnWeight', '否', '出库重量、退货重量分列'],
-          ['quantity / quantityUnit', '否', '件数及单位'], ['lineCount', '否', '本条汇总所包含的单据行数，仅用于合理性校验和每日汇总展示']]) },
+          ['netWeight', '条件必填', '净销量 = 出库重量 − 退货重量，吨。可为负。按吨位统计的钢材必填'], ['outWeight / returnWeight', '否', '出库重量、退货重量分列'],
+          ['netQuantity / quantityUnit', '条件必填', '净数量及单位。按数量统计的非钢材必填；可分列 outQuantity、returnQuantity。同一汇总键下不得同时出现吨位和数量'],
+          ['bandDictVersion', '否', 'ERP 按平台下发的分段字典归段后汇总时必传，值为所用的分段字典版本；按原始值汇总时不传'], ['lineCount', '否', '本条汇总所包含的单据行数，仅用于合理性校验和每日汇总展示']]) },
         { title: '价格与金额字段（全部选填）', note: '仅在企业开启价格上传且该记录在其设定范围内时接收。', fields: [
           ['amount', '否', '净销售金额，元。均价由金额 ÷ 净重得出'],
           ['taxIncluded / priceTerm / provisional', '否', '价格口径。上传金额时，这三项与其他维度一起构成维度组合；未传取企业默认值']] },
       ],
       req: http('POST', '/sales/daily-summary', { sourceSystem: 'SRC-WX', bizDate: '2026-11-23', summaryBatchNo: 'SB-WX-20261123-01', seq: 1, isLast: true, items: [
-        { warehouseRegionCode: '320200', destRegionCode: '320200', categoryName: '建筑钢材', productName: '螺纹钢', material: 'HRB400E', spec: 'Φ20×9m', millName: '东岳', customerType: '终端', netWeight: 86.4, outWeight: 89.28, returnWeight: 2.88, lineCount: 7 },
-        { warehouseRegionCode: '320200', categoryName: '热轧板卷', productName: '热轧卷板', material: 'Q235B', spec: '5.75×1500×C', millName: '金江', netWeight: 61.92, lineCount: 3, amount: 220435.2, taxIncluded: true, priceTerm: 'EX_WAREHOUSE', provisional: false }] }, 'SB-WX-20261123-01'),
+        { warehouseRegionCode: '320200', destRegionCode: '320200', categoryName: '建筑钢材', productName: '螺纹钢', material: 'HRB400E', spec: 'Φ20×9m', specAttrs: { diameter: 20 }, millName: '东岳', customerType: '终端', netWeight: 86.4, outWeight: 89.28, returnWeight: 2.88, lineCount: 7 },
+        { warehouseRegionCode: '320200', categoryName: '热轧板卷', productName: '热轧卷板', material: 'Q235B', spec: '5.75×1500×C', specAttrs: { thickness: 5.75, width: 1500 }, millName: '金江', netWeight: 61.92, lineCount: 3, amount: 220435.2, taxIncluded: true, priceTerm: 'EX_WAREHOUSE', provisional: false }] }, 'SB-WX-20261123-01'),
       res: res('202 Accepted', { batchId: 'SB-WX-20261123-01' }, '已受理'), resNote: '整批不完整（缺少末片）时不生效，沿用上一个完整批次。',
       errs: [2001, 2002, 2005, 3002, 3003, 3004, 3005, 4001] },
     { k: 'inv', m: 'POST', short: '/inventory/snapshot', path: '/openapi/v1/inventory/snapshot', t: '库存快照上传', desc: '按快照日期分片上传日末库存，末片带结束标记。同一日期重复上传以最新完整批次为准。两种上传粒度共用本接口。',
@@ -348,7 +372,7 @@
       groups: [
         { title: '请求体', fields: [['sourceSystem', '是', '来源系统标识'], ['snapshotDate', '是', '快照日期（日末）'], ['snapshotBatchNo / seq / isLast', '是', '快照批次号、分片序号、是否末片'], ['items', '是', '库存记录数组，每个元素的字段见下表']] },
         { title: '库存记录字段', fields: [['warehouseCode / warehouseName', '是', 'ERP 仓库编码与名称，用于映射标准仓库'], ['warehouseRegionCode', '条件必填', '未传仓库编码与名称时必填，到市']].concat(COMMON_ITEM, [
-          ['weight', '是', '库存重量，吨'], ['quantity / quantityUnit', '否', '件数'], ['stockType', '否', '自有现货（默认）、已售未提、在途'], ['ageBand', '否', '库龄段，如 0–30、31–60、61–90、90 天以上']]) },
+          ['weight', '条件必填', '库存重量，吨。按吨位统计的钢材必填'], ['quantity / quantityUnit', '条件必填', '按数量统计的非钢材必填；钢材选填（件数）'], ['stockType', '否', '自有现货（默认）、已售未提、在途'], ['ageBand', '否', '库龄段，如 0–30、31–60、61–90、90 天以上']]) },
       ],
       req: http('POST', '/inventory/snapshot', { sourceSystem: 'SRC-HQ', snapshotDate: '2026-11-23', snapshotBatchNo: 'S-HQ-20261123-01', seq: 1, isLast: true, items: [
         { warehouseCode: 'WH01', warehouseName: '苏州望亭库', itemCode: 'LW-400E-20-9', categoryName: '建筑钢材', productName: '螺纹钢', material: 'HRB400E', spec: 'Φ20×9m', millName: '东岳', weight: 1286.4, quantity: 596, quantityUnit: '件', stockType: '自有现货', ageBand: '0–30' }] }, 'S-HQ-20261123-01'),
@@ -371,31 +395,50 @@
         { title: '返回字段', fields: [['version / effectiveFrom', '—', '规则版本号与生效时间'], ['include', '—', '白名单条件：只上传符合全部条件的数据'], ['exclude', '—', '黑名单条件：命中任一条件即不上传。排除优先'], ['erpOnly', '—', '该条件是否只能在 ERP 端执行']] },
       ],
       req: http('GET', '/rules/effective?dataType=SALES'),
-      res: res('200 OK', { version: 'v7', effectiveFrom: '2026-11-10T00:00:00+08:00', dataType: 'SALES', include: [{ dim: 'category', op: 'IN', values: ['建筑钢材', '热轧板卷'] }, { dim: 'warehouse', op: 'IN', values: ['WH01', 'WH02', 'WH03'] }, { dim: 'bizDate', op: 'GTE', values: ['2025-10-01'] }], exclude: [{ dim: 'mill', op: 'IN', values: ['北辰'] }, { dim: 'lineWeight', op: 'GT', values: [500], erpOnly: false }, { dim: 'customerCodeDigest', op: 'IN', values: ['9f2a…', '41c7…', 'e05b…'], erpOnly: false }] }),
+      res: res('200 OK', { version: 'v7', effectiveFrom: '2026-11-10T00:00:00+08:00', dataType: 'SALES', include: [{ dim: 'category', op: 'IN', values: ['建筑钢材', '热轧板卷', '配套辅材'] }, { dim: 'warehouse', op: 'IN', values: ['WH01', 'WH02', 'WH03'] }, { dim: 'bizDate', op: 'GTE', values: ['2025-10-01'] }], exclude: [{ dim: 'mill', op: 'IN', values: ['北辰'] }, { dim: 'lineWeight', op: 'GT', values: [500], erpOnly: false }, { dim: 'customerCodeDigest', op: 'IN', values: ['9f2a…', '41c7…', 'e05b…'], erpOnly: false }] }),
       resNote: '按内部编码排除的清单只以不可逆摘要返回，ERP 端对本地编码做同样的摘要后比对。', errs: [1001, 1002, 4001] },
-    { k: 'settings', m: 'GET', short: '/settings', path: '/openapi/v1/settings', t: '上传设置查询', isNew: true, desc: '返回当前来源系统的上传粒度、粒度生效日期、价格上传开关与范围，供 ERP 端据此组织报文。建议每日上传前调用一次。',
+    { k: 'settings', m: 'GET', short: '/settings', path: '/openapi/v1/settings', t: '上传设置查询', isNew: true, desc: '返回当前来源系统的上传粒度、粒度生效日期、价格上传开关与范围，以及报送的截止时点和应报送日规则，供 ERP 端据此组织报文、安排定时任务。建议每日上传前调用一次。',
       groups: [{ title: '返回字段', fields: [
         ['sourceSystem', '—', '应用对应的来源系统'], ['grain', '—', 'LINE 行级模式；DAILY_SUMMARY 日汇总模式'], ['grainEffectiveFrom', '—', '当前粒度的生效业务日期'],
         ['pendingSwitch', '—', '已提交、尚未生效的粒度切换：目标粒度与生效业务日期；没有则为 null'],
         ['priceUpload.enabled', '—', '企业是否已开启价格上传'], ['priceUpload.scope', '—', '价格上传范围：大类、品名、品牌、仓库。范围外的价格字段平台丢弃不落盘'],
-        ['priceUpload.defaults', '—', '企业的价格口径默认值：是否含税、价格条件、计重方式']] }],
+        ['priceUpload.defaults', '—', '企业的价格口径默认值：是否含税、价格条件、计重方式'],
+        ['reporting.cutoff', '—', 'v1.2 计划。某业务日期的数据最晚到达时点，如 NEXT_DAY_08:00。此前收到库存快照或销售数据的实际数据，当日才计为报送'], ['reporting.dueDays', '—', 'v1.2 计划。应报送日规则：WORKDAY 工作日（周一至周五，剔除法定节假日，含调休上班日；示例参数）。日历由平台维护，非应报送日上传的数据照常接收，不计入评定'], ['reporting.exempt', '—', 'v1.2 计划。是否不参加报送达标评定：无库存经营标记已生效时为 true']] }],
       req: http('GET', '/settings'),
-      res: res('200 OK', { sourceSystem: 'SRC-WX', grain: 'DAILY_SUMMARY', grainEffectiveFrom: '2026-10-01', pendingSwitch: null, priceUpload: { enabled: false, scope: null, defaults: null } }),
+      res: res('200 OK', { sourceSystem: 'SRC-WX', grain: 'DAILY_SUMMARY', grainEffectiveFrom: '2026-10-01', pendingSwitch: null, priceUpload: { enabled: false, scope: null, defaults: null }, reporting: { cutoff: 'NEXT_DAY_08:00', dueDays: 'WORKDAY', exempt: false } }),
       resNote: '价格上传已开启时，priceUpload 形如：enabled 为 true，scope 含 categories、products、mills、warehouses，defaults 含 taxIncluded、priceTerm、weightMode。', errs: [1001, 1002, 4001] },
-    { k: 'dicts', m: 'GET', short: '/dicts/{type}', path: '/openapi/v1/dicts/{type}', t: '字典查询', desc: '同步平台标准字典：品类、材质、钢厂、地区、枚举。支持版本比对，只在字典更新时拉取增量。',
-      groups: [{ title: '路径与查询参数', fields: [['type', '是', 'category 品类；material 材质；mill 钢厂；region 地区；enum 枚举'], ['sinceVersion', '否', 'ERP 本地已有的字典版本；与平台一致时返回空列表']] }],
+    { k: 'dicts', m: 'GET', short: '/dicts/{type}', path: '/openapi/v1/dicts/{type}', t: '字典查询', changed: true, desc: '同步平台标准字典：品类、材质、钢厂、地区、枚举，以及统计维度模板、分段字典、数量单位。支持版本比对，只在字典更新时拉取增量。',
+      notes: [['blue', 'dimension-templates 返回各品名的模板、必备维度和计量类型，型材品名另返回第二维度类型 secondDim（KG_BAND 公斤段或 NEG_BAND 负差段，按品名固定）和公斤数口径 unitWeightBasis（PER_METER 每米或 PER_PIECE 单支）；尚未配置的型材品名 secondDim 为 null，只到规格；bands 返回分段字典及版本（当前 ' + M.BAND_VER.ver + '，分段数值为示例参数）；units 返回数量单位及换算关系。按分段字典归段后上传的 ERP 须在字典版本变更时重新拉取。']],
+      groups: [{ title: '路径与查询参数', fields: [['type', '是', 'category 品类；material 材质；mill 钢厂；region 地区；enum 枚举；dimension-templates 统计维度模板；bands 分段字典；units 数量单位'], ['sinceVersion', '否', 'ERP 本地已有的字典版本；与平台一致时返回空列表']] }],
       req: http('GET', '/dicts/category?sinceVersion=2026.10.12'),
       res: res('200 OK', { type: 'category', version: '2026.11.02', changed: true, items: [{ code: 'C01', name: '建筑钢材', products: [{ code: 'C0101', name: '螺纹钢' }, { code: 'C0102', name: '盘螺' }, { code: 'C0103', name: '高线' }] }, { code: 'C02', name: '热轧板卷', products: [{ code: 'C0201', name: '热轧卷板' }, { code: 'C0202', name: '热轧带钢' }] }] }),
       resNote: '示例只截取前两个大类。', errs: [1001, 1002, 2003, 4001] },
-    { k: 'recon', m: 'POST', short: '/reconcile/daily', path: '/openapi/v1/reconcile/daily', t: '每日对账申报', changed: true, desc: '申报当日条数、吨位、金额（如上传价格）控制总数，平台与实际接收数比对，结果在“每日上传汇总”中显示“一致 / 差异”。两种粒度通用。',
-      notes: [['blue', '日汇总模式没有单据级校验，对账是主要的完整性保障，建议每日上传完成后申报。控制总数按 ERP 端过滤之后、实际发送的数据计算。']],
+    { k: 'summary', m: 'GET', short: '/summary/daily', path: '/openapi/v1/summary/daily', t: '每日汇总与报送状态查询', changed: true, desc: '返回某业务日期平台实际接收的汇总，以及该日是否已计为报送。供 ERP 内提示“今天报了没有”，只返回本企业自己的数据。',
+      notes: [['green', '当日报送的判定：不新增接口，也不新增上传字段，平台根据销售行级、销售日汇总、库存快照三个上传接口实际收到的数据判定。截止时点前收到该业务日期的库存快照或销售数据至少一条实际数据，任一即可；有多个来源系统的，任一来源系统有即可。只看有没有，不看多少；到达时间以平台受理时间为准，不采用报文中的时间。'],
+        ['blue', '什么算实际数据：经上传条件过滤后入库、通过字段校验且量不为零的记录，处理状态为已入库、待映射、隔离待确认的都算。库存快照须是完整批次（已收到末片）且至少有一行；销售为行级销售行或日汇总记录，净量为零的日汇总记录不算。不含任何行的库存快照批次可以受理，表示当日库存为零，平台据此不沿用前一日库存，但不计为报送。校验失败的行、被上传条件过滤的行、整批被拒的批次、对账申报都不算。'],
+        ['orange', '没有实际数据的日子计为缺报，不能用申报代替。库存快照不是当日报送的必要条件（业务方已确认任一即可）。非应报送日（周末、法定节假日）dueDay 为 false，数据照常接收，不计入评定。常年不落库的企业可在“带动关系与报送达标”页申报无库存经营；标记生效后本接口返回 exempt 为 true（不参加评定），reported 为 null，不返回 missReason，inventory.received、sales.received 照常返回。']],
+      groups: [{ title: '查询参数', fields: [['bizDate', '是', '业务日期'], ['sourceSystem', '否', '不传则返回企业全部来源系统的合计']] },
+        { title: '返回字段（报送状态部分，v1.2 计划）', fields: [
+          ['reported', '—', '该业务日期是否已计为报送。截止时点未到且尚无实际数据时为 false，并带 cutoffAt'],
+          ['inventory.received / inventory.arrivedAt', '—', '截止时点前是否收到库存快照的实际数据，及其到达时间'],
+          ['sales.received / sales.firstArrivedAt', '—', '截止时点前是否收到销售的实际数据，及其最早到达时间'],
+          ['missReason', '—', '缺报原因，已计为报送时为 null：NOT_UPLOADED 未上传；ALL_FILTERED 全部被上传条件过滤；BATCH_REJECTED 整批被拒；AFTER_CUTOFF 超过截止时点'],
+          ['cutoffAt', '—', '该业务日期的截止时点'],
+          ['dueDay', '—', '该业务日期是不是应报送日'],
+          ['exempt', '—', '是否不参加评定（无库存经营标记已生效）。为 true 时 reported 为 null，不返回 missReason']] }],
+      req: http('GET', '/summary/daily?bizDate=2026-11-23'),
+      res: res('200 OK', { bizDate: '2026-11-23', reported: true, cutoffAt: '2026-11-24T08:00:00+08:00', inventory: { received: true, arrivedAt: '2026-11-24T01:35:20+08:00' }, sales: { received: true, firstArrivedAt: '2026-11-23T09:09:41+08:00' }, missReason: null, dueDay: true, exempt: false, steel: { acceptedLines: 299, weight: 1846.0 }, nonSteel: [{ quantityUnit: '个', acceptedLines: 6, quantity: 1680 }] }),
+      resNote: '报送状态和缺报原因只返回给本企业，不对任何钢厂展示；钢厂只看到达标周期的结果。', errs: [1001, 1002, 2003, 4001] },
+    { k: 'recon', m: 'POST', short: '/reconcile/daily', path: '/openapi/v1/reconcile/daily', t: '每日对账申报', changed: true, desc: '申报当日控制总数，平台与实际接收数比对，结果在“每日上传汇总”中显示“一致 / 差异”。两种粒度通用。本接口只用于对账，不是报送达标的依据。',
+      notes: [['blue', '日汇总模式没有单据级校验，对账是主要的完整性保障，建议每日上传完成后申报。控制总数按 ERP 端过滤之后、实际发送的数据计算；钢材为条数和吨位，非钢材按数量单位分列条数和数量，两者不相加。'],
+        ['orange', '对账申报不计为报送，平台不提供零申报。v1.2 草案中曾计划的 salesClosed、zeroSales、zeroInventory 三个字段已取消，字段名不再使用；接口收到这些字段时按未定义字段丢弃，并在结果的 warnings 中提示。某业务日期是否已计为报送，见“每日汇总与报送状态查询”。']],
       groups: [{ title: '请求体', fields: [
         ['sourceSystem', '是', '来源系统标识'], ['bizDate', '是', '业务日期'], ['dataType', '是', 'SALES 销售；INVENTORY 库存'],
-        ['lineCount', '是', '当日发送的条数。行级模式为单据行数，日汇总模式为汇总记录数'], ['totalWeight', '是', '当日发送的吨位合计（销售为净销量）'],
-        ['totalAmount', '否', '当日发送的金额合计，元。v1.1 新增，仅在开启价格上传时申报，未开启时忽略']] }],
-      req: http('POST', '/reconcile/daily', { sourceSystem: 'SRC-WX', bizDate: '2026-11-23', dataType: 'SALES', lineCount: 46, totalWeight: 316.96 }, 'RC-WX-20261123-01'),
-      res: res('202 Accepted', { batchId: 'RC-WX-20261123-01', matched: false, diff: { lineCount: -1, totalWeight: -3.22 } }, '已受理'),
-      resNote: 'matched 为 false 表示与平台实际接收数不一致，diff 为“平台接收 − 申报”。', errs: [2002, 2003, 3002, 3003, 4001] },
+        ['totals', '否', '控制总数对象。steel：lineCount 条数、totalWeight 吨位；nonSteel：按数量单位分列的 lineCount 与 totalQuantity；开启价格上传的另含 totalAmount。可以为零，用于平台和企业自己区分“当日无销售”与“尚未上传”，不计为报送'],
+        ['lineCount / totalWeight / totalAmount', '否', 'v1.1 的写法，仍可使用，等同于 totals.steel 中的同名字段']] }],
+      req: http('POST', '/reconcile/daily', { sourceSystem: 'SRC-HQ', bizDate: '2026-11-23', dataType: 'SALES', totals: { steel: { lineCount: 270, totalWeight: 2577.12 }, nonSteel: [{ quantityUnit: '个', lineCount: 6, totalQuantity: 1680 }] } }, 'RC-HQ-20261123-01'),
+      res: res('202 Accepted', { batchId: 'RC-HQ-20261123-01', matched: true }, '已受理'),
+      resNote: 'matched 为 false 表示与平台实际接收数不一致，并返回 diff（平台接收 − 申报）。', errs: [2002, 2003, 3002, 3003, 4001] },
   ];
 
   const NAV = [
@@ -550,6 +593,14 @@ public static class StpOpenApiDemo
           ['下游自查', '单据行', '汇总记录'],
           ['对上游的聚合结果', '相同', '相同'],
         ],
+        dimFields: [
+          ['建材', '规格', 'diameter', '{ "diameter": 20, "length": 9 }'],
+          ['板材', '厚度 + 宽度', 'thickness、width', '{ "thickness": 5.75, "width": 1500 }'],
+          ['管材', '规格 + 壁厚', 'outerDiameter 或 nominalSize；wallThickness。方矩管用 sideA、sideB 代替外径', '{ "nominalSize": 100, "wallThickness": 3.75 }'],
+          ['型材（负差段品名，如 H 型钢）', '规格 + 负差段', 'sectionModel；negTolerancePct', '{ "sectionModel": "HW200×200", "negTolerancePct": 4.5 }'],
+          ['型材（公斤段品名，如工字钢、槽钢、角钢）', '规格 + 公斤段', 'sectionModel；unitWeightKg（须带 unitWeightBasis）', '{ "sectionModel": "∠50×5", "unitWeightKg": 3.62, "unitWeightBasis": "PER_METER" }'],
+          ['其他品类', '规格', '无，规格原文即可，specAttrs 选填', '—'],
+        ],
         priceFields: [
           ['unitPrice', 'sales/batch', '成交单价，元/吨'],
           ['amount', 'sales/batch、sales/daily-summary', '成交金额，元。行级接口中与 unitPrice 至少传一项，都传时校验一致性；日汇总接口为净销售金额，均价由金额 ÷ 净重得出'],
@@ -572,14 +623,26 @@ public static class StpOpenApiDemo
         ],
         rowHints: [
           ['PRICE_DROPPED', '价格字段未接收（开关关闭或超出范围）。销量照常入库'], ['PRICE_QUARANTINED', '价格字段隔离待确认（如与本企业近期均价偏离过大），销量已入库'], ['WEIGHT_CONVERTED', '重量由件数换算得出'],
+          ['DIM_UNBANDED', '统计维度模板的第二维度缺失，已归入“未分段”。销量照常入库，但只能参与更粗层级的聚合'], ['DIM_CONVERTED', '型材只传了公斤数或负差率中与该品名配置不同的那一种，已按理论重量表换算'],
           ['FIELD_DROPPED', '收到禁止字段或未定义字段，已丢弃不落盘'],
         ],
         reasons: [
           ['R2101', 'REJECTED', '吨位超出该品名单行上限'], ['R2102', 'REJECTED', '吨位必须大于 0（日汇总净重可为负，但绝对值受限）'], ['R2201', 'REJECTED', '业务日期早于补传窗口'], ['R2203', 'REJECTED', '业务日期晚于当前日期'],
           ['R2301', 'REJECTED', '枚举或字典取值无效'], ['R2401', 'REJECTED', '日汇总批内维度组合重复'], ['M3001', 'PENDING_MAPPING', 'ERP 物料未映射到标准品名或规格'], ['M3002', 'PENDING_MAPPING', '仓库未映射到标准仓库'],
+          ['MEASURE_MISSING', 'REJECTED', '按计量类型应有的重量或数量缺失'], ['UNIT_MISMATCH', 'REJECTED', '数量单位与主数据不一致且无法换算'],
+          ['DIM_OUT_OF_RANGE', 'REJECTED 或 QUARANTINED', '维度取值超出合理范围或违反几何约束（如壁厚大于外径的一半）'], ['DIM_REQUIRED_MISSING', 'PENDING_MAPPING', '模板第一维度缺失且无法从规格原文解析'],
           ['Q4001', 'QUARANTINED', '疑似重复数据'], ['Q4002', 'QUARANTINED', '相对本企业近 30 日均值突变'],
         ],
         changelog: [
+          { v: 'v1.2', date: '计划中 · 键名为建议，联调前定稿', sum: '分品类统计维度、计量字段、当日报送判定', items: [
+            'specAttrs 按品名所属统计维度模板条件必填：建材 diameter；板材 thickness、width；管材 outerDiameter 或 nominalSize 加 wallThickness；型材 sectionModel 加该品名配置的那一种（公斤段品名为 unitWeightKg，负差段品名为 negTolerancePct）。',
+            '计量字段：按吨位统计的钢材必填 weight（日汇总为 netWeight）；按数量统计的非钢材必填 quantity、quantityUnit（日汇总为 netQuantity、quantityUnit）。',
+            '销售日汇总的汇总键增加模板维度；支持按分段字典归段后汇总，报文带 bandDictVersion。',
+            '每日对账申报：控制总数改为 totals，钢材与非钢材分列，可以为零。草案中的 salesClosed、zeroSales、zeroInventory 已取消：平台不提供零申报，对账申报不计为报送。',
+            '当日报送的判定：截止时点前收到库存快照或销售数据的实际数据即为已报送，不新增上传字段。GET /summary/daily 增加 reported、缺报原因 missReason、是否应报送日 dueDay、是否不参加评定 exempt；GET /settings 增加截止时点、应报送日规则和 reporting.exempt（无库存经营标记已生效的企业不参加评定）。',
+            '字典查询新增类型 dimension-templates、bands、units。',
+            '新增错误码 3007“分段字典版本失效”、3008“汇总键不完整”；新增逐行原因码 MEASURE_MISSING、UNIT_MISMATCH、DIM_OUT_OF_RANGE、DIM_REQUIRED_MISSING，逐行提示 DIM_UNBANDED、DIM_CONVERTED。',
+            '向后兼容：已接入的 ERP 不传新字段时，平台从规格原文解析维度；解析不到第二维度的归入“未分段”。'] },
           { v: 'v1.1', date: '2026-09-15', cur: true, sum: '支持日汇总模式与价格、金额的可选上传', items: [
             '新增销售日汇总接口 POST /sales/daily-summary：日汇总模式下按业务日期整批替换。',
             '新增上传设置查询接口 GET /settings：返回上传粒度、粒度生效日期、价格上传开关与范围。',

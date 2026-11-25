@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>邀请下级经销商 · 下游钢贸端 · 钢贸上下游数据平台</title>
+<link rel="stylesheet" href="../assets/lib/element-plus.css">
+<link rel="stylesheet" href="../assets/css/app.css">
+<style>
+.mill { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border: 1px solid #d9e7fb; background: #f4f8ff; border-radius: 6px; }
+.mill .lg { width: 44px; height: 44px; border-radius: 10px; background: #409eff; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 700; flex-shrink: 0; }
+.mill b { font-size: 15px; }
+.mill .m { font-size: 12px; color: var(--stp-sub); margin-top: 3px; line-height: 1.6; }
+.bound { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.bound .box { border: 1px solid var(--stp-border); border-radius: 6px; padding: 12px 14px; }
+.bound .box.yes { border-color: #cfe9da; background: #fafdfb; }
+.bound .box.no { border-color: #f3c9ca; background: #fffafa; }
+.bound h4 { margin: 0 0 8px; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+.bound ul { margin: 0; padding: 0; list-style: none; font-size: 13px; line-height: 1.9; color: #4a5568; }
+.bound li { display: flex; gap: 6px; align-items: flex-start; }
+.bound li .el-icon { margin-top: 5px; flex-shrink: 0; }
+.bound .yes .el-icon { color: #18a058; } .bound .no .el-icon { color: #e5484d; }
+.peek { border: 1px dashed #a8c6ef; border-radius: 6px; padding: 10px 12px; background: #fff; }
+.peek .hd { font-size: 12px; color: var(--stp-sub); margin-bottom: 8px; }
+.grade { display: inline-block; padding: 0 7px; border-radius: 10px; font-size: 12px; line-height: 20px; border: 1px solid #d5e4f5; background: #eef4fb; color: #2b5d9b; white-space: nowrap; }
+.grade.g { background: #f0faf4; color: #1b7a47; border-color: #cfe9da; }
+.grade.r { background: #fff3f3; color: #b83a3e; border-color: #f3c9ca; }
+.ex-tag { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 11px; line-height: 18px; background: #fff8eb; color: #9a6400; border: 1px solid #f3dfb8; font-weight: 400; }
+.way { border: 1px solid var(--stp-border); border-radius: 6px; padding: 14px; background: #fff; }
+.way h4 { margin: 0 0 6px; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+.way p { margin: 0 0 10px; font-size: 12px; color: var(--stp-sub); line-height: 1.7; min-height: 40px; }
+.step3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.step3 .sp { border: 1px solid var(--stp-border); border-radius: 6px; padding: 12px 14px; background: #fff; }
+.step3 .sp h4 { margin: 0 0 4px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.step3 .sp h4 i { width: 22px; height: 22px; border-radius: 50%; background: #e8f7ef; color: #18a058; font-style: normal; font-size: 12px; display: flex; align-items: center; justify-content: center; }
+.step3 .sp p { margin: 0 0 8px; font-size: 12px; color: var(--stp-sub); line-height: 1.7; min-height: 40px; }
+.req { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid #f3dfb8; background: #fffaf0; border-radius: 6px; font-size: 13px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="text/x-template" id="page">
+<app-layout portal="downstream" active="invite" title="邀请下级经销商"
+  desc="一级代理邀请自己的二级经销商加入并查看邀请状态。你只能看到邀请状态和对方是否已接入；名单只对本企业可见，不会提供给钢厂。">
+  <template #actions>
+    <el-tag type="info" effect="plain" size="large" style="border-color:#e0d1fb;color:#7044c4;background:#f4ecff">二期功能 · 一期不上线，页面为设计预览</el-tag>
+    <el-button @click="$go('mill-relations.html')"><el-icon><Link /></el-icon>带动关系与报送达标</el-button>
+    <el-button type="primary" @click="openInvite"><el-icon><Share /></el-icon>导入下级经销商名单</el-button>
+  </template>
+
+  <div class="mill mb12" style="margin-bottom:14px">
+    <div class="lg">东</div>
+    <div class="flex1">
+      <span class="small muted">邀请本企业的钢厂</span>　<b>{{ H.inviter }}</b><el-tag size="small" type="success" effect="plain" style="margin-left:8px">已确认带动关系</el-tag>
+      <div class="m">{{ H.invitedAt }} 邀请，{{ H.confirmedAt }} 由本企业企业管理员确认。它只能看到本企业是否已接入（含报送中断、已暂停、已退出）、各达标周期是达标还是未达标，看不到销量、库存、价格、条数、上传时间和日级报送情况。</div>
+    </div>
+    <el-button link type="primary" @click="$go('mill-relations.html')">它能看到什么、看不到什么 ›</el-button>
+  </div>
+
+  <div class="grid c5">
+    <stat-card label="已邀请" :value="st.invited" unit="户" icon="Share"><span>待发送 {{ st.toSend }}</span><span>已发送 {{ st.sent }}</span></stat-card>
+    <stat-card label="已确认" :value="st.confirmed" unit="户" icon="CircleCheck"><span>对方企业管理员确认后才显示</span></stat-card>
+    <stat-card label="已接入" :value="st.connected" unit="户" icon="Connection"><span>以首次有效报送为准</span></stat-card>
+    <stat-card label="已拒绝、已过期、已撤回" :value="st.closed" unit="户" icon="CircleClose"><span>已拒绝的不再发送</span></stat-card>
+    <div class="stat">
+      <div class="label">这份名单谁能看到</div>
+      <div class="value" style="font-size:16px;padding:6px 0 0">只有本企业</div>
+      <div class="foot"><span>名单不会提供给钢厂；钢厂只看到全厂二级经销商的汇总户数</span></div>
+      <div class="ico" style="background:#e8f7ef;color:#18a058"><el-icon><Lock /></el-icon></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span>三步完成邀请</span><span class="right small muted">平台不会告知对方是否已入驻</span></div>
+    <div class="step3">
+      <div class="sp"><h4><i>1</i>名单导入</h4><p>上传下级经销商名单，或逐条添加。只校验格式并在名单内去重，不提示对方是否已在平台、是否已与钢厂或其他一级代理建立关系。</p><el-button type="primary" plain size="small" @click="openInvite">导入名单</el-button><el-button link type="primary" size="small" @click="$demo('已开始下载《下级经销商名单模板.xlsx》')">下载模板</el-button></div>
+      <div class="sp"><h4><i>2</i>发送</h4><p>每户一个专属邀请链接，由平台按固定模板发送短信，也可以导出链接自行转发。邀请页面会说明谁邀请、谁能看到什么。</p><el-button type="primary" plain size="small" :disabled="!st.toSend" @click="sendAll">发送待发送的 {{ st.toSend }} 户</el-button></div>
+      <div class="sp"><h4><i>3</i>状态跟踪</h4><p>对方确认之前一律显示“已发送”。确认后显示“已确认”，完成首次有效报送后显示“已接入”。</p><span class="small muted">状态每日更新一次</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row between mb12">
+      <div class="row">
+        <b style="font-size:15px">我邀请的下级经销商</b><span class="muted small">{{ rows.length }} 户</span>
+        <el-input v-model="f.kw" placeholder="企业名称" clearable style="width:200px;margin-left:12px"><template #prefix><el-icon><Search /></el-icon></template></el-input>
+        <el-select v-model="f.stage" clearable placeholder="全部邀请状态" style="width:160px"><el-option v-for="s in stages" :key="s" :label="s" :value="s" /></el-select>
+      </div>
+      <span class="small muted">下级经销商接入后和你一样：数据归它自己，上传什么由它决定，随时可以暂停或退出</span>
+    </div>
+    <el-table :data="filtered" size="default">
+      <el-table-column label="下级经销商" min-width="240"><template #default="{row}"><b style="font-weight:500">{{ row.name }}</b><div class="muted small">{{ row.loc }}</div></template></el-table-column>
+      <el-table-column label="邀请方式" width="120" prop="way" />
+      <el-table-column label="发送时间" width="130"><template #default="{row}"><span class="num">{{ row.at || '尚未发送' }}</span></template></el-table-column>
+      <el-table-column width="150">
+        <template #header>邀请状态<el-tooltip placement="top" content="待发送、已发送、已确认、已接入；分支为已拒绝、已过期、已撤回。对方确认之前只显示“已发送”"><el-icon style="vertical-align:-2px;margin-left:2px"><QuestionFilled /></el-icon></el-tooltip></template>
+        <template #default="{row}"><el-tag size="small" :type="stageType(row.stage)" effect="plain">{{ row.stage }}</el-tag></template>
+      </el-table-column>
+      <el-table-column label="是否已接入" width="120" align="center"><template #default="{row}"><span v-if="row.stage === '已接入'" class="grade g">是</span><span v-else-if="row.stage === '已确认'" class="grade">否</span><span v-else class="muted">—</span></template></el-table-column>
+      <el-table-column label="达标结果与经营数据" width="170" align="center">
+        <template #default><el-tooltip placement="top" content="下级经销商各达标周期的结果，以及销量、库存、价格，对邀请方都不可见"><span class="mask-cell" style="min-width:76px"><el-icon style="margin-right:4px"><Lock /></el-icon>不可见</span></el-tooltip></template>
+      </el-table-column>
+      <el-table-column label="操作" width="170">
+        <template #default="{row}">
+          <template v-if="row.stage === '待发送'"><el-button link type="primary" @click="send(row)">发送邀请</el-button><el-button link type="danger" @click="drop(row, true)">作废</el-button></template>
+          <template v-else-if="row.stage === '已发送'"><el-button link type="primary" @click="$demo('已按固定模板重发邀请')">重发</el-button><el-button link type="danger" @click="drop(row, false)">撤回</el-button></template>
+          <el-button v-else-if="row.stage === '已过期' || row.stage === '已撤回'" link type="primary" @click="send(row)">重新邀请</el-button>
+          <span v-else class="muted">—</span>
+        </template>
+      </el-table-column>
+    </el-table>
+    <div class="tip-box small mt12">
+      <b>你对下级经销商能看到的，比钢厂对你能看到的还少：</b>只有邀请状态和是否已接入，没有达标结果，也没有任何经营数据。下级经销商如果要让钢厂逐户看到自己的接入状态和达标结果，须由它本人另行确认与该钢厂的带动关系。
+      邀请下级经销商没有现金回报；它们接入后，所在地区同品类的对标样本更多，你和它们看到的 <a href="benchmark.html">行业对标数据</a> 都会更完整。
+    </div>
+  </div>
+
+  <el-dialog v-model="inv.show" title="导入下级经销商名单" width="640px">
+    <el-radio-group v-model="inv.way" class="mb12">
+      <el-radio-button value="file">上传名单文件</el-radio-button><el-radio-button value="one">逐条添加</el-radio-button>
+    </el-radio-group>
+    <template v-if="inv.way === 'file'">
+      <el-upload drag action="#" :auto-upload="false" :limit="1" accept=".xlsx,.csv">
+        <el-icon style="font-size:32px;color:#a0a9b6"><UploadFilled /></el-icon>
+        <div>把名单文件拖到这里，或点击选择</div>
+        <template #tip><div class="muted small">Excel 模板，单次不超过 200 户。字段：企业名称、统一社会信用代码、联系人、手机号。原型演示：不选择文件也可继续，使用示例名单（3 户）。</div></template>
+      </el-upload>
+    </template>
+    <el-form v-else label-width="130px">
+      <el-form-item label="企业名称" required><el-input v-model="inv.name" placeholder="请输入下级经销商的企业全称" /></el-form-item>
+      <el-form-item label="统一社会信用代码"><el-input v-model="inv.code" placeholder="18 位" /></el-form-item>
+      <el-form-item label="联系人手机"><el-input v-model="inv.phone" placeholder="用于发送邀请短信" style="width:220px" /></el-form-item>
+    </el-form>
+    <div class="tip-box blue small mt12"><b>平台不会告知对方是否已入驻。</b>导入只校验格式并在名单内去重，导入后状态为“待发送”。名单只对本企业可见，<b>不会提供给钢厂</b>，平台也不用于推荐。邀请页面会告诉对方：邀请方只能看到邀请状态和是否已接入；钢厂只看到全厂二级经销商的汇总户数；任何一方都看不到它单家的销量、库存和价格。</div>
+    <template #footer>
+      <el-button @click="inv.show = false">取消</el-button>
+      <el-button type="primary" :disabled="inv.way === 'one' && !inv.name.trim()" @click="addRows">加入名单</el-button>
+    </template>
+  </el-dialog>
+</app-layout>
+</script>
+<script src="../assets/lib/vue.global.prod.js"></script>
+<script src="../assets/lib/element-plus.full.min.js"></script>
+<script src="../assets/lib/element-plus-zh-cn.min.js"></script>
+<script src="../assets/lib/element-plus-icons.iife.min.js"></script>
+<script src="../assets/lib/echarts.min.js"></script>
+<script src="../assets/js/mock.js"></script>
+<script src="../assets/js/app.js"></script>
+<script>
+(function () {
+  const H = M.REF.hy;
+  /* 苏州恒运邀请的二级经销商（企业名称均为虚构）：18 户 = 已接入 9 + 已确认 4 + 已发送 3 + 待发送 1 + 已拒绝 1。
+     邀请方只看到邀请状态和是否已接入，没有达标结果和任何数值 */
+  const S = (name, loc, way, at, stage) => ({ name, loc, way, at, stage });
+  const ROWS = [
+    S('昆山裕丰钢铁贸易有限公司', '江苏 · 苏州', '名单导入', '2026-03-20', '已接入'),
+    S('常熟中泰物资有限公司', '江苏 · 苏州', '名单导入', '2026-03-20', '已接入'),
+    S('张家港锦程金属材料有限公司', '江苏 · 苏州', '名单导入', '2026-03-22', '已接入'),
+    S('太仓启航钢铁有限公司', '江苏 · 苏州', '名单导入', '2026-04-11', '已接入'),
+    S('吴江鼎力物贸有限公司', '江苏 · 苏州', '名单导入', '2026-04-11', '已接入'),
+    S('无锡协力钢铁贸易有限公司', '江苏 · 无锡', '逐条添加', '2026-05-06', '已接入'),
+    S('江阴荣昌实业有限公司', '江苏 · 无锡', '逐条添加', '2026-05-06', '已接入'),
+    S('宜兴志诚金属材料有限公司', '江苏 · 无锡', '名单导入', '2026-07-15', '已接入'),
+    S('嘉兴凯达物资有限公司', '浙江 · 嘉兴', '名单导入', '2026-10-30', '已接入'),
+    S('湖州明辉钢铁有限公司', '浙江 · 湖州', '名单导入', '2026-10-30', '已确认'),
+    S('南通宝源物贸有限公司', '江苏 · 南通', '逐条添加', '2026-11-05', '已确认'),
+    S('常州安信钢铁贸易有限公司', '江苏 · 常州', '逐条添加', '2026-11-05', '已确认'),
+    S('苏州汇通供应链管理有限公司', '江苏 · 苏州', '名单导入', '2026-11-18', '已确认'),
+    S('昆山盛达金属材料有限公司', '江苏 · 苏州', '逐条添加', '2026-11-12', '已发送'),
+    S('苏州长风物资有限公司', '江苏 · 苏州', '逐条添加', '2026-11-12', '已发送'),
+    S('常熟国联钢铁有限公司', '江苏 · 苏州', '逐条添加', '2026-11-19', '已发送'),
+    S('无锡海纳实业有限公司', '江苏 · 无锡', '逐条添加', '', '待发送'),
+    S('泰州双赢钢铁贸易有限公司', '江苏 · 泰州', '名单导入', '2026-09-08', '已拒绝'),
+  ];
+
+  STP.mount({
+    data() {
+      return {
+        H, rows: ROWS, f: { kw: '', stage: '' },
+        stages: ['待发送', '已发送', '已确认', '已接入', '已拒绝', '已过期', '已撤回'],
+        inv: { show: false, way: 'file', name: '', code: '', phone: '' },
+      };
+    },
+    computed: {
+      st() {
+        const c = (...ks) => this.rows.filter((r) => ks.indexOf(r.stage) >= 0).length;
+        return { invited: this.rows.length, toSend: c('待发送'), sent: c('已发送'), confirmed: c('已确认', '已接入'), connected: c('已接入'), closed: c('已拒绝', '已过期', '已撤回') };
+      },
+      filtered() { const f = this.f; return this.rows.filter((r) => (!f.kw || r.name.indexOf(f.kw) >= 0) && (!f.stage || r.stage === f.stage)); },
+    },
+    methods: {
+      stageType(s) { return s === '已接入' ? 'success' : s === '已确认' ? 'primary' : s === '已发送' ? 'warning' : s === '待发送' ? 'info' : 'danger'; },
+      openInvite() { this.inv = { show: true, way: 'file', name: '', code: '', phone: '' }; },
+      send(row) { row.stage = '已发送'; row.at = M.TODAY; this.$demo('已按固定模板向 ' + row.name + ' 发送邀请，专属链接 30 天内有效'); },
+      sendAll() { const n = this.st.toSend; this.rows.forEach((r) => { if (r.stage === '待发送') { r.stage = '已发送'; r.at = M.TODAY; } }); this.$demo('已向 ' + n + ' 户发送邀请，状态均为“已发送”'); },
+      drop(row, del) {
+        ElementPlus.ElMessageBox.confirm((del ? '作废' : '撤回') + '后 ' + row.name + ' 的专属邀请链接失效，可稍后重新邀请。', del ? '作废邀请' : '撤回邀请', { confirmButtonText: '确认', cancelButtonText: '取消', type: 'warning' })
+          .then(() => { if (del) this.rows.splice(this.rows.indexOf(row), 1); else row.stage = '已撤回'; this.$demo(del ? '已作废' : '已撤回邀请'); }).catch(() => {});
+      },
+      addRows() {
+        const add = this.inv.way === 'one' ? [[this.inv.name.trim(), '—', '逐条添加']] : [['常州恒立金属材料有限公司', '江苏 · 常州', '名单导入'], ['镇江瑞达物资有限公司', '江苏 · 镇江', '名单导入'], ['扬州通源钢铁贸易有限公司', '江苏 · 扬州', '名单导入']];
+        add.forEach((a) => this.rows.push(S(a[0], a[1], a[2], '', '待发送')));
+        this.inv.show = false; this.$demo('已加入名单 ' + add.length + ' 户，状态为“待发送”');
+      },
+    },
+  });
+})();
+</script>
+</body>
+</html>

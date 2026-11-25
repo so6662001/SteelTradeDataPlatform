@@ -32,6 +32,13 @@
 .recon h4 .res { margin-left: auto; }
 .diff { color: #e5484d; font-weight: 600; }
 .el-descriptions__label { white-space: nowrap; }
+.rep-box { background: #fff; border: 1px solid var(--stp-border, #e6e9ef); border-radius: 8px; margin-bottom: 14px; font-size: 13px; }
+.rep-row { display: flex; align-items: center; gap: 14px; padding: 9px 16px; flex-wrap: wrap; }
+.rep-row + .rep-row { border-top: 1px dashed #e6e9ef; }
+.rep-k { width: 132px; flex: none; }
+.rep-item { display: inline-flex; align-items: center; gap: 5px; padding: 2px 10px; border-radius: 12px; background: #f7f8fa; }
+.rep-item b { font-weight: 500; }
+.rep-note { padding: 8px 16px; border-top: 1px solid #e6e9ef; background: #f5f9ff; border-radius: 0 0 8px 8px; color: #4a5568; font-size: 12px; line-height: 1.8; }
 .demo-param { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 11px; line-height: 18px; background: #fff8eb; color: #9a6400; border: 1px solid #f3dfb8; font-weight: 400; }
 </style>
 </head>
@@ -57,6 +64,58 @@
     <span><span class="code">SRC-WX</span> 无锡分公司进销存 <el-tag size="small" type="success" effect="plain">日汇总模式</el-tag> <span class="muted small">自 2026-10-01 起</span></span>
     <span class="muted small">行级的“条数”是单据行数；日汇总的“条数”是汇总记录数，另展示所含单据行数</span>
     <a href="upload-settings.html" style="margin-left:auto">上传设置 ›</a>
+  </div>
+
+  <!-- 今日是否已计为报送（DN-104） -->
+  <div v-if="nsOn" class="rep-box">
+    <div class="rep-row">
+      <b class="rep-k">报送达标</b>
+      <el-tag size="small" type="info" effect="plain">不适用（无库存经营）</el-tag>
+      <span><b>贵企业不参加报送达标评定，销售数据仍应照常上传。</b></span>
+      <span class="muted small">标记生效期间不做缺报提醒；连续 {{ NS.breakDays }} 个自然日没有任何数据时，钢厂端会显示“报送中断”。</span>
+      <span style="margin-left:auto;white-space:nowrap"><a href="mill-relations.html">查看标记状态 ›</a></span>
+    </div>
+    <div class="rep-note" style="background:#fffaf2"><b>已收到库存数据，与无库存经营的申报不一致，平台将复核。</b>本企业在标记生效期间仍有库存快照到达（示例企业每天上传库存快照，这里用来演示这条提示）。这是原型的演示状态，可在“带动关系与报送达标”页撤销标记后恢复。</div>
+  </div>
+  <div v-else class="rep-box">
+    <div class="rep-row">
+      <b class="rep-k">今日是否已计为报送</b>
+      <span class="num muted">2026-11-24</span>
+      <el-tag size="small" type="success">已计为报送</el-tag>
+      <span class="rep-item"><el-icon style="color:#18a058"><CircleCheckFilled /></el-icon>销售数据　<b>已收到</b><span class="muted small">　首批 09:12 到达</span></span>
+      <span class="rep-item"><el-icon style="color:#b0b7c3"><Clock /></el-icon>库存快照　<b style="color:#8b95a3">尚未收到</b><span class="muted small">　日末快照，夜间到达</span></span>
+      <span style="margin-left:auto;display:flex;gap:12px;align-items:center;white-space:nowrap">
+        <el-button size="small" type="primary" plain @click="ruleDlg = true">报送怎么算</el-button>
+        <a href="mill-relations.html">我的报送达标 ›</a>
+      </span>
+    </div>
+    <div class="rep-row">
+      <b class="rep-k">所选日期</b>
+      <span class="num muted">{{ sel }}</span>
+      <template v-if="!selDue">
+        <el-tag size="small" type="info" effect="plain">非应报送日</el-tag>
+        <span class="rep-item"><el-icon style="color:#18a058"><CircleCheckFilled /></el-icon>销售数据　<b>已收到</b><span class="muted small">　首批 {{ firstAt.sales }} 到达</span></span>
+        <span class="rep-item"><el-icon style="color:#18a058"><CircleCheckFilled /></el-icon>库存快照　<b>已收到</b><span class="muted small">　{{ firstAt.inv }} 到达</span></span>
+        <span class="small muted">周末、法定节假日不是应报送日：数据照常接收和聚合，不计入达标评定</span>
+      </template>
+      <template v-else-if="day.status === 'miss'">
+        <el-tag size="small" type="danger">缺报</el-tag>
+        <span class="rep-item"><el-icon style="color:#d03050"><CircleCloseFilled /></el-icon>销售数据　<b>截止前未收到</b><span class="muted small">　2026-11-17 10:42 才到达</span></span>
+        <span class="rep-item"><el-icon style="color:#d03050"><CircleCloseFilled /></el-icon>库存快照　<b>截止前未收到</b><span class="muted small">　2026-11-17 10:44 才到达</span></span>
+        <span class="small" style="color:#b83a3e">缺报原因：超过截止时点（补传的数据照常入库，但当天仍计为缺报）</span>
+      </template>
+      <template v-else>
+        <el-tag size="small" type="success" effect="plain">已计为报送</el-tag>
+        <span class="rep-item"><el-icon style="color:#18a058"><CircleCheckFilled /></el-icon>销售数据　<b>已收到</b><span class="muted small">　首批 {{ firstAt.sales }} 到达</span></span>
+        <span class="rep-item"><el-icon style="color:#18a058"><CircleCheckFilled /></el-icon>库存快照　<b>已收到</b><span class="muted small">　{{ firstAt.inv }} 到达</span></span>
+      </template>
+      <span class="muted small" style="margin-left:auto;white-space:nowrap">截止时点：业务日期的次日 08:00</span>
+    </div>
+    <div class="rep-note">
+      <b>没有实际数据的日子不算报送，不能用申报代替。</b>应报送日为{{ std.dayType }}（{{ std.dayNote }}）。截止时点前收到该业务日期的库存快照或销售数据，任一即可；当天没有销售的，照常上传库存快照就算。对账申报、空批次、被上传条件全部过滤掉的数据都不算。
+      <span v-if="push.cutAlert">截止前 {{ push.cutLead }} 小时仍没有收到任何实际数据时，平台会提醒接收人（<a href="javascript:;" @click="pushDlg = true">每日推送设置</a>）。</span>
+      这两项状态只有本企业可见。
+    </div>
   </div>
 
   <div class="ds-top">
@@ -86,7 +145,7 @@
         <span><i class="future"></i>未来日期</span>
       </div>
       <div class="tip-box small mt12">
-        格内数字为当日入库销量（吨）；11-15 为补传后的数量。<b>正常</b>：全部批次处理完成，失败率不超过告警阈值且对账一致；<b>部分失败</b>：失败率超过阈值或对账有差异；<b>未上传</b>：截至次日 08:00 未收到任何批次。
+        格内数字为当日入库销量（吨）；11-16 为补传后的数量。<b>正常</b>：全部批次处理完成，失败率不超过告警阈值且对账一致；<b>部分失败</b>：失败率超过阈值或对账有差异；<b>未上传</b>：截至次日 08:00 未收到任何批次。
       </div>
       <div class="row between mt12">
         <span class="small muted">本月截至 {{ dataDate }}：有效上传 <b style="color:#1f2d3d">{{ month.valid }}</b> 天（按时 {{ month.valid - month.miss }} 天，补传 {{ month.miss }} 天）</span>
@@ -195,7 +254,7 @@
   <div class="card">
     <div class="card-title">
       <span>对账：ERP 申报的控制总数 与 平台实际受理、入库<small>业务日期 {{ sel }}</small></span>
-      <span class="right small muted">ERP 通过“每日对账申报”接口申报，两种粒度通用</span>
+      <span class="right small muted">ERP 通过“每日对账申报”接口申报，两种粒度通用；对账申报只用于核对完整性，不算报送</span>
     </div>
     <div class="grid c2" style="margin-bottom:12px">
       <div class="recon" v-for="r in recon" :key="r.src" :class="{bad: !r.ok}">
@@ -227,6 +286,7 @@
     </div>
     <div class="tip-box small">
       <b>对账口径</b>：ERP 申报的是按生效规则过滤后、应当上传的条数与吨位<template v-if="price">（及带价格记录的金额）</template>；平台用“受理数”（接收 − 规则过滤）比对，受理但尚未入库的记录（校验失败、待映射、隔离待确认）处理完成后自动转为入库。
+      控制总数按钢材（条数、吨位）和非钢材（条数、数量）分列申报、分别比对；{{ sel }} 非钢材：ERP 申报 {{ day.ns[0].rows }} 行、{{ $fmt(day.ns[0].qty) }} {{ day.ns[0].unit }}，平台受理一致。
       <b>日汇总模式没有单据号，平台无法做单据级去重和单笔校验，对账是主要的完整性保障</b>，建议 SRC-WX 每日申报控制总数。
     </div>
   </div>
@@ -276,7 +336,15 @@
         </tr>
       </tbody>
     </table>
+    <template v-if="tab === 'cat'">
+      <div class="grp-head" style="margin-top:14px"><span class="unit-pill ns">非钢材 · 按数量</span><span class="muted small">单独列示，不与吨位合计；不同数量单位之间也不合计</span></div>
+      <table class="plain-table">
+        <thead><tr><th>品名</th><th>大类</th><th>统计维度</th><th class="r">入库条数</th><th class="r">当日销量</th><th class="r">日末库存</th><th>单位</th><th>价格</th></tr></thead>
+        <tbody><tr v-for="n in day.ns" :key="n.name"><td>{{ n.name }}</td><td class="muted">配套辅材</td><td class="muted">规格</td><td class="r num">{{ n.rows }} 行</td><td class="r num">{{ $fmt(n.qty) }}</td><td class="r num">{{ $fmt(n.stock) }}</td><td><span class="unit-pill ns">{{ n.unit }}</span></td><td class="muted">不接收价格</td></tr></tbody>
+      </table>
+    </template>
     <div class="small muted mt8" style="line-height:1.8">
+      <template v-if="tab === 'cat'">上表为钢材，按吨位统计；本页顶部摘要中的条数、吨位和下方对账的吨位均为钢材口径，非钢材的条数与数量另行对账。</template>
       {{ group.note }}
       <template v-if="price">　金额与均价只统计本企业价格上传范围内（建筑钢材、热轧板卷 · 东岳、金江 · 全部仓库）的数据。</template>
     </div>
@@ -289,7 +357,7 @@
       <div class="grid c4" style="gap:10px;margin-bottom:0">
         <div class="mini"><div class="k">本月上传天数</div><div class="v num">{{ month.valid }}<small>天</small></div><div class="f">应上传 {{ month.valid }} 天</div></div>
         <div class="mini"><div class="k">入库销量合计</div><div class="v num">{{ $fmt(month.sales) }}<small>吨</small></div><div class="f">日均 {{ $fmt(month.sales / month.valid) }} 吨</div></div>
-        <div class="mini"><div class="k">质量评分</div><div class="v num">92<small>分</small><el-tag type="success" size="small" effect="dark">A</el-tag></div><div class="f">影响名录展示与分成系数</div></div>
+        <div class="mini"><div class="k">质量评分</div><div class="v num">92<small>分</small><el-tag type="success" size="small" effect="dark">A</el-tag></div><div class="f">展示在企业名录中</div></div>
         <div class="mini"><div class="k">被订阅家数</div><div class="v num">23<small>家</small></div><div class="f"><a href="ledger.html">透明账本 ›</a></div></div>
       </div>
     </div>
@@ -302,7 +370,8 @@
         <dt>接收人</dt><dd>{{ push.receivers.join('、') }}</dd>
         <dt>告警</dt>
         <dd>
-          <span v-if="push.missAlert"><span class="dot err"></span>次日 {{ push.missTime }} 仍未上传</span>
+          <span v-if="push.cutAlert && !nsOn"><span class="dot warn"></span>截止前 {{ push.cutLead }} 小时仍无实际数据</span>
+          <span v-if="push.missAlert" style="margin-left:14px"><span class="dot err"></span>次日 {{ push.missTime }} 仍未上传</span>
           <span v-if="push.failAlert" style="margin-left:14px"><span class="dot warn"></span>失败率超过 {{ push.failRate }}%</span>
           <span v-if="push.reconAlert" style="margin-left:14px"><span class="dot warn"></span>对账有差异</span>
         </dd>
@@ -380,7 +449,7 @@
             <tr><td>隔离待确认</td><td class="r num">{{ $fmt(month.quar) }}</td><td class="muted">确认前不参与聚合</td></tr>
           </tbody>
         </table>
-        <div class="tip-box green small mt12">价格为自愿上传，不计入质量评分。评级 A 对应的分成质量系数见 <a href="revenue.html">我的收益</a>。</div>
+        <div class="tip-box green small mt12">价格为自愿上传，不计入质量评分。与你有带动关系的钢厂只看到各达标周期是达标还是未达标，看不到及时率数值和缺报原因；评定只看各业务日期是否按时有实际数据（销售或库存快照），见 <a href="mill-relations.html">带动关系与报送达标</a>。</div>
       </div>
     </div>
     <template #footer>
@@ -416,6 +485,14 @@
         <el-checkbox v-if="price" v-model="pushForm.withPrice">金额与均价（只发给有价格权限的成员）</el-checkbox>
       </el-form-item>
       <el-divider content-position="left">告警</el-divider>
+      <el-form-item label="临近截止提醒">
+        <el-switch v-model="pushForm.cutAlert" :disabled="nsOn" />
+        <span class="small" style="margin-left:10px">截止时点（次日 08:00）前</span>
+        <el-select v-model="pushForm.cutLead" style="width:90px;margin:0 6px" :disabled="!pushForm.cutAlert"><el-option v-for="h in [1, 2, 3, 6]" :key="h" :label="h + ' 小时'" :value="h" /></el-select>
+        <span class="small">仍没有收到当日任何实际数据时提醒</span>
+        <div class="small muted" style="width:100%">库存快照和销售数据都没有才提醒，只在应报送日提醒；没有实际数据的日子计为缺报，不能用申报代替。提前量由企业设置，默认 2 小时。</div>
+        <div v-if="nsOn" class="small" style="width:100%;color:#b25e00">本企业已标记为无库存经营，不参加报送达标评定，不做缺报提醒。</div>
+      </el-form-item>
       <el-form-item label="未上传告警">
         <el-switch v-model="pushForm.missAlert" />
         <span class="small" style="margin-left:10px">截至次日</span>
@@ -435,11 +512,34 @@
         </el-checkbox-group>
       </el-form-item>
     </el-form>
-    <div class="tip-box small">连续 10 天无有效上传时，订阅本企业的名额会被冻结，冻结期间不计提分成<span class="demo-param" style="margin-left:6px">示例参数，待业务方确定</span>。建议保持未上传告警开启。</div>
+    <div class="tip-box small">连续 10 天无有效上传时，订阅本企业的名额会被冻结，与你有带动关系的钢厂会看到“报送中断”<span class="demo-param" style="margin-left:6px">示例参数，待业务方确定</span>。建议保持未上传告警开启。</div>
     <template #footer>
       <el-button @click="pushDlg = false">取消</el-button>
       <el-button type="primary" :disabled="!pushForm.channels.length" @click="savePush">保存设置</el-button>
     </template>
+  </el-dialog>
+  <!-- 报送怎么算 -->
+  <el-dialog v-model="ruleDlg" title="某一天算不算“已报送”" width="720px" top="6vh">
+    <div class="tip-box green" style="margin-top:0"><b>当日有实际数据才算报送，不能用申报代替。</b>截止时点（业务日期的次日 08:00）前，平台收到该业务日期的<b>库存快照</b>或<b>销售数据</b>至少一条实际数据，任一即可（业务方已确认，库存快照不是必要条件）；有多个来源系统的，任一来源系统有即可。只看有没有，不看多少。到达时间以平台受理时间为准。</div>
+    <table class="plain-table mt12">
+      <thead><tr><th style="width:270px">情形</th><th style="width:92px">算不算</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>当天有销售，按时上传了销售数据</td><td><span class="dot ok"></span>算</td><td class="small muted">行级销售行、销售日汇总记录都可以</td></tr>
+        <tr><td>当天没有销售，按时上传了库存快照</td><td><span class="dot ok"></span>算</td><td class="small muted">没有销售的日子不需要任何额外操作，ERP 照常推送日末库存即可</td></tr>
+        <tr><td>数据已入库，但还在待映射或隔离待确认</td><td><span class="dot ok"></span>算</td><td class="small muted">映射和隔离不影响当日是否算报送</td></tr>
+        <tr><td>只做了对账申报，或声明“当天无数据”</td><td><span class="dot err"></span>不算</td><td class="small muted">平台不提供零申报；对账申报只用于核对完整性，控制总数可以为零</td></tr>
+        <tr><td>空批次、不完整的库存快照批次、量为零的记录</td><td><span class="dot err"></span>不算</td><td class="small muted">不含任何行的库存快照可以受理，表示当日库存为零，但不计为报送</td></tr>
+        <tr><td>整批被拒收，或全部行校验失败</td><td><span class="dot err"></span>不算</td><td class="small muted">缺报原因显示为“整批被拒”</td></tr>
+        <tr><td>数据全部被本企业的上传条件过滤掉</td><td><span class="dot err"></span>不算</td><td class="small muted">过滤发生在 ERP 端还是平台端，结果相同。保存规则前的试算会提示有多少天没有可报送的数据</td></tr>
+        <tr><td>截止时点之后才到达</td><td><span class="dot err"></span>不算</td><td class="small muted">补传的数据照常入库并参与聚合，当天仍计为缺报；已发布的周期结果不因补传自动改变</td></tr>
+        <tr><td>周末、法定节假日（非应报送日）</td><td><span class="dot"></span>不计入</td><td class="small muted">应报送日为工作日，日历由平台维护。非应报送日上传的数据照常接收和聚合，不计入评定的分子和分母，没有数据也不算缺报</td></tr>
+        <tr><td>暂停上传期间</td><td><span class="dot err"></span>不算</td><td class="small muted">暂停期间的应报送日按缺报计入评定，钢厂端显示“已暂停”</td></tr>
+        <tr><td>常年不落库，当天既没有销售也没有库存</td><td><span class="dot err"></span>不算</td><td class="small muted">偶尔出现靠达标阈值容忍；常年如此的企业可申报“无库存经营”，核实生效后不参加达标评定</td></tr>
+      </tbody>
+    </table>
+    <div class="tip-box blue small mt12"><b>钢厂看到什么。</b>与你有带动关系的钢厂只看到每个达标周期是“达标”还是“未达标”。它看不到及时率、哪天报了、哪天没报、缺报的原因，也看不到你报的是销售还是库存，以及任何数量。库存快照也算实际数据，所以有库存的企业在没有销售的日子照样算报送，达标结果不反映你哪些天有销售。</div>
+    <div class="tip-box small mt8"><span class="demo-param" style="margin-right:6px">示例参数</span>达标周期为自然月，应报送日为{{ std.dayType }}；按时报送的天数不少于应报送天数的 {{ std.rate }}%，且最长连续缺报不超过 {{ std.gap }} 个应报送日，即为达标；应报送日不足 {{ std.minDays }} 天的周期为“不适用”。<br><b>常年不落库的企业：</b>厂家直发、订单贸易为主、没有库存快照可报的企业，可以申报“无库存经营”。经平台核实生效后不参加报送达标评定，对带动钢厂显示“不适用”；钢厂会看到“无库存经营”标签。<a href="mill-relations.html">去申报 ›</a></div>
+    <template #footer><el-button @click="$go('mill-relations.html')">我的报送达标</el-button><el-button type="primary" @click="ruleDlg = false">知道了</el-button></template>
   </el-dialog>
 </app-layout>
 </script>
@@ -458,7 +558,7 @@
   /* 与工作台“近 30 日本企业上传销量与库存”使用同一序列 */
   const SALES = M.dailySeries(30, 1790, 321); SALES[29].v = 1846;
   const STOCK = M.stockSeries(30, 28630, 77, 0.0006);
-  const STATUS = { 12: 'part', 15: 'miss', 23: 'part' };
+  const STATUS = { 12: 'part', 16: 'miss', 23: 'part' };
 
   /* 2026-11-23 的分组模板：sales 当日销量、stock 日末库存、priced 带价格销量、amount 金额（元） */
   const TPL = {
@@ -577,13 +677,15 @@
     DAYS[date] = {
       date, d, wk: WK[wd], status, sales, stock, hq, wx, groups,
       batches: hq.saleB + 1 + 2, saleBatches: hq.saleB + 1, invBatches: 2,
+      /* 非钢材（按数量）：只有总部 ERP 上传的钢筋连接套筒，单位“个”；与吨位分列，不合计 */
+      ns: [{ name: '钢筋连接套筒', unit: '个', rows: d === 23 ? 6 : d === 22 ? 4 : 3 + d % 4, qty: ({ 17: 1560, 18: 1620, 19: 1700, 20: 1640, 21: 1260, 22: 1040, 23: 1680 })[d] || Math.round(sales * 0.9 / 20) * 20, stock: 38600 + (23 - d) * 140 }],
       recv, in: inN, filt: hq.filt + wx.filt, fail, pend, quar: hq.quar + wx.quar, voided: hq.voided || 0,
       failRate: (fail / recv * 100).toFixed(1),
       priced, priceRatio: (priced / inN * 100).toFixed(1), pricedTon: tot.priced, amount: tot.amount, avg: Math.round(tot.amount / tot.priced),
       wxDiff, hqAmt, wxAmt,
       alert: d === 23 ? '当日有 3 条校验失败、12 条待映射、1 条隔离待确认，这些数据不参与聚合；SRC-WX 的对账有差异（平台比 ERP 申报少 1 条、3.220 吨）。'
         : d === 12 ? '校验失败 21 条，失败率 ' + (fail / recv * 100).toFixed(1) + '%，超过告警阈值 1%，已于 2026-11-13 08:30 推送告警。失败原因集中在“规格超出取值范围”（总部 ERP 新增物料的规格文本异常）。'
-        : d === 15 ? '该业务日期截至次日 08:00 未收到任何批次（总部 ERP 周末停机维护），日历按“未上传”标记，并已于 2026-11-16 08:05 发送未上传告警。数据已于 2026-11-16 10:42 补传并回补进聚合，下方为补传后的结果；有效上传天数照常计入。' : '',
+        : d === 16 ? '该业务日期截至次日 08:00 未收到任何批次（总部 ERP 停机维护），日历按“未上传”标记，并已于 2026-11-17 08:05 发送未上传告警。数据已于 2026-11-17 10:42 补传并回补进聚合，下方为补传后的结果；有效上传天数照常计入。' : '',
     };
   }
 
@@ -591,16 +693,19 @@
     data() {
       return {
         dataDate: M.DATA_DATE, sel: '2026-11-23', tab: 'cat', regionMode: 'wh',
-        diffDlg: false, reportDlg: false, pushDlg: false,
-        members: ['陈海峰（企业管理员）', '周凯（信息部 · 接口对接员）', '沈立新（无锡分公司 · 接口对接员）', '顾晓燕（财务）'],
-        push: { channels: ['站内信', '短信', '邮件'], time: '08:30', receivers: ['陈海峰（企业管理员）', '周凯（信息部 · 接口对接员）'], withRecon: true, withPrice: false, missAlert: true, missTime: '08:00', failAlert: true, failRate: 1, reconAlert: true, alertChannels: ['站内信', '短信'] },
-        pushForm: { channels: [], time: '08:30', receivers: [], withRecon: true, withPrice: false, missAlert: true, missTime: '08:00', failAlert: true, failRate: 1, reconAlert: true, alertChannels: [] },
+        diffDlg: false, reportDlg: false, pushDlg: false, ruleDlg: false, std: M.REF.std, NS: M.REF.noStock,
+        members: ['陈海峰（企业管理员）', '周凯（信息部 · 接口对接员）', '沈立新（无锡分公司 · 接口对接员）', '顾晓燕（只读成员）'],
+        push: { channels: ['站内信', '短信', '邮件'], time: '08:30', receivers: ['陈海峰（企业管理员）', '周凯（信息部 · 接口对接员）'], withRecon: true, withPrice: false, cutAlert: true, cutLead: 2, missAlert: true, missTime: '08:00', failAlert: true, failRate: 1, reconAlert: true, alertChannels: ['站内信', '短信'] },
+        pushForm: { channels: [], time: '08:30', receivers: [], withRecon: true, withPrice: false, cutAlert: true, cutLead: 2, missAlert: true, missTime: '08:00', failAlert: true, failRate: 1, reconAlert: true, alertChannels: [] },
         wxByProduct: [['螺纹钢', 27, 125, 202.177], ['盘螺', 6, 22, 54.753], ['热轧卷板', 5, 24, 25.647], ['热轧带钢', 2, 15, 10.046], ['高线', 1, 2, 9.837], ['待映射（尚无标准品名）', 4, 15, 11.28]],
       };
     },
     computed: {
       price() { return this.$state.dnPrice === 'on'; },
+      nsOn() { return this.$state.ns === 'on'; },
+      selDue() { return this.std.isDue(this.sel); },
       day() { return DAYS[this.sel]; },
+      firstAt() { const d = this.day.d; return { sales: this.sel.slice(5) + ' 09:' + pad(6 + d % 20), inv: '2026-11-' + pad(d + 1) + ' 01:' + pad(12 + d) }; },
       cells() {
         const out = [];
         for (let i = 0; i < 6; i++) out.push({ cls: 'blank' });
@@ -646,7 +751,7 @@
       },
     },
     methods: {
-      pick(c) { if (c.date) this.sel = c.date; else if (c.d) this.$info(c.cls === 'today' ? '今日数据尚在上传中，明日 08:00 前生成当日汇总' : '未来日期暂无数据'); },
+      pick(c) { if (c.date) this.sel = c.date; else if (c.d) this.$info(c.cls === 'today' ? '今日数据尚在上传中（销售数据已收到，今日已计为报送），明日 08:00 前生成当日汇总' : '未来日期暂无数据'); },
       toCheck(status) {
         try { sessionStorage.setItem('stp-dc-preset', JSON.stringify({ date: this.sel, status })); } catch (e) { /* ignore */ }
         this.$go('data-check.html');
