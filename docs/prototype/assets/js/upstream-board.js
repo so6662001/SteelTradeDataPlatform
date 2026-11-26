@@ -90,9 +90,9 @@
       catCur() { return this.catPath.length ? M.categories.find((x) => x.name === this.catPath[0]) : null; },
       /* 第三层随该品类的标准化深度开放：L4 及以上到规格段，L3 到材质，L2 不再下钻 */
       catThird() { const c = this.catCur; return !c ? null : c.depth >= 'L4' ? '规格段' : c.depth === 'L3' ? '材质' : null; },
-      catLevelName() { return this.catPath.length < 2 ? ['大类', '品名'][this.catPath.length] : this.catDim ? this.catDim.d.levels[0].t : this.catThird; },
-      /* 品名以下：标准化深度到 L4 的大类按统计维度模板展示（管材为规格加壁厚，板材为厚度加宽度，建材为规格，型材为规格加公斤段或负差段，按品名固定其一），
-         披露与上卷结果与多维查询同源 */
+      catLevelName() { return this.catPath.length < 2 ? ['大类', '品名'][this.catPath.length] : this.catDim ? this.catDim.d.levels.find((l) => l.k === (this.dimLevel || this.catDim.d.defLevel)).t : this.catThird; },
+      /* 品名以下：标准化深度到 L4 的大类按统计维度模板展示，披露与上卷结果与多维查询同源。
+         V0.7：默认层级与多维查询的规格段层级一致，管材为规格段 × 壁厚段，板材为厚度段 × 宽度段（UP-105）；建材、型材、其他品类不变 */
       catDim() {
         if (this.catPath.length !== 2 || this.catThird !== '规格段') return null;
         const c = this.catCur, p = c.products.find((x) => x.name === this.catPath[1]), k = c.products.indexOf(p);
@@ -204,7 +204,7 @@
         if (row.locked) { this.$info('该品类暂不提供此粒度：' + this.catCur.name + '的标准化深度为品名级，暂不开放材质与规格段下钻'); return; }
         if (row.child && this.catPath.length < 2) this.catPath = this.catPath.concat([row.name]);
       },
-      depthText(d) { return d >= 'L4' ? '可到统计维度' : d === 'L3' ? '可到材质' : '仅到品名'; },
+      depthText(d) { return d >= 'L4' ? '可到规格段' : d === 'L3' ? '可到材质' : '仅到品名'; },
       catTo(i) { this.catPath = this.catPath.slice(0, i); this.dimLevel = ''; },
       rowClass({ row }) { return row.merged ? 'merged-row' : ''; },
     },
@@ -296,12 +296,12 @@
       <div v-if="catDim">
         <div class="row small" style="gap:10px;margin-bottom:8px;flex-wrap:wrap">
           <span class="dim-chip" style="margin:0">{{ catDim.d.tpl.name }}模板</span>
-          <span>层级 <el-radio-group v-model="dimLevel" size="small"><el-radio-button v-for="l in catDim.d.levels" :key="l.k" :value="l.k" :label="l.t" /></el-radio-group></span>
+          <span>层级 <el-radio-group :model-value="dimLevel || catDim.d.defLevel" size="small" @update:model-value="(v) => { dimLevel = v; }"><el-radio-button v-for="l in catDim.d.levels" :key="l.k" :value="l.k" :label="l.t" /></el-radio-group></span>
           <el-radio-group v-model="dimMetric" size="small"><el-radio-button label="销量" value="sales" /><el-radio-button label="库存" value="stock" /></el-radio-group>
           <span v-if="catDim.d.tplKey==='型材'" class="muted">{{ catDim.name }}的第二维度固定为{{ catDim.d.d2.segName }}（按品名配置，不能切换）</span>
           <span class="muted">分段方案 {{ bandVer.ver }}（示例参数）</span>
         </div>
-        <dim-table compact :name="catDim.name" :total="dimMetric==='stock' ? catDim.stock : catDim.sales" :n="catDim.n" :seg-w="dimMetric==='stock' ? catDim.stockW : undefined" :metric="dimMetric==='stock' ? '日末库存' : '昨日销量'" :level="dimLevel || catDim.d.levels[0].k"></dim-table>
+        <dim-table compact :name="catDim.name" :total="dimMetric==='stock' ? catDim.stock : catDim.sales" :n="catDim.n" :seg-w="dimMetric==='stock' ? catDim.stockW : undefined" :metric="dimMetric==='stock' ? '日末库存' : '昨日销量'" :level="dimLevel || catDim.d.defLevel"></dim-table>
       </div>
       <div v-else class="grid" style="grid-template-columns: 170px minmax(0,1fr); margin-bottom:0">
         <ve-chart :option="catOption" height="290px"></ve-chart>
@@ -322,7 +322,7 @@
           <el-table-column label="企业数" width="94" align="center"><template #default="{row}"><contrib-tag :n="row.n" /></template></el-table-column>
         </el-table>
       </div>
-      <div class="small muted mt8">品名以下按该品类的统计维度查看：管材为规格、壁厚段，板材为厚度段、宽度段，建材为规格，型材为规格加公斤段或负差段（按品名固定其一）；冷轧及涂镀的标准化深度到材质，模板维度已采集、暂不披露。优特钢、不锈钢样本较稀疏，最细披露粒度为“地区到省、时间到旬”；看板为日粒度，这两个大类合并为“其他”一行，分品类数据请到<a v-if="!demo" href="query.html">多维查询</a><template v-else>多维查询</template>按旬查看。</div>
+      <div class="small muted mt8">品名以下按该品类的统计维度查看：管材默认到规格段 × 壁厚段（可再细到规格 × 壁厚段），板材为厚度段 × 宽度段，建材为规格，型材为规格加公斤段或负差段（按品名固定其一）；不提供按壁厚段、宽度段的列合计；冷轧及涂镀的标准化深度到材质，模板维度已采集、暂不披露。优特钢、不锈钢样本较稀疏，最细披露粒度为“地区到省、时间到旬”；看板为日粒度，这两个大类合并为“其他”一行，分品类数据请到<a v-if="!demo" href="query.html">多维查询</a><template v-else>多维查询</template>按旬查看。</div>
     </div>
     <div class="card" v-if="priceOn">
       <div class="card-title"><span>量价速览<small>含税、自提、非暂估 · 加权均价 · 元/吨 · 日粒度（标“旬”的为旬粒度）</small></span><a v-if="!demo" href="price.html" style="font-weight:400;font-size:13px">进入量价视图 ›</a></div>

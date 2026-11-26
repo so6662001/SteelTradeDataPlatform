@@ -280,7 +280,7 @@
     const dy = p.id === 'U20001', inc = dy ? UpDir.PENDING_IN.length : 3;
     let list = M.enterprises(n + inc + 3, M.hash(p.id)).map(nm);
     if (dy) {
-      /* 东岳的数据池与上游端“数据来源企业名单”是同一批企业：苏州恒运在池，冻结 3 家，12-01 待生效入池 19 家（替换 5 家、新增 14 家） */
+      /* 东岳的数据池与上游厂家端“数据来源企业名单”是同一批企业：苏州恒运在池，冻结 3 家，12-01 待生效入池 19 家（替换 5 家、新增 14 家） */
       const pl = UpDir.LIST.filter((e) => e.inPool), head = [pl[182], pl[23], pl[97], pl[151]], out = [3, 41, 88, 120, 166, 135].map((i) => pl[i]);
       list = head.concat(pl.filter((e) => head.indexOf(e) < 0 && out.indexOf(e) < 0).slice(0, n - 4)).concat(UpDir.PENDING_IN).map(nm).concat(list.slice(n + inc));
     }

@@ -225,7 +225,7 @@
         <el-descriptions-item label="涉及业务日期">{{ curBack.daysN }} 天</el-descriptions-item>
         <el-descriptions-item label="涉及数据池">{{ curBack.pools }} 个</el-descriptions-item>
       </el-descriptions>
-      <div class="tip-box orange small mt12">通过后：企业获得 7 天的临时补传许可；补传数据经校验入库后，受影响业务日期的聚合<b>自动重算</b>，上游页面按最新结果展示，趋势图标注数据更正点。已生成的导出文件不回收。审批记录留痕并对企业可见。</div>
+      <div class="tip-box orange small mt12">通过后：企业获得 7 天的临时补传许可；补传数据经校验入库后，受影响业务日期的聚合<b>自动重算</b>，上游厂家端页面按最新结果展示，趋势图标注数据更正点。已生成的导出文件不回收。审批记录留痕并对企业可见。</div>
       <el-form label-width="80px" class="mt12"><el-form-item label="审批意见"><el-input v-model="backNote" type="textarea" :rows="2" placeholder="驳回须填写原因" /></el-form-item></el-form>
     </template>
     <template #footer><el-button @click="backDlg = false">取消</el-button><el-button type="danger" plain :disabled="!backNote" @click="doBack(false)">驳回</el-button><el-button type="primary" @click="doBack(true)">通过</el-button></template>

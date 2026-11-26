@@ -161,7 +161,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <div class="small muted mt8">审核通过后，奖励名额直接入账到该钢厂的名额账户（来源标识为“奖励”，单独列示，不产生订单和应收），并通知钢厂。钢厂端只显示“计入奖励的带动户数”这一个汇总数，不逐户标注。</div>
+      <div class="small muted mt8">审核通过后，奖励名额直接入账到该钢厂的名额账户（来源标识为“奖励”，单独列示，不产生订单和应收），并通知钢厂。厂家端只显示“计入奖励的带动户数”这一个汇总数，不逐户标注。</div>
     </template>
 
     <!-- 带动关系 -->
@@ -205,7 +205,7 @@
             <el-descriptions-item label="零申报">不认可（业务方已确认）；对账申报、空批次、全部被过滤的批次不算</el-descriptions-item>
             <el-descriptions-item label="库存快照是否必要">不是必要条件（业务方已确认）</el-descriptions-item>
             <el-descriptions-item label="无库存经营企业">企业申报、运营核实后生效，不参加评定，显示“不适用”（业务方已确认）。<a href="enterprises.html?tab=ns">核实与复核 ›</a></el-descriptions-item>
-            <el-descriptions-item label="汇总达标率的显示">参与评定的协议户不足 {{ S.rateMinN }} 户时，钢厂端只显示户数<span class="ex-tag" style="margin-left:4px">示例参数</span></el-descriptions-item>
+            <el-descriptions-item label="汇总达标率的显示">参与评定的协议户不足 {{ S.rateMinN }} 户时，厂家端只显示户数<span class="ex-tag" style="margin-left:4px">示例参数</span></el-descriptions-item>
             <el-descriptions-item label="暂停期间">按未报送计入评定；对钢厂显示“已暂停”</el-descriptions-item>
             <el-descriptions-item label="报送中断">连续 {{ S.breakDays }} 个自然日没有收到任何实际数据；无库存经营企业为 {{ NS.breakDays }} 个自然日</el-descriptions-item>
             <el-descriptions-item label="对钢厂的状态更新">每日一次，不实时</el-descriptions-item>
@@ -267,7 +267,7 @@
       <el-form-item label="变更原因" required><el-input v-model="ed.reason" type="textarea" :rows="2" placeholder="必填，写入审计日志" /></el-form-item>
     </el-form>
     <div v-if="edChanges.length" class="tip-box small"><b>本次变更：</b><div v-for="c in edChanges" :key="c">{{ c }}</div></div>
-    <div class="tip-box blue small mt8">规则带生效日期：<b>历史考核期按当时生效的规则计算</b>，已发放的奖励不受影响。提交后须由另一位平台人员复核；复核通过后提前通知全部上游钢厂，上游端“协议户邀请与接入”同步展示新规则。</div>
+    <div class="tip-box blue small mt8">规则带生效日期：<b>历史考核期按当时生效的规则计算</b>，已发放的奖励不受影响。提交后须由另一位平台人员复核；复核通过后提前通知全部上游钢厂，上游厂家端“协议户邀请与接入”同步展示新规则。</div>
     <template #footer><el-button @click="ed.show=false">取消</el-button><el-button type="primary" @click="submitEdit">提交复核</el-button></template>
   </el-dialog>
 

@@ -379,14 +379,33 @@
    * 管材 = 规格 + 壁厚；板材 = 厚度 + 宽度；建材 = 规格；型材 = 规格 + 公斤段或负差段（N-46 已确认：按品名固定其一，在品类主数据逐个品名配置）；其他品类 = 规格。
    * 钢材按吨位统计，非钢材按数量统计，两者不合并相加；非钢材不同数量单位之间也不相加。
    * 分段方式待业务方确定，下面的分段数值、上卷保留成员数全部是示例参数。
-   * 上游看板、多维查询、量价视图、导出中心，以及运营后台品类主数据、颗粒度监控共用这一套定义与上卷结果。 */
+   * 上游看板、多维查询、量价视图、导出中心，以及运营后台品类主数据、颗粒度监控共用这一套定义与上卷结果。
+   * V0.7（2026-11-26，UP-105、UP-106、PV-106、PV-107）：多维查询的规格段层级带出第二维度，管材为规格段 × 壁厚段，板材为厚度段 × 宽度段；
+   * 管材的路径改为 规格 × 壁厚段 → 规格段 × 壁厚段 → 规格段 → 品名。 */
+  /* V0.7（2026-11-26）可调整的口径，集中放在这里。N-62、N-63 业务方尚未确认，改这里即可，页面上的名称、路径、层级都从这里派生。
+     plateSecond（N-62）：板材在厚度段的基础上增加的第二个统计维度。文档按“宽度”理解，即厚度段 × 宽度段。
+       若业务方确认的是别的含义（如厚度 × 宽度的常用规格组合，或另设一套规格段），改这个名称，并改下方 DIM2 中板材品名的分段和占比。
+     pipeRollup（N-63）：管材格子不足时的上卷顺序。'keepWall' = 先把规格合并到规格段、保留壁厚，再去掉壁厚（PV-106，文档按此）；
+       'dropWall' = V0.4 的顺序，先去掉壁厚（规格（不分壁厚）），再把规格合并到规格段。
+     segSecond（N-63）：哪些模板在规格段层级带出第二维度。型材暂不变，没有列入。
+     d2Combo（N-63，示例参数）：设了第二维度条件时，可以组合到多细的地区和时间粒度，按大类配置；起步为省和月，样本够的大类再放开 */
+  const DIM_OPT = {
+    plateSecond: '宽度',
+    pipeRollup: 'keepWall',
+    segSecond: ['管材', '板材'],
+    d2Combo: { def: { geo: '省', time: '月' }, byCat: { 热轧板卷: { geo: '市', time: '旬' } } },
+  };
+  const P2 = DIM_OPT.plateSecond;
   const DIM_TPL = {
     建材: { key: '建材', name: '建材', measure: '吨位', dims: [{ name: '规格', note: '公称直径', type: '离散', unit: 'mm', key: 'diameter' }], path: ['规格', '规格段', '品名'], eg: '螺纹钢、盘螺、高线' },
-    板材: { key: '板材', name: '板材', measure: '吨位', dims: [{ name: '厚度', type: '连续', unit: 'mm', key: 'thickness' }, { name: '宽度', type: '连续', unit: 'mm', key: 'width' }], path: ['厚度段 × 宽度段', '厚度段（不分宽度）', '品名'], eg: '热轧、中厚板、冷轧及涂镀' },
-    管材: { key: '管材', name: '管材', measure: '吨位', dims: [{ name: '规格', note: '外径或公称口径；方矩管为截面边长', type: '离散', unit: 'mm', key: 'outerDiameter / nominalSize' }, { name: '壁厚', type: '连续', unit: 'mm', key: 'wallThickness' }], path: ['规格 × 壁厚段', '规格（不分壁厚）', '规格段', '品名'], eg: '焊管、镀锌管、无缝管、方矩管' },
+    板材: { key: '板材', name: '板材', measure: '吨位', dims: [{ name: '厚度', type: '连续', unit: 'mm', key: 'thickness' }, { name: P2, type: '连续', unit: 'mm', key: 'width' }], path: ['厚度段 × ' + P2 + '段', '厚度段（不分' + P2 + '）', '品名'], eg: '热轧、中厚板、冷轧及涂镀' },
+    管材: { key: '管材', name: '管材', measure: '吨位', dims: [{ name: '规格', note: '外径或公称口径；方矩管为截面边长', type: '离散', unit: 'mm', key: 'outerDiameter / nominalSize' }, { name: '壁厚', type: '连续', unit: 'mm', key: 'wallThickness' }],
+      path: DIM_OPT.pipeRollup === 'keepWall' ? ['规格 × 壁厚段', '规格段 × 壁厚段', '规格段（不分壁厚）', '品名'] : ['规格 × 壁厚段', '规格（不分壁厚）', '规格段', '品名'], eg: '焊管、镀锌管、无缝管、方矩管' },
     型材: { key: '型材', name: '型材', measure: '吨位', dims: [{ name: '规格', note: '型号', type: '离散', unit: '', key: 'sectionModel' }, { name: '公斤段或负差段', note: '按品名固定其一，在主数据逐个品名配置', type: '连续', unit: 'kg/m 或 %', key: 'unitWeightKg / negTolerancePct' }], path: ['规格 × 公斤段或负差段（按品名固定）', '规格（不分段）', '规格段（型号系列）', '品名'], eg: 'H 型钢、工字钢、槽钢、角钢' },
     其他: { key: '其他', name: '其他品类', measure: '吨位或数量', dims: [{ name: '规格', type: '离散', unit: '', key: 'spec' }], path: ['规格', '规格段（如已定义）', '品名'], eg: '优特钢、不锈钢、非钢材品类' },
   };
+  /* 规格段层级在各模板下是什么（UP-105），供页面说明文字使用 */
+  const SEG_TIER_TEXT = DIM_OPT.segSecond.map((k) => DIM_TPL[k].name + '为' + DIM_TPL[k].dims[0].name + '段 × ' + DIM_TPL[k].dims[1].name + '段').join('，') + '，建材和其他品类为规格段' + (DIM_OPT.segSecond.indexOf('型材') < 0 ? '，型材为规格段（型号系列）' : '');
   const CAT_TPL = { 建筑钢材: '建材', 热轧板卷: '板材', 中厚板: '板材', 冷轧及涂镀: '板材', 管材: '管材', 型钢: '型材', 优特钢: '其他', 不锈钢: '其他' };
   /* 分段字典版本（示例）。连续型维度的段为左闭右开区间，首段、末段为开口区间 */
   const BAND_VER = { ver: 'BD-2026.11', eff: '2026-11-01', prev: 'BD-2026.08', keep: 2 };
@@ -399,11 +418,11 @@
   const THEO_KG = { '∠40×4': 2.422, '∠50×5': 3.77, '∠63×6': 5.721, '∠75×7': 7.976, '∠80×8': 9.658, '∠100×10': 15.12, '∠125×12': 22.696, '10# 槽钢': 10.007, '16a 槽钢': 17.24, '20a 工字钢': 27.929, '25a 工字钢': 38.105, 'HW200×200': 49.9, 'HN300×150': 36.7 };
   const kgRange = (model) => { const w = THEO_KG[model]; if (!w) return null; const c = KG_CUT.map((x) => (w * x).toFixed(2)); return [c[0] + ' 以上', c[1] + '–' + c[0], c[2] + '–' + c[1], c[2] + ' 以下']; };
   const W_CR = ['1000mm 以下', '1000–1250mm', '1250mm 及以上'], W_MP = ['2000mm 以下', '2000–2500mm', '2500mm 及以上'];
-  /* 第二维度：[维度名, 分段, 各段占比]。连续型维度只披露到段，不披露原始取值 */
+  /* 第二维度：[维度名, 分段, 各段占比]。连续型维度只披露到段，不披露原始取值。板材的维度名取 DIM_OPT.plateSecond（N-62） */
   const DIM2 = {
-    热轧卷板: ['宽度', ['1250mm 以下', '1250–1500mm', '1500mm 及以上'], [0.34, 0.46, 0.2]], 热轧带钢: ['宽度', ['355mm 以下', '355–600mm', '600mm 及以上'], [0.45, 0.4, 0.15]],
-    普碳中厚板: ['宽度', W_MP, [0.3, 0.5, 0.2]], 低合金中厚板: ['宽度', W_MP, [0.26, 0.5, 0.24]],
-    冷轧卷板: ['宽度', W_CR, [0.3, 0.52, 0.18]], 镀锌板卷: ['宽度', W_CR, [0.36, 0.5, 0.14]], 彩涂板卷: ['宽度', ['1000mm 以下', '1000mm 及以上'], [0.55, 0.45]],
+    热轧卷板: [P2, ['1250mm 以下', '1250–1500mm', '1500mm 及以上'], [0.34, 0.46, 0.2]], 热轧带钢: [P2, ['355mm 以下', '355–600mm', '600mm 及以上'], [0.45, 0.4, 0.15]],
+    普碳中厚板: [P2, W_MP, [0.3, 0.5, 0.2]], 低合金中厚板: [P2, W_MP, [0.26, 0.5, 0.24]],
+    冷轧卷板: [P2, W_CR, [0.3, 0.52, 0.18]], 镀锌板卷: [P2, W_CR, [0.36, 0.5, 0.14]], 彩涂板卷: [P2, ['1000mm 以下', '1000mm 及以上'], [0.55, 0.45]],
     焊管: ['壁厚', WALL, [0.14, 0.4, 0.34, 0.12]], 镀锌管: ['壁厚', WALL, [0.1, 0.42, 0.36, 0.12]],
     无缝管: ['壁厚', ['4mm 以下', '4–8mm', '8–16mm', '16mm 以上'], [0.2, 0.42, 0.28, 0.1]], 方矩管: ['壁厚', ['3.0mm 以下', '3.0–6.0mm', '6.0mm 以上'], [0.42, 0.44, 0.14]],
     'H 型钢': ['负差', NEG, [0.34, 0.36, 0.22, 0.08]], 工字钢: ['公斤', KG_BANDS, [0.3, 0.38, 0.24, 0.08]], 槽钢: ['公斤', KG_BANDS, [0.26, 0.4, 0.26, 0.08]], 角钢: ['公斤', KG_BANDS, [0.28, 0.36, 0.26, 0.1]],
@@ -434,7 +453,12 @@
   /* 某品名的统计维度。
      d1 为第一维度（建材、管材、型材、其他为规格，板材为厚度），fine 为单规格；d2 为第二维度的段（含“未分段”），没有则为 null。
      open：该大类标准化深度达到 L4 后，才按模板维度对上游披露（MD-23）；未达到的先采集、暂不披露。
-     levels：上游可选的披露层级，只沿模板的固定路径由细到粗（PV-83），不提供其他划分方式 */
+     levels：披露层级，只沿模板的固定路径由细到粗（PV-77），不提供其他划分方式。每个层级带 tier：
+       'seg' 属于多维查询的“规格段层级”，'spec' 属于“单规格层级”（UP-105）；cross 表示带第二维度，以交叉表展示。
+       k 的取值：'x' 单规格 × 第二维度段；'spec' 单规格（不分第二维度）；'sx' 规格段 × 第二维度段；'seg' 规格段（不分第二维度）。
+     segLevel：进入规格段层级时默认展示的层级。管材、板材带第二维度（'sx'），其余为 'seg'；没有配置单规格的型材品名以规格段 × 段为最细一层，也是 'sx'。
+     specLevel：单规格层级默认展示的层级，没有配置单规格的品名为 null。defLevel：看板品类结构默认展示的层级。
+     keepWall（PV-106，N-63）：管材先把规格合并到规格段、保留壁厚；此时不提供“规格（不分壁厚）” */
   const dimsOf = (name) => {
     const h = findProd(name);
     if (!h) return null;
@@ -442,11 +466,15 @@
     const d1 = { name: tpl.dims[0].name, segName: tpl.dims[0].name + '段', bands: p.bands, share: p.bandShare, fine };
     const d2 = x ? { name: x[0], segName: x[0] + '段', bands: x[1].concat([UNBANDED]), share: x[2].map((s) => s * (1 - UNBANDED_SH)).concat([UNBANDED_SH]) } : null;
     const rowName = fine ? d1.name : d1.segName;
+    const segX = !!d2 && DIM_OPT.segSecond.indexOf(c.tpl) >= 0, keepWall = !!d2 && !!fine && c.tpl === '管材' && DIM_OPT.pipeRollup === 'keepWall';
     const levels = [];
-    if (d2) levels.push({ k: 'x', t: rowName + ' × ' + d2.segName });
-    if (fine) levels.push({ k: 'spec', t: d1.name + (d2 ? '（不分' + d2.name + '）' : '') });
-    levels.push({ k: 'seg', t: d1.segName + (d2 && !fine ? '（不分' + d2.name + '）' : '') });
-    return { name, cat: c, p, tplKey: c.tpl, tpl, unit: p.unit || c.unit, steel: c.steel !== false, open: c.depth >= 'L4', d1, d2, rowName, levels };
+    if (d2 && fine) levels.push({ k: 'x', t: d1.name + ' × ' + d2.segName, tier: 'spec', cross: true });
+    if (fine && !keepWall) levels.push({ k: 'spec', t: d1.name + (d2 ? '（不分' + d2.name + '）' : ''), tier: 'spec' });
+    if (d2 && (segX || !fine)) levels.push({ k: 'sx', t: d1.segName + ' × ' + d2.segName, tier: 'seg', cross: true });
+    levels.push({ k: 'seg', t: d1.segName + (d2 ? '（不分' + d2.name + '）' : ''), tier: 'seg' });
+    const segLevel = levels.find((l) => l.tier === 'seg').k, sp = levels.find((l) => l.tier === 'spec');
+    return { name, cat: c, p, tplKey: c.tpl, tpl, unit: p.unit || c.unit, steel: c.steel !== false, open: c.depth >= 'L4', d1, d2, rowName, levels, segX, keepWall,
+      segLevel, specLevel: sp ? sp.k : null, defLevel: segX ? segLevel : levels[0].k, combo: DIM_OPT.d2Combo.byCat[c.name] || DIM_OPT.d2Combo.def };
   };
   const dimK = () => (window.STP && window.STP.PV ? window.STP.PV.k : 5);
   const sumOf = (a) => a.reduce((x, y) => x + y, 0);
@@ -469,15 +497,18 @@
     grp.forEach((x) => { x.state = 'merged'; });
     return { rolled: false, other: { v: sumOf(grp.map((x) => x.v)), n: nO, members: grp.map((x) => x.name) } };
   };
-  /* 按模板的固定路径生成披露结果（自细到粗：第一维度 × 第二维度的段 → 第一维度 → 规格段 → 品名）。
-     total、n：该品名在查询范围内的合计与贡献企业数；o.level：请求的层级（'x'、'spec'、'seg'，缺省为最细）；
+  /* 按模板的固定路径生成披露结果。
+     total、n：该品名在查询范围内的合计与贡献企业数；o.level：请求的层级（见 dimsOf 的 levels，缺省为最细；旧的 'x' 在没有单规格的品名上等同 'sx'）；
      o.segW：规格段的拆分权重（缺省为销量占比，库存传库存的占比）；o.nScale：地区、品牌筛选对企业数的缩放；o.seed：区分指标。
-     相同的范围和层级得到相同的划分（PV-87），看板、查询、导出取同一结果 */
+     相同的范围和层级得到相同的划分（PV-87），看板、查询、导出取同一结果。
+     管材的单规格层级（keepWall，PV-106）：“规格 × 壁厚段”格子的父节点是它所在的“规格段 × 壁厚段”格子。
+     先算出上一级的结果，再在每个可见的父格子之下判定各规格：不足的规格与同一规格段、同一壁厚段下最小的可见规格合并，
+     或整组上卷到父格子。结果按规格段分组，组内按壁厚段逐列判定（colwise），不提供“规格（不分壁厚）”的行合计 */
   const dimTree = (name, total, n, o) => {
     o = o || {};
     const d = dimsOf(name), k = o.k || dimK(), keep = o.keep || BAND_VER.keep, sd = o.seed || '';
     if (!d) return null;
-    const level = d.levels.some((l) => l.k === o.level) ? o.level : d.levels[0].k;
+    const lv = d.levels.find((l) => l.k === o.level) || d.levels[0], level = lv.k, cross = !!lv.cross, bySpec = lv.tier === 'spec', colwise = cross && bySpec && d.keepWall;
     const nBase = dimN(name), sc = o.nScale != null ? o.nScale : (nBase ? n / nBase : 1);
     const segTot = split(total, o.segW || d.d1.share);
     const sh0 = d.steel ? d.cat.share * d.p.share : 0;
@@ -490,7 +521,7 @@
     const stat = { cellAll: 0, cellOk: 0, rowAll: 0, rowSplit: 0, rowRolled: 0, specAll: 0, specOk: 0, segAll: d.d1.bands.length, segRolled: 0 };
     const mkRow = (rowName, v, rn, i, len, kind) => {
       const r = { name: rowName, kind, total: v, n: rn, state: 'plain' };
-      if (level === 'x' && d.d2) {
+      if (cross) {
         r.cells = cellsOf(rowName, v, rn, i, len);
         stat.rowAll++; stat.cellAll += r.cells.length; stat.cellOk += r.cells.filter((c) => c.n >= k).length;
         const j = judge(r.cells, rn, k, keep);
@@ -498,15 +529,45 @@
       }
       return r;
     };
-    /* 第一维度到单规格：逐个规格段处理其下的规格 */
     let groups;
     const nSpecAll = d.d1.fine ? sumOf(d.d1.fine.map((f) => f.length)) : 0;
-    if (level !== 'seg' && d.d1.fine) {
+    const specW = (vals) => vals.map((v, j) => (0.55 + (hash(name + v + sd) % 90) / 100) * (1.3 - Math.abs(pos2(j, vals.length) - 0.4)));
+    if (colwise) {
+      const up = dimTree(name, total, n, Object.assign({}, o, { level: 'sx' }));
+      if (up.prodRolled) return Object.assign(up, { level, colwise: true });
+      const nb = d.d2.bands.length;
+      groups = up.groups[0].rows.map((pr) => {
+        if (pr.merged) return { seg: '其他（合并披露）', merged: true, members: pr.members, total: pr.total, n: pr.n, rolled: true, colwise: true };
+        const i = d.d1.bands.indexOf(pr.name), vals = d.d1.fine[i], ws = specW(vals);
+        const g = { seg: pr.name, total: pr.total, n: pr.n, colwise: true, parent: pr, rows: [], others: [], colState: [] };
+        stat.specAll += vals.length;
+        if (pr.state === 'rolled') { g.rolled = true; stat.segRolled++; stat.rowAll += nb; stat.rowRolled += nb; stat.cellAll += vals.length * nb; return g; }
+        g.rows = vals.map((v) => ({ name: v, kind: 'spec', cells: [] }));
+        d.d2.bands.forEach((b, j) => {
+          const pc = pr.cells[j], tilt = (a) => 0.45 + 1.3 * (1 - Math.abs(pos2(a, vals.length) - pos2(j, nb - 1)));
+          const vs = split(pc.v, vals.map((v, a) => ws[a] * (0.5 + (hash(name + v + b + sd + 'c') % 100) / 100) * (b === UNBANDED ? 1 : tilt(a))));
+          const items = vals.map((v, a) => ({ name: v, v: vs[a], n: vs[a] > 0 && pc.v > 0 ? Math.min(pc.n, Math.max(1, Math.round(pc.n * Math.pow(vs[a] / pc.v, 0.4)))) : 0, state: 'up' }));
+          stat.rowAll++; stat.cellAll += items.length;
+          if (pc.state !== 'ok') { g.colState[j] = 'up'; g.others[j] = null; stat.rowRolled++; }
+          else {
+            const jr = judge(items, pc.n, k, keep);
+            if (jr.rolled) { items.forEach((c) => { c.state = 'up'; }); g.colState[j] = 'rolled'; g.others[j] = null; stat.rowRolled++; }
+            else { g.colState[j] = jr.other ? 'merged' : 'ok'; g.others[j] = jr.other; stat.rowSplit++; stat.cellOk += items.filter((c) => c.state === 'ok').length; }
+          }
+          items.forEach((c, a) => g.rows[a].cells.push(c));
+        });
+        stat.specOk += g.rows.filter((r) => r.cells.some((c) => c.state === 'ok')).length;
+        return g;
+      });
+      return { d, unit: d.unit, level, levelName: lv.t, upName: d.levels.find((l) => l.k === 'sx').t, colwise: true, groups, total, n, prodRolled: false, cols: d.d2.bands,
+        hasOther: groups.some((g) => g.parent && g.parent.other), anyRolled: groups.some((g) => g.rolled || g.colState.some((s) => s !== 'ok')), stat };
+    }
+    if (bySpec) {
+      /* 第一维度到单规格：逐个规格段处理其下的规格 */
       let idx = 0;
       groups = d.d1.bands.map((b, i) => {
         const vals = d.d1.fine[i];
-        const ws = vals.map((v, j) => (0.55 + (hash(name + v + sd) % 90) / 100) * (1.3 - Math.abs(pos2(j, vals.length) - 0.4)));
-        const vs = split(segTot[i], ws);
+        const vs = split(segTot[i], specW(vals));
         const specs = vals.map((v, j) => ({ name: v, v: vs[j], n: Math.min(segN[i], Math.max(1, Math.round(segN[i] * Math.pow(vs[j] / Math.max(1, segTot[i]), 0.36)))), at: idx + j }));
         idx += vals.length;
         stat.specAll += specs.length; stat.specOk += specs.filter((s) => s.n >= k).length;
@@ -514,7 +575,7 @@
         const j = segN[i] < k ? { rolled: true } : judge(specs, segN[i], k, keep);
         if (j.rolled) { g.rolled = true; stat.segRolled++; return g; }
         g.rows = specs.filter((s) => s.state === 'ok').map((s) => mkRow(s.name, s.v, s.n, s.at, nSpecAll, 'spec'));
-        if (j.other) g.rows.push({ name: '其他（合并披露）', kind: 'other', merged: true, members: j.other.members, total: j.other.v, n: j.other.n, state: level === 'x' && d.d2 ? 'rolled' : 'plain' });
+        if (j.other) g.rows.push({ name: '其他（合并披露）', kind: 'other', merged: true, members: j.other.members, total: j.other.v, n: j.other.n, state: cross ? 'rolled' : 'plain' });
         return g;
       });
     } else {
@@ -523,13 +584,13 @@
       const j = judge(segs, n, k, keep);
       if (j.rolled) return { d, unit: d.unit, level, levelName: '品名', prodRolled: true, groups: [], total, n, cols: [], stat: Object.assign(stat, { segRolled: stat.segAll }) };
       const rows = segs.filter((s) => s.state === 'ok').map((s) => mkRow(s.name, s.v, s.n, s.i, segs.length, 'seg'));
-      if (j.other) rows.push({ name: '其他（合并披露）', kind: 'other', merged: true, members: j.other.members, total: j.other.v, n: j.other.n, state: level === 'x' && d.d2 ? 'rolled' : 'plain' });
+      if (j.other) rows.push({ name: '其他（合并披露）', kind: 'other', merged: true, members: j.other.members, total: j.other.v, n: j.other.n, state: cross ? 'rolled' : 'plain' });
       groups = [{ seg: null, total, n, rows }];
     }
     /* 单规格层级下，规格段本身不满足门槛的，整段上卷；全部规格段都上卷时，结果只到规格段 */
     return {
-      d, unit: d.unit, level, levelName: d.levels.find((l) => l.k === level).t, groups, total, n, prodRolled: false,
-      cols: level === 'x' && d.d2 ? d.d2.bands : [], hasOther: groups.some((g) => g.rows.some((r) => r.other)),
+      d, unit: d.unit, level, levelName: lv.t, groups, total, n, prodRolled: false,
+      cols: cross ? d.d2.bands : [], hasOther: groups.some((g) => g.rows.some((r) => r.other)),
       anyRolled: groups.some((g) => g.rolled || g.rows.some((r) => r.state === 'rolled' || r.merged)),
       stat,
     };
@@ -538,17 +599,65 @@
   const dimFlat = (t) => {
     const out = [], d = t.d;
     if (t.prodRolled) return [{ seg: '—', name: d.name, d2: '—', v: t.total, n: t.n, lv: '已上卷（品名）' }];
+    const segPlain = d.levels.find((l) => l.k === 'seg').t;
     t.groups.forEach((g) => {
-      if (g.rolled) { out.push({ seg: g.seg, name: '—', d2: '—', v: g.total, n: g.n, lv: '已上卷（' + d.d1.segName + '）' }); return; }
+      if (g.rolled) { out.push({ seg: g.seg, name: '—', d2: '—', v: g.total, n: g.n, lv: g.merged ? '合并披露（' + segPlain + '）' : '已上卷（' + segPlain + '）' }); return; }
+      if (g.colwise) {
+        t.cols.forEach((b, j) => {
+          const pc = g.parent.cells[j];
+          if (g.colState[j] === 'rolled') out.push({ seg: g.seg, name: '—', d2: b, v: pc.v, n: pc.n, lv: '已上卷（' + t.upName + '）' });
+          else if (g.colState[j] !== 'up') {
+            g.rows.forEach((r) => { const c = r.cells[j]; if (c.state === 'ok') out.push({ seg: g.seg, name: r.name, d2: b, v: c.v, n: c.n, lv: '单规格' }); });
+            if (g.others[j]) out.push({ seg: g.seg, name: '其他（合并披露）', d2: b, v: g.others[j].v, n: g.others[j].n, lv: '合并披露' });
+          }
+        });
+        if (g.parent.other) out.push({ seg: g.seg, name: '—', d2: '其他（合并披露）', v: g.parent.other.v, n: g.parent.other.n, lv: '已上卷（' + t.upName + '，合并披露）' });
+        return;
+      }
       g.rows.forEach((r) => {
-        const base = { seg: g.seg || (r.kind === 'seg' ? r.name : '—'), name: r.kind === 'seg' ? '—' : r.name };
+        const base = { seg: g.seg || (r.kind === 'seg' ? r.name : r.merged ? r.name : '—'), name: r.kind === 'seg' || (r.merged && !g.seg) ? '—' : r.name };
         if (r.state === 'cells') {
           r.cells.filter((c) => c.state === 'ok').forEach((c) => out.push(Object.assign({ d2: c.name, v: c.v, n: c.n, lv: '段' }, base)));
           if (r.other) out.push(Object.assign({ d2: '其他（合并披露）', v: r.other.v, n: r.other.n, lv: '段（合并披露）' }, base));
-        } else out.push(Object.assign({ d2: d.d2 && t.level === 'x' ? '—' : '', v: r.total, n: r.n, lv: r.merged ? '合并披露' : r.state === 'rolled' ? '已上卷（' + (r.kind === 'seg' ? d.d1.segName : d.d1.name) + '）' : r.kind === 'seg' ? '段' : '单规格' }, base));
+        } else out.push(Object.assign({ d2: d.d2 && t.cols.length ? '—' : '', v: r.total, n: r.n, lv: r.merged ? '合并披露' : r.state === 'rolled' ? '已上卷（' + (r.kind === 'seg' ? d.d1.segName : d.d1.name) + '）' : r.kind === 'seg' ? '段' : '单规格' }, base));
       });
     });
     return out;
+  };
+  /* 品类维度条件与其他行维度组合时，某一行的取值（PV-107）：
+     该行范围内，所选成员在路径上各自可见的格子之和；被屏蔽、被合并或已上卷的成员不计入。
+     只选第二维度的成员时，按各规格段下可见的格子求和，不另算“品名 × 第二维度段”。所选成员恰好是父节点的全部成员时，按父节点整体计算。
+     segs、d2s：所选的规格段和第二维度段（空数组表示不限）。返回 v 合计、n 贡献企业数的估计（只用于区间展示）、
+     picked 所选成员数、miss 因样本不足未计入的成员数；whole 表示没有实际收窄 */
+  const dimPick = (name, total, n, o) => {
+    o = o || {};
+    const d = dimsOf(name), segs = o.segs || [], d2s = o.d2s || [];
+    const allSeg = !segs.length || d.d1.bands.every((b) => segs.indexOf(b) >= 0);
+    const allD2 = !d.d2 || !d2s.length || d.d2.bands.every((b) => d2s.indexOf(b) >= 0);
+    if (allSeg && allD2) return { v: total, n, picked: 0, miss: 0, whole: true };
+    const selSeg = allSeg ? d.d1.bands : d.d1.bands.filter((b) => segs.indexOf(b) >= 0), cells = [];
+    let picked = 0, miss = 0;
+    if (allD2) {
+      const t = dimTree(name, total, n, Object.assign({}, o, { level: 'seg' }));
+      picked = selSeg.length;
+      selSeg.forEach((b) => { const r = t.prodRolled ? null : t.groups[0].rows.find((x) => x.name === b); if (r) cells.push({ v: r.total, n: r.n }); else miss++; });
+    } else {
+      const sel2 = d.d2.bands.filter((b) => d2s.indexOf(b) >= 0), xl = d.levels.find((l) => l.cross && l.tier === 'seg') || d.levels.find((l) => l.cross);
+      const t = dimTree(name, total, n, Object.assign({}, o, { level: xl.k }));
+      selSeg.forEach((b) => {
+        /* 规格段 × 第二维度段的可见格子。型材配置了单规格的品名，第二维度在单规格一级：成员是该规格段下的各规格 × 所选段，
+           整行上卷、被合并的规格和不可见的格子都算未计入；规格段整段上卷时按所选段数计 */
+        const rows = t.prodRolled ? [] : xl.tier === 'seg' ? t.groups[0].rows.filter((x) => x.name === b) : (t.groups.find((g) => g.seg === b && !g.rolled) || { rows: [] }).rows;
+        if (!rows.length) { picked += sel2.length; miss += sel2.length; return; }
+        rows.forEach((r) => sel2.forEach((b2) => {
+          const c = r.state === 'cells' ? r.cells.find((x) => x.name === b2) : null;
+          picked++;
+          if (c && c.state === 'ok') cells.push({ v: c.v, n: c.n }); else miss++;
+        }));
+      });
+    }
+    const ns = cells.map((c) => c.n), mx = ns.length ? Math.max.apply(null, ns) : 0;
+    return { v: sumOf(cells.map((c) => c.v)), n: cells.length ? Math.min(n, mx + Math.round(0.35 * (sumOf(ns) - mx))) : 0, picked, miss, whole: false };
   };
   /* 非钢材的每日销量、日末库存：沿用钢材每日序列的形状，按各品名“昨日”数值等比换算，看板、查询、导出取到同一个数 */
   const nsBetween = (name, from, to) => { const p = findProd(name).p; return Math.round(salesBetween(KPI, 'real', from, to) * p.sales / KPI.sales); };
@@ -564,8 +673,8 @@
        实际数据 = 经上传条件过滤后入库、通过字段校验且量不为零的记录（PV-93）；库存快照或销售数据任一即可（PV-94），当天没有销售的报了库存快照就算。
        N-53 已确认（2026-11-25）：库存快照或销售数据任一即可，库存快照不是必要条件。
        N-54 已确认（2026-11-25）：常年不落库的企业由企业申报、运营核实后标记为“无库存经营”，达标显示“不适用”，见下方 noStock。
-       评定只用“有或没有”，不使用任何数量；钢厂端不显示单家的及时率数值。
-       rateMinN（示例参数）：参与评定的协议户不足这个户数时，钢厂端不显示汇总达标率，只显示户数（PV-97）。
+       评定只用“有或没有”，不使用任何数量；厂家端不显示单家的及时率数值。
+       rateMinN（示例参数）：参与评定的协议户不足这个户数时，厂家端不显示汇总达标率，只显示户数（PV-97）。
        参数取需求文档 V0.6 第 9.10 末“达标参数的建议取值范围”的起步建议：应报送日为工作日（周一至周五，剔除法定节假日，含调休上班日；日历由运营维护，可设免评日）、
        及时率 80%、最长连续缺报 3 个应报送日、周期内最少 10 个应报送日、次月 5 日发布、汇总达标率最小户数 5。仍是示例参数（N-34 待定）。
        截止时点文档建议与每日聚合的数据截取时点一致（约次日 06:00），原型沿用次日 08:00，在建议范围 06:00 至 10:00 之内。
@@ -618,7 +727,7 @@
         '标记生效后，与贵企业有带动关系的钢厂（当前 {N} 家，以及今后与贵企业建立带动关系的钢厂）会在其协议户列表中看到贵企业带有“无库存经营”标签，报送达标一栏显示“不适用”。',
         '钢厂仍然看不到贵企业的销量、库存、价格等任何数据内容，也看不到贵企业哪一天报送了数据。',
         '标记期间贵企业不参加报送达标评定，不会被评为达标或未达标。贵企业与钢厂在代理协议中关于数据报送的约定，由双方自行处理，平台不参与。',
-        '标记期间贵企业仍应照常上传销售数据。连续多日没有任何数据时，钢厂端会显示“报送中断”。',
+        '标记期间贵企业仍应照常上传销售数据。连续多日没有任何数据时，钢厂会看到贵企业的状态为“报送中断”。',
         '贵企业开始持有库存后，应及时撤销本标记并上传库存快照。',
         '平台会核实申报内容。标记期间如收到库存数据，或发现情况与申报不符，平台将复核并可能撤销标记；申报不实被撤销的，一段时间内不能再次申报。',
         '贵企业可随时撤销本标记，撤销自下一个达标周期起生效。标记有有效期，到期前需要确认情况未变。',
@@ -652,5 +761,5 @@
   REF.dy.seat.rewardFree = REF.dy.reward.quota - REF.dy.reward.used;
   REF.dy.seat.needBuy = REF.dy.seat.listedOut - REF.dy.seat.rewardFree;
 
-  window.M = { REF, judge, DIM_TPL, CAT_TPL, BAND_VER, DIM2, FINE, UNBANDED, KG_BANDS, SEC_DIM2, THEO_KG, kgRange, nonSteel, allCats, findProd, unitOf, dimsOf, dimTree, dimFlat, dimN, nsBetween, nsStockOn, nsKpi, TODAY, DATA_DATE, rngOf, hash, split, split2, stockTree, salesTree, brandStock, brandN, BRAND_SH, BRAND_F, yoyOn, yoyBetween, priceOf, priceRow, priceTrail, brandOff, specSales, matShare, provShares, DEST_COVER, daily, salesOn, salesBetween, stockOn, trendSeries, kpiOf, ymd, dayChg, periodChg, priceSample, priceCell, productOf, nOf, nReg, categories, provinces, allProvinceNames, POOL, KPI, BRAND, dailySeries, stockSeries, enterprises, SCALE, MILLS, CAT_ABBR, PRICING, tierOf };
+  window.M = { REF, judge, DIM_OPT, SEG_TIER_TEXT, dimPick, DIM_TPL, CAT_TPL, BAND_VER, DIM2, FINE, UNBANDED, KG_BANDS, SEC_DIM2, THEO_KG, kgRange, nonSteel, allCats, findProd, unitOf, dimsOf, dimTree, dimFlat, dimN, nsBetween, nsStockOn, nsKpi, TODAY, DATA_DATE, rngOf, hash, split, split2, stockTree, salesTree, brandStock, brandN, BRAND_SH, BRAND_F, yoyOn, yoyBetween, priceOf, priceRow, priceTrail, brandOff, specSales, matShare, provShares, DEST_COVER, daily, salesOn, salesBetween, stockOn, trendSeries, kpiOf, ymd, dayChg, periodChg, priceSample, priceCell, productOf, nOf, nReg, categories, provinces, allProvinceNames, POOL, KPI, BRAND, dailySeries, stockSeries, enterprises, SCALE, MILLS, CAT_ABBR, PRICING, tierOf };
 })();

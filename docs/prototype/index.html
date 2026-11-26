@@ -51,7 +51,7 @@ body { background: #f3f5f8; }
 <body>
 <div class="portal-hero">
   <div class="portal-wrap">
-    <span class="ver">高保真原型 · 对应需求文档 V0.6 · 2026-11-25</span>
+    <span class="ver">高保真原型 · 对应需求文档 V0.7 · 2026-11-26</span>
     <h1>钢贸上下游数据平台</h1>
     <p>货袋子平台的数据板块：下游钢贸企业通过 ERP 接口按自己设定的条件上传进销存数据，平台做清洗、标准化与聚合脱敏，上游钢厂按“数据池内的下游企业数”付费，只能看到聚合后的销量与库存。本原型覆盖三个端的主流程，全部为静态页面，可离线打开。</p>
     <div class="facts">
@@ -63,7 +63,7 @@ body { background: #f3f5f8; }
 <div class="portal-wrap">
   <div class="portal-cards">
     <div class="portal-card">
-      <h2><span class="ic" style="background:#409eff">钢</span>上游钢厂端</h2>
+      <h2><span class="ic" style="background:#409eff">厂</span>上游厂家端</h2>
       <div class="who">演示身份：东岳钢铁集团有限公司 · 周立明（企业管理员）</div>
       <ul>
         <li>聚合看板、多维查询、导出中心（筛选项和表格列随品类变化）</li>
@@ -74,7 +74,7 @@ body { background: #f3f5f8; }
         <li>模拟数据演示看板</li>
       </ul>
       <div class="flow">主流程：<a data-p href="upstream/demo.html">演示看板</a> → <a data-p href="upstream/directory.html">选购企业</a> → <a data-p href="upstream/quota-package.html">购买名额包</a> → <a data-p href="upstream/orders.html">订单</a> → <a data-p href="upstream/pool.html">数据池名单</a> → <a data-p href="upstream/dashboard.html">看板</a> → <a data-p href="upstream/query.html">查询</a> → <a data-p href="upstream/export.html">导出</a> → <a data-p href="upstream/dealer-invite.html">邀请协议户</a></div>
-      <a class="enter" data-p style="background:#409eff" href="upstream/dashboard.html">进入上游钢厂端</a>
+      <a class="enter" data-p style="background:#409eff" href="upstream/dashboard.html">进入上游厂家端</a>
     </div>
     <div class="portal-card">
       <h2><span class="ic" style="background:#18a058">贸</span>下游钢贸端</h2>
@@ -109,7 +109,7 @@ body { background: #f3f5f8; }
     <div class="sw-grid">
       <div class="sw">
         <h4>上游价格闸口 <span class="st" id="st-gate"></span></h4>
-        <p>上游侧的价格功能由平台法务闸口统一控制，<b>默认关闭</b>。关闭时上游菜单没有“量价视图”，看板、查询、导出都不出现价格；开放后出现入口，首次进入需确认使用条款。价格只展示加权均价、涨跌和覆盖率区间。</p>
+        <p>上游侧的价格功能由平台法务闸口统一控制，<b>默认关闭</b>。关闭时上游厂家端菜单没有“量价视图”，看板、查询、导出都不出现价格；开放后出现入口，首次进入需确认使用条款。价格只展示加权均价、涨跌和覆盖率区间。</p>
         <span class="seg" id="seg-gate"><button data-v="closed">未开放（默认）</button><button data-v="open">已开放</button></span>
         <a class="lk" data-p href="upstream/price.html">打开量价视图</a>
         <a class="lk" data-p href="admin/price-control.html">运营后台闸口流程</a>
@@ -129,19 +129,19 @@ body { background: #f3f5f8; }
         <a class="lk" data-p href="downstream/daily-summary.html">每日上传汇总</a>
       </div>
     </div>
-    <div class="small muted" style="margin-top:8px">两个开关也可以在对应页面内切换（上游端顶栏、运营后台“价格数据管控”、下游“上传设置”）。状态保存在浏览器本地并随链接传递，跨页面保持。</div>
+    <div class="small muted" style="margin-top:8px">两个开关也可以在对应页面内切换（上游厂家端顶栏、运营后台“价格数据管控”、下游“上传设置”）。状态保存在浏览器本地并随链接传递，跨页面保持。</div>
   </div>
 
   <div class="portal-section">
     <h3>全部页面</h3>
     <div class="pl">
-      <div class="hd"><i style="background:#409eff"></i>上游钢厂端<small>10 个页面 · 目录 upstream/</small></div>
+      <div class="hd"><i style="background:#409eff"></i>上游厂家端<small>10 个页面 · 目录 upstream/</small></div>
       <table>
         <tr><th>分组</th><th>页面</th><th>内容</th><th>文件</th></tr>
         <tr><td class="g" rowspan="4">数据洞察</td><td class="n"><a data-p href="upstream/dashboard.html">聚合看板</a></td><td>概览指标、地区地图（省到地级市下钻）、销量与库存趋势、品类结构、本厂品牌视图；含“数据池低于最小规模”空状态</td><td class="f">dashboard.html</td></tr>
-        <tr><td class="n"><a data-p href="upstream/query.html">多维查询</a></td><td>地区、品类、规格、品牌、时间自由组合；合并披露、追加屏蔽、多选提示；各品类可查粒度；交叉表与图表视图。V0.4：按品类统计维度出表（管材规格 × 壁厚段、板材厚度段 × 宽度段等），型材按品名固定为公斤段或负差段，格子不足自动上卷；钢材按吨、非钢材按数量分表</td><td class="f">query.html</td></tr>
-        <tr><td class="n"><a data-p href="upstream/price.html">量价视图</a><span class="tag-new">V0.2</span><span class="tag-gate">受闸口控制</span></td><td>“未开放”与“已开放”两种状态；加权均价、涨跌、覆盖率区间；量价联动、品牌价差、分地区量价；首次进入确认条款</td><td class="f">price.html</td></tr>
-        <tr><td class="n"><a data-p href="upstream/export.html">导出中心</a></td><td>导出任务、定时发送、配额与水印、导出规则说明；导出文件带维度列、单位列，钢材与非钢材分工作表</td><td class="f">export.html</td></tr>
+        <tr><td class="n"><a data-p href="upstream/query.html">多维查询</a></td><td>地区、品类、规格、品牌、时间自由组合；合并披露、追加屏蔽、多选提示；各品类可查粒度；交叉表与图表视图。V0.4：按品类的统计维度模板出表，型材按品名固定为公斤段或负差段，格子不足自动上卷；钢材按吨、非钢材按数量分表。V0.7：品类下钻为一条路径（大类 → 品名 → 规格段层级 → 单规格层级），规格段层级带出第二维度（管材规格段 × 壁厚段、板材厚度段 × 宽度段，建材和其他品类只有规格段，型材暂不变）；规格段、壁厚段等条件只能按段多选，在任何行维度下都生效，当前条件显示在结果区上方；不提供按第二维度的列合计</td><td class="f">query.html</td></tr>
+        <tr><td class="n"><a data-p href="upstream/price.html">量价视图</a><span class="tag-new">V0.2</span><span class="tag-gate">受闸口控制</span></td><td>“未开放”与“已开放”两种状态；加权均价、涨跌、覆盖率区间；量价联动、品牌价差、分地区量价；首次进入确认条款。V0.7：按壁厚段、宽度段的均价只在选定规格段后提供</td><td class="f">price.html</td></tr>
+        <tr><td class="n"><a data-p href="upstream/export.html">导出中心</a></td><td>导出任务、定时发送、配额与水印、导出规则说明；导出文件带维度列、单位列，钢材与非钢材分工作表；V0.7：品类维度条件写入查询条件说明</td><td class="f">export.html</td></tr>
         <tr><td class="g" rowspan="3">数据池与选购</td><td class="n"><a data-p href="upstream/pool.html">数据来源企业名单</a></td><td>池内企业名单与名额状态（只到数据池级别，不含任何单家数据）、调整记录、冻结与替换</td><td class="f">pool.html</td></tr>
         <tr><td class="n"><a data-p href="upstream/directory.html">企业名录选购</a></td><td>按地区、品类、规模、质量筛选下游企业，实名与匿名展示，加入清单并计价</td><td class="f">directory.html</td></tr>
         <tr><td class="n"><a data-p href="upstream/quota-package.html">批量购买名额包</a></td><td>阶梯价、订阅周期、下单与支付步骤</td><td class="f">quota-package.html</td></tr>

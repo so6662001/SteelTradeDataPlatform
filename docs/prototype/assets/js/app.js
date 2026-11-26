@@ -82,7 +82,7 @@
   /* ------------------------------------------------------------------ 三端菜单 */
   const PORTALS = {
     upstream: {
-      name: '上游钢厂端', color: '#409eff', org: '东岳钢铁集团有限公司', user: '周立明', role: '企业管理员', home: 'dashboard.html',
+      name: '上游厂家端', color: '#409eff', org: '东岳钢铁集团有限公司', user: '周立明', role: '企业管理员', home: 'dashboard.html',
       menu: [
         { group: '数据洞察', items: [
           { key: 'dashboard', title: '聚合看板', icon: 'DataBoard' },
@@ -276,35 +276,95 @@
         <span class="cover-tag">覆盖率 {{ b }}</span>
       </el-tooltip>`,
   };
-  /* 分品类统计维度表：按统计维度模板的固定路径展示（第一维度 × 第二维度的段 → 第一维度 → 规格段 → 品名）。
-     披露与上卷结果来自 M.dimTree，看板、查询、导出预览与运营后台共用，同一范围、同一层级只有一种划分 */
+  /* 分品类统计维度表：按统计维度模板的固定路径展示。
+     披露与上卷结果来自 M.dimTree，看板、查询、导出预览与运营后台共用，同一范围、同一层级只有一种划分。
+     segOnly：只看某一个规格段之下的单规格（多维查询从规格段层级下钻到单规格层级时使用）；drill：规格段可点击下钻，触发 drill 事件。
+     管材的“规格 × 壁厚段”（PV-106）按规格段分组、按壁厚段逐列判定：每一列的父节点是本规格段的“规格段 × 壁厚段”格子，
+     样本不足的列整列上卷到“小计”行；不提供“规格（不分壁厚）”的行合计，也不提供按壁厚段的列合计 */
   const DimTable = {
     props: { name: String, total: { type: Number, default: 0 }, n: { type: Number, default: 0 }, metric: { type: String, default: '销量' }, level: { type: String, default: '' }, seed: { type: String, default: '' },
-      segW: Array, nScale: Number, segFilter: { type: Array, default: () => [] }, d2Filter: { type: Array, default: () => [] }, note: { type: Boolean, default: true }, compact: Boolean },
+      segW: Array, nScale: Number, segFilter: { type: Array, default: () => [] }, d2Filter: { type: Array, default: () => [] }, note: { type: Boolean, default: true }, compact: Boolean,
+      segOnly: { type: String, default: '' }, drill: Boolean },
+    emits: ['drill'],
     computed: {
       d() { return M.dimsOf(this.name); },
       t() { return M.dimTree(this.name, this.total, this.n, { level: this.level, seed: this.seed, segW: this.segW, nScale: this.nScale }); },
       grouped() { return this.t.groups.some((g) => g.seg); },
       cols() { return this.t.cols.map((c, i) => ({ name: c, label: c, i })).filter((c) => !this.d2Filter.length || this.d2Filter.indexOf(c.name) >= 0); },
-      groups() { return this.t.groups.filter((g) => !g.seg || !this.segFilter.length || this.segFilter.indexOf(g.seg) >= 0).map((g) => Object.assign({}, g, { rows: g.rows.filter((r) => g.seg || r.kind !== 'seg' || !this.segFilter.length || this.segFilter.indexOf(r.name) >= 0) })); },
-      span() { return this.cols.length + (this.t.hasOther ? 1 : 0); },
+      groups() {
+        const keep = (nm) => (this.segOnly ? nm === this.segOnly : !this.segFilter.length || this.segFilter.indexOf(nm) >= 0);
+        return this.t.groups.filter((g) => !g.seg || keep(g.seg)).map((g) => Object.assign({}, g, { rows: (g.rows || []).filter((r) => g.seg || r.kind !== 'seg' || keep(r.name)) }));
+      },
+      /* “其他（合并披露）”列：只看一个规格段时，只在该规格段确有合并项时出现 */
+      otherCol() { return this.t.colwise ? this.groups.some((g) => g.parent && g.parent.other) : !!this.t.hasOther; },
+      span() { return this.cols.length + (this.otherCol ? 1 : 0); },
       d2Name() { return this.d.d2 ? this.d.d2.name : ''; },
       pathText() { return this.d.tpl.path.join(' → '); },
       filtered() { return this.segFilter.length > 0 || this.d2Filter.length > 0; },
+      segPlain() { return this.d.levels.find((l) => l.k === 'seg').t; },
+      canDrill() { return this.drill && !!this.d.specLevel; },
+      /* 只看一个规格段时，合计行给出该规格段的合计 */
+      foot() { const g = this.segOnly ? this.t.groups.find((x) => x.seg === this.segOnly) : null; return g ? { label: g.seg + ' 合计', v: g.total, n: g.n, seg: true } : { label: this.name + '合计', v: this.t.total, n: this.t.n }; },
     },
     methods: {
       fmt, band,
-      lvOf(r) { return r.merged ? '合并披露' : r.state === 'cells' ? this.t.levelName.replace(' × ', '×') : r.kind === 'seg' ? this.d.d1.segName : this.d.d1.name; },
       memberText(ms) { return ms.join('、'); },
+      hasOthers(g) { return (g.others || []).some((x) => x); },
     },
     template: `<div class="dim-table">
-      <div class="dim-cap">指标：<b>{{ metric }}</b>　单位：<span class="unit-pill" :class="{ns: !d.steel}">{{ t.unit }}</span>　披露层级：<b>{{ t.prodRolled ? '品名' : t.levelName }}</b></div>
-      <table class="plain-table cross" :class="{compact}">
+      <div class="dim-cap">指标：<b>{{ metric }}</b>　单位：<span class="unit-pill" :class="{ns: !d.steel}">{{ t.unit }}</span>　披露层级：<b>{{ t.prodRolled ? '品名' : t.levelName }}</b><template v-if="segOnly">　范围：<b>{{ segOnly }}</b></template></div>
+      <table v-if="t.colwise && !t.prodRolled" class="plain-table cross" :class="{compact}">
+        <thead><tr>
+          <th v-if="!segOnly">{{ d.d1.segName }}</th><th>{{ d.d1.name }}</th>
+          <th v-for="c in cols" :key="c.name" class="r">{{ c.label }}</th>
+          <th v-if="otherCol" class="r"><el-tooltip placement="top" :content="'同一' + d.d1.segName + '下不满足披露条件的' + d2Name + '段，与最小的可见段合并为一项披露'"><span>其他<br>（合并披露）</span></el-tooltip></th>
+          <th class="r nowrap">{{ d.d1.segName }}合计</th>
+          <th class="c">贡献企业数</th>
+        </tr></thead>
+        <tbody>
+          <template v-for="g in groups" :key="g.seg">
+            <tr v-if="g.rolled" class="roll-row">
+              <td v-if="!segOnly" class="nowrap seg-cell"><template v-if="g.merged"><el-tooltip placement="top" :content="'合并成员：' + g.members.join('、')"><span>其他<span class="merged-row-tag">合并披露</span></span></el-tooltip></template><template v-else>{{ g.seg }}</template></td>
+              <td :colspan="1 + span" class="roll-cell"><el-tooltip placement="top" content="样本不足，已合并到上一级"><span><el-icon><Top /></el-icon>{{ segPlain }}<span class="roll-tag">已上卷</span></span></el-tooltip></td>
+              <td class="r"><b class="num">{{ fmt(g.total) }}</b></td><td class="c"><contrib-tag :n="g.n" /></td>
+            </tr>
+            <template v-else>
+              <tr v-for="(r, ri) in g.rows" :key="g.seg + r.name">
+                <td v-if="ri === 0 && !segOnly" :rowspan="g.rows.length + (hasOthers(g) ? 2 : 1)" class="nowrap seg-cell">{{ g.seg }}</td>
+                <td class="nowrap">{{ r.name }}</td>
+                <td v-for="c in cols" :key="c.name" class="r">
+                  <el-tooltip v-if="r.cells[c.i].state === 'ok'" placement="top" :content="'贡献企业数：' + band(r.cells[c.i].n) + ' 家'"><span class="num">{{ fmt(r.cells[c.i].v) }}</span></el-tooltip>
+                  <el-tooltip v-else-if="r.cells[c.i].state === 'merged'" placement="top" content="已并入本规格段、本列的“其他（合并披露）”"><span class="merge-mark">已合并</span></el-tooltip>
+                  <el-tooltip v-else placement="top" :content="'这一列样本不足，已上卷到本规格段的“' + t.upName + '”，见小计行'"><span class="up-mark"><el-icon><Top /></el-icon></span></el-tooltip>
+                </td>
+                <td v-if="otherCol" class="r"><span class="muted">—</span></td>
+                <td v-if="ri === 0" :rowspan="g.rows.length + (hasOthers(g) ? 1 : 0)" colspan="2" class="c na-cell">不提供<br>“{{ d.d1.name }}（不分{{ d2Name }}）”</td>
+              </tr>
+              <tr v-if="hasOthers(g)" class="merged">
+                <td class="nowrap"><span>其他<span class="merged-row-tag">合并披露</span></span></td>
+                <td v-for="c in cols" :key="c.name" class="r"><el-tooltip v-if="g.others[c.i]" placement="top" :content="'合并成员：' + memberText(g.others[c.i].members) + '；贡献企业数：' + band(g.others[c.i].n) + ' 家'"><span class="num">{{ fmt(g.others[c.i].v) }}</span></el-tooltip><span v-else class="muted">—</span></td>
+                <td v-if="otherCol" class="r"><span class="muted">—</span></td>
+              </tr>
+              <tr class="sub-row">
+                <td class="nowrap"><b>{{ segOnly ? g.seg + ' ' : '' }}小计</b><div class="small muted">{{ t.upName }}</div></td>
+                <td v-for="c in cols" :key="c.name" class="r">
+                  <template v-if="g.parent.cells[c.i].state === 'ok'"><el-tooltip placement="top" :content="(g.colState[c.i] === 'rolled' ? '本列的各规格样本不足，已上卷到这一格；' : '') + '贡献企业数：' + band(g.parent.cells[c.i].n) + ' 家'"><span><b class="num">{{ fmt(g.parent.cells[c.i].v) }}</b><span v-if="g.colState[c.i] === 'rolled'" class="roll-tag">已上卷</span></span></el-tooltip></template>
+                  <el-tooltip v-else placement="top" content="已并入本行的“其他（合并披露）”"><span class="merge-mark">已合并</span></el-tooltip>
+                </td>
+                <td v-if="otherCol" class="r"><el-tooltip v-if="g.parent.other" placement="top" :content="'合并成员：' + memberText(g.parent.other.members) + '；贡献企业数：' + band(g.parent.other.n) + ' 家'"><span class="num">{{ fmt(g.parent.other.v) }}</span></el-tooltip><span v-else class="muted">—</span></td>
+                <td class="r"><b class="num">{{ fmt(g.total) }}</b></td><td class="c"><contrib-tag :n="g.n" /></td>
+              </tr>
+            </template>
+          </template>
+          <tr v-if="!segOnly" class="total"><td :colspan="2 + span">{{ name }}合计<span v-if="filtered" class="muted small">（全部{{ d.d1.name }}、全部{{ d2Name }}，不随筛选变化）</span></td><td class="r"><b class="num">{{ fmt(t.total) }}</b></td><td class="c"><contrib-tag :n="t.n" /></td></tr>
+        </tbody>
+      </table>
+      <table v-else class="plain-table cross" :class="{compact}">
         <thead><tr>
           <th v-if="grouped">{{ d.d1.segName }}</th>
           <th>{{ grouped ? d.d1.name : d.d1.segName }}</th>
           <th v-for="c in cols" :key="c.name" class="r">{{ c.label }}</th>
-          <th v-if="t.cols.length && t.hasOther" class="r"><el-tooltip placement="top" :content="'同一' + d.rowName + '下不满足披露条件的' + d2Name + '段，与最小的可见段合并为一项披露'"><span>其他<br>（合并披露）</span></el-tooltip></th>
+          <th v-if="t.cols.length && otherCol" class="r"><el-tooltip placement="top" :content="'同一' + (grouped ? d.d1.name : d.d1.segName) + '下不满足披露条件的' + d2Name + '段，与最小的可见段合并为一项披露'"><span>其他<br>（合并披露）</span></el-tooltip></th>
           <th class="r nowrap">{{ t.cols.length ? (grouped ? d.d1.name : d.d1.segName) + '合计' : metric }}（{{ t.unit }}）</th>
           <th v-if="!t.cols.length" class="r">占比</th>
           <th class="c">贡献企业数</th>
@@ -322,7 +382,8 @@
             </tr>
             <tr v-else v-for="(r, ri) in g.rows" :key="g.seg + r.name" :class="{merged: r.merged}">
               <td v-if="grouped && ri === 0" :rowspan="g.rows.length" class="nowrap seg-cell">{{ g.seg }}</td>
-              <td class="nowrap"><template v-if="r.merged"><el-tooltip placement="top" :content="'合并成员：' + r.members.join('、')"><span>其他<span class="merged-row-tag">合并披露</span></span></el-tooltip></template><template v-else>{{ r.name }}</template></td>
+              <td class="nowrap"><template v-if="r.merged"><el-tooltip placement="top" :content="'合并成员：' + r.members.join('、')"><span>其他<span class="merged-row-tag">合并披露</span></span></el-tooltip></template>
+                <a v-else-if="canDrill && r.kind === 'seg'" class="drill-link" @click="$emit('drill', r.name)">{{ r.name }} ›</a><template v-else>{{ r.name }}</template></td>
               <template v-if="t.cols.length">
                 <td v-if="r.state === 'rolled'" :colspan="span" class="roll-cell"><el-tooltip placement="top" content="样本不足，已合并到上一级"><span><el-icon><Top /></el-icon>{{ r.merged ? '不分' + d2Name : (r.kind === 'seg' ? d.d1.segName : d.d1.name) + '（不分' + d2Name + '）' }}<span class="roll-tag">已上卷</span></span></el-tooltip></td>
                 <template v-else>
@@ -330,21 +391,21 @@
                     <el-tooltip v-if="r.cells[c.i].state === 'ok'" placement="top" :content="'贡献企业数：' + band(r.cells[c.i].n) + ' 家'"><span class="num">{{ fmt(r.cells[c.i].v) }}</span></el-tooltip>
                     <el-tooltip v-else placement="top" content="已并入本行的“其他（合并披露）”"><span class="merge-mark">已合并</span></el-tooltip>
                   </td>
-                  <td v-if="t.hasOther" class="r"><el-tooltip v-if="r.other" placement="top" :content="'合并成员：' + memberText(r.other.members) + '；贡献企业数：' + band(r.other.n) + ' 家'"><span class="num">{{ fmt(r.other.v) }}</span></el-tooltip><span v-else class="muted">—</span></td>
+                  <td v-if="otherCol" class="r"><el-tooltip v-if="r.other" placement="top" :content="'合并成员：' + memberText(r.other.members) + '；贡献企业数：' + band(r.other.n) + ' 家'"><span class="num">{{ fmt(r.other.v) }}</span></el-tooltip><span v-else class="muted">—</span></td>
                 </template>
               </template>
               <td class="r"><b class="num">{{ fmt(r.total) }}</b></td>
-              <td v-if="!t.cols.length" class="r"><span class="num">{{ (r.total / t.total * 100).toFixed(1) }}%</span></td>
+              <td v-if="!t.cols.length" class="r"><span class="num">{{ (r.total / foot.v * 100).toFixed(1) }}%</span></td>
               <td class="c"><contrib-tag :n="r.n" /></td>
             </tr>
           </template>
-          <tr class="total"><td :colspan="1 + (grouped ? 1 : 0) + span">{{ name }}合计<span v-if="filtered" class="muted small">（全部{{ d.d1.name }}{{ d.d2 ? '、全部' + d2Name : '' }}，不随筛选变化）</span></td><td class="r"><b class="num">{{ fmt(t.total) }}</b></td><td v-if="!t.cols.length" class="r">100%</td><td class="c"><contrib-tag :n="t.n" /></td></tr>
+          <tr class="total"><td :colspan="1 + (grouped ? 1 : 0) + span">{{ foot.label }}<span v-if="filtered && !foot.seg" class="muted small">（全部{{ d.d1.name }}{{ d.d2 ? '、全部' + d2Name : '' }}，不随筛选变化）</span></td><td class="r"><b class="num">{{ fmt(foot.v) }}</b></td><td v-if="!t.cols.length" class="r">100%</td><td class="c"><contrib-tag :n="foot.n" /></td></tr>
         </tbody>
       </table>
       <div v-if="note && (t.anyRolled || t.prodRolled || t.hasOther)" class="tip-box orange small mt8">
-        带<span class="roll-tag" style="margin:0 4px">已上卷</span>的行：样本不足，已合并到上一级。上卷顺序固定为 <b>{{ pathText }}</b>，由平台统一判定，不能自选方向或自定分段边界；同一查询范围在看板、查询、导出中的划分完全相同。<template v-if="t.cols.length">各行的合并方式不同，因此不提供按{{ d2Name }}段的列合计。</template>扩大数据池，或放宽地区、时间范围，可以看到更细的层级。
+        <template v-if="t.anyRolled || t.prodRolled">带<span class="roll-tag" style="margin:0 4px">已上卷</span>的{{ t.colwise ? '格子或行' : '行' }}：样本不足，已合并到上一级。</template><template v-else>标“已合并”的格子样本不足，并入同一行的“其他（合并披露）”。</template>上卷顺序固定为 <b>{{ pathText }}</b>，由平台统一判定，不能自选方向或自定分段边界；同一查询范围在看板、查询、导出中的划分完全相同。<template v-if="t.colwise">各{{ d.d1.name }}先合并到{{ d.d1.segName }}、保留{{ d2Name }}，再去掉{{ d2Name }}；不提供“{{ d.d1.name }}（不分{{ d2Name }}）”，也不提供按{{ d2Name }}段的列合计。</template><template v-else-if="t.cols.length">各行的合并方式不同，不提供按{{ d2Name }}段的列合计（品名 × {{ d2Name }}段不在路径上）。</template>扩大数据池，或放宽地区、时间范围，可以看到更细的层级。
       </div>
-      <div v-else-if="note" class="small muted mt8">本次查询范围内各行均满足披露条件，按“{{ t.levelName }}”完整展示。鼠标悬停数值可看贡献企业数区间。</div>
+      <div v-else-if="note" class="small muted mt8">本次查询范围内各行均满足披露条件，按“{{ t.levelName }}”完整展示。<template v-if="t.cols.length">不提供按{{ d2Name }}段的列合计。</template>鼠标悬停数值可看贡献企业数区间。</div>
     </div>`,
   };
 

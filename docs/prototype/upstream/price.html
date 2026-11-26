@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>量价视图 · 上游钢厂端 · 钢贸上下游数据平台</title>
+<title>量价视图 · 上游厂家端 · 钢贸上下游数据平台</title>
 <link rel="stylesheet" href="../assets/lib/element-plus.css">
 <link rel="stylesheet" href="../assets/css/app.css">
 <style>
@@ -82,7 +82,7 @@
           </el-radio-group>
         </el-form-item>
       </el-form>
-      <div class="small muted" style="margin-top:22px"><span class="dim-chip">{{ dim.tpl.name }}模板</span>统计维度：{{ dim.d1.name }}<template v-if="dim.d2"> + {{ dim.tplKey === '型材' ? dim.d2.segName + '（该品名固定）' : dim.d2.name }}（{{ canBand ? '见下方“按' + dim.d2.segName + '的均价”' : '已采集，暂不披露' }}）</template>。价格指标只对按吨位统计的钢材提供，非钢材暂不提供价格。</div>
+      <div class="small muted" style="margin-top:22px"><span class="dim-chip">{{ dim.tpl.name }}模板</span>统计维度：{{ dim.d1.name }}<template v-if="dim.d2"> + {{ dim.tplKey === '型材' ? dim.d2.segName + '（该品名固定）' : dim.d2.name }}（{{ canBand ? '选定' + dim.d1.segName + '后，见下方“按' + dim.d2.segName + '的均价”' : '已采集，暂不披露' }}）</template>。价格指标只对按吨位统计的钢材提供，非钢材暂不提供价格。</div>
       <div v-if="coarse" class="small muted" style="margin-top:6px"><el-icon style="vertical-align:-2px"><InfoFilled /></el-icon> {{ product.cat.name }}样本较稀疏，当前最细披露粒度为“地区到省、时间到旬”，日、周粒度与地级市下钻暂不提供。</div>
     </div>
 
@@ -153,14 +153,18 @@
       </div>
     </div>
     <div class="card" v-if="dim.d2 && canBand">
-      <div class="card-title"><span>按{{ dim.d2.segName }}的均价<small>{{ dim.tpl.name }}模板 · {{ title }} · {{ periodLabel }} · 分段方案 {{ bandVer.ver }}（示例参数）</small></span>
+      <div class="card-title"><span>按{{ dim.d2.segName }}的均价<small>{{ dim.tpl.name }}模板 · {{ f.band ? dim.d1.segName + ' × ' + dim.d2.segName + ' · ' : '' }}{{ title }} · {{ periodLabel }} · 分段方案 {{ bandVer.ver }}（示例参数）</small></span>
         <span class="right small muted">每个段须满足：有价企业数 ≥ {{ $PV.kPrice }} 家</span></div>
-      <div v-if="!d2Price" class="empty-block"><div class="big"><el-icon><Lock /></el-icon></div>当前条件下加权均价不予披露，不再按{{ dim.d2.segName }}拆分</div>
+      <div v-if="!f.band" class="empty-block" style="padding:22px 16px">
+        <div style="margin-bottom:10px">请先选定一个{{ dim.d1.segName }}。按{{ dim.d2.segName }}的均价只在{{ dim.d1.segName }}之下提供（{{ dim.d1.segName }} × {{ dim.d2.segName }}）；“品名 × {{ dim.d2.segName }}”不在披露路径上，不提供。</div>
+        <el-button v-for="b in product.bands" :key="b" size="small" @click="f.band = b">{{ b }}</el-button>
+      </div>
+      <div v-else-if="!d2Price" class="empty-block"><div class="big"><el-icon><Lock /></el-icon></div>当前条件下加权均价不予披露，不再按{{ dim.d2.segName }}拆分</div>
       <table v-else class="plain-table">
-        <thead><tr><th>{{ dim.d2.segName }}</th><th class="r">加权均价（元/吨）</th><th class="r">与{{ f.band ? dim.d1.segName : '品名' }}均价的差</th><th class="c">价格覆盖率</th><th class="c">有价企业数</th></tr></thead>
+        <thead><tr><th>{{ dim.d2.segName }}</th><th class="r">加权均价（元/吨）</th><th class="r">与{{ dim.d1.segName }}均价的差</th><th class="c">价格覆盖率</th><th class="c">有价企业数</th></tr></thead>
         <tbody>
           <tr v-if="d2Price.rolled" class="roll-row">
-            <td class="roll-cell" style="text-align:left"><el-tooltip placement="top" content="样本不足，已合并到上一级"><span><el-icon><Top /></el-icon>{{ f.band || f.product }}（不分{{ dim.d2.name }}）<span class="roll-tag">已上卷</span></span></el-tooltip></td>
+            <td class="roll-cell" style="text-align:left"><el-tooltip placement="top" content="样本不足，已合并到上一级"><span><el-icon><Top /></el-icon>{{ f.band }}（不分{{ dim.d2.name }}）<span class="roll-tag">已上卷</span></span></el-tooltip></td>
             <td class="r"><b class="num">{{ $fmt(kpi.price) }}</b></td><td class="r muted">—</td><td class="c"><cover-tag :r="kpi.cover" /></td><td class="c"><contrib-tag :n="kpi.pn" label="有价 " /></td>
           </tr>
           <template v-else>
@@ -172,7 +176,7 @@
           </template>
         </tbody>
       </table>
-      <div class="tip-box small mt12">{{ dim.d2.name }}是连续型维度，只按平台统一定义的段披露，不披露原始取值；缺少{{ dim.d2.name }}的数据归入“未分段”。价格的门槛比销量严，段内有价样本不足时，先与最小的可见段合并，仍不足则整组<b>上卷</b>到“{{ dim.d1.segName }}（不分{{ dim.d2.name }}）”，只给上一级的均价。这里不提供各段的销量；销量按统计维度的拆分请到<a href="query.html">多维查询</a>查看。</div>
+      <div class="tip-box small mt12">{{ dim.d2.name }}是连续型维度，只按平台统一定义的段披露，不披露原始取值；缺少{{ dim.d2.name }}的数据归入“未分段”。价格的门槛比销量严，段内有价样本不足时，先与最小的可见段合并，仍不足则整组<b>上卷</b>到“{{ dim.d1.segName }}（不分{{ dim.d2.name }}）”，只给上一级的均价。与多维查询的规格段层级一致，不提供按{{ dim.d2.segName }}的列合计，也就没有“品名 × {{ dim.d2.segName }}”的均价。这里不提供各段的销量；销量按统计维度的拆分请到<a href="query.html">多维查询</a>查看。</div>
     </div>
   </template>
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>导出中心 · 上游钢厂端 · 钢贸上下游数据平台</title>
+<title>导出中心 · 上游厂家端 · 钢贸上下游数据平台</title>
 <link rel="stylesheet" href="../assets/lib/element-plus.css">
 <link rel="stylesheet" href="../assets/css/app.css">
 <style>
@@ -56,7 +56,7 @@
   </div>
 
   <el-alert type="info" show-icon :closable="false">
-    <template #title>导出内容与页面展示完全一致：同样的屏蔽（“—”）、合并披露、自动上卷、修约与口径说明。按品类统计维度导出时，文件带维度列、单位列和披露层级列；钢材（吨）与非钢材（数量）分工作表，不合计。数据来源企业名单的导出只含名单与画像字段，不含任何数值。</template>
+    <template #title>导出内容与页面展示完全一致：同样的屏蔽（“—”）、合并披露、自动上卷、修约与口径说明。导出到规格段层级、单规格层级时，文件带维度列、单位列和披露层级列；规格段、壁厚段等品类维度条件写入文件的查询条件说明；钢材（吨）与非钢材（数量）分工作表，不合计。数据来源企业名单的导出只含名单与画像字段，不含任何数值。</template>
   </el-alert>
 
   <div class="card exp-tbl">
@@ -151,7 +151,8 @@
       <ul class="rule-ul">
         <li>所有导出与页面走同一个聚合引擎，屏蔽单元格同样显示“—”，说明统一为“样本不足，不予披露”。</li>
         <li>“其他（合并披露）”行、交叉表的追加屏蔽、吨位取整到 1 吨，与页面相同。</li>
-        <li>按品类统计维度导出：维度列随模板变化（管材为规格、壁厚段；板材为厚度段、宽度段；建材为规格；型材为规格加公斤段或负差段，按品名固定其一），另有<b>单位列</b>和<b>披露层级列</b>（单规格、段、已上卷）。上卷后的行只有上卷后的层级，不含被合并格子的任何数值。</li>
+        <li>导出到规格段层级、单规格层级：维度列随模板变化（管材为规格段、壁厚段，到单规格层级时加规格；板材为厚度段、宽度段；建材为规格段、规格；型材为规格加公斤段或负差段，按品名固定其一），另有<b>单位列</b>和<b>披露层级列</b>（单规格、段、已上卷）。上卷后的行只有上卷后的层级，不含被合并格子的任何数值；与页面一样，不含按壁厚段、宽度段的合计行。</li>
+        <li>设了规格段、壁厚段（板材为厚度段、宽度段）等品类维度条件的导出：条件逐项写入文件首页的“查询条件说明”，并注明所选项中因样本不足未计入的项数。</li>
         <li>钢材（吨）与非钢材（数量）分工作表；任何工作表都没有跨吨位与数量的合计，不同数量单位之间也不合计。</li>
         <li>贡献企业数只给区间；文件首页带口径说明：“本数据池共 186 家企业，名单见数据来源企业名单页面”。</li>
       </ul>
@@ -308,21 +309,25 @@
   };
 
   const VOL = '销量、期末库存、日均销量、可销天数、环比、贡献企业数区间';
-  /* 按品类统计维度导出的文件内容：与多维查询同一份披露与上卷结果 */
+  /* 导出到规格段层级、单规格层级的文件内容：与多维查询同一份披露与上卷结果。level 缺省为该品名看板默认的层级 */
   const R0 = '2026-11-17', R1 = '2026-11-23', T7 = M.salesBetween(M.KPI, 'real', R0, R1);
-  const dimSheet = (name) => {
-    const d = M.dimsOf(name), steel = d.steel, t = M.dimTree(name, steel ? M.specSales(T7, name) : M.nsBetween(name, R0, R1), M.dimN(name));
-    const flat = M.dimFlat(t), two = !!d.d2;
-    return { d, head: ['品名', d.d1.segName].concat(d.d1.fine ? [d.d1.name] : [], two ? [d.d2.segName] : [], ['销量', '单位', '披露层级', '贡献企业数']), rows: flat.map((r) => [name, r.seg].concat(d.d1.fine ? [r.name] : [], two ? [r.d2 || '—'] : [], [r.v, d.unit, r.lv, STP.band(r.n) + ' 家'])) };
+  const dimSheet = (name, level) => {
+    const d = M.dimsOf(name), steel = d.steel, lv = d.levels.find((l) => l.k === level) || d.levels[0];
+    const t = M.dimTree(name, steel ? M.specSales(T7, name) : M.nsBetween(name, R0, R1), M.dimN(name), { level: lv.k });
+    const flat = M.dimFlat(t), two = !!lv.cross, spec = lv.tier === 'spec';
+    return { d, lv, head: ['品名', d.d1.segName].concat(spec ? [d.d1.name] : [], two ? [d.d2.segName] : [], ['销量', '单位', '披露层级', '贡献企业数']), rows: flat.map((r) => [name, r.seg].concat(spec ? [r.name] : [], two ? [r.d2 || '—'] : [], [r.v, d.unit, r.lv, STP.band(r.n) + ' 家'])) };
   };
-  const pipe = dimSheet('焊管'), rebar = dimSheet('螺纹钢'), NS = M.nonSteel[0].products.map((p) => dimSheet(p.name));
+  const pipe = dimSheet('焊管', 'sx'), pipeX = dimSheet('焊管', 'x'), rebar = dimSheet('螺纹钢'), NS = M.nonSteel[0].products.map((p) => dimSheet(p.name));
   const nsHead = ['品名', '规格段', '规格', '销量', '单位', '披露层级', '贡献企业数'];
   const nsRows = NS.reduce((a, s) => a.concat(s.rows.map((r) => (s.d.d1.fine ? r : [r[0], r[1], '—'].concat(r.slice(2))))), []);
   const RAW = [
-    { id: 'EXP-20261124-0045', src: '多维查询', title: '螺纹钢与配套辅材分规格销量（钢材、非钢材分表）', cond: ['时间：2026-11-17 至 2026-11-23（日粒度）', '地区：全国（按仓库所在地）', '品类：建筑钢材 → 螺纹钢；配套辅材（非钢材）→ 钢筋连接套筒、脚手架扣件、法兰', '统计维度：建材模板（规格）；其他品类模板（规格）', '分段方案：' + M.BAND_VER.ver + '（示例参数）'], cols: '维度列（规格段、规格）、销量、单位列、披露层级列、贡献企业数区间',
+    { id: 'EXP-20261124-0047', src: '多维查询', title: '焊管 · 壁厚段 2.0–4.5mm 月度销量与库存（条件 × 时间）', cond: ['时间：2026-06 至 2026-11（月粒度）', '地区：全国（按仓库所在地）', '品类：管材 → 焊管', '品类维度条件：规格段 不限；壁厚段 2.0–3.0mm、3.0–4.5mm（按段多选）', '取数口径：各月为所选壁厚段在各规格段下可见格子之和；所选 6 项全部计入，0 项因样本不足未计入', '分段方案：' + M.BAND_VER.ver + '（示例参数）'], cols: '时间、销量、日均销量、环比、期末库存、可销天数、贡献企业数区间', fmt: 'Excel', rows: 6, cells: 30, masked: 0, merged: 0, status: 'done', by: '郑晓岚', at: '2026-11-24 14:41', doneAt: '2026-11-24 14:41' },
+    { id: 'EXP-20261124-0046', src: '多维查询', title: '焊管 规格 × 壁厚段（单规格层级，近 7 日销量）', cond: ['时间：2026-11-17 至 2026-11-23（日粒度）', '地区：全国（按仓库所在地）', '品类：管材 → 焊管 → 单规格层级', '品类维度条件：规格段 不限；壁厚段 不限', '披露层级：管材模板，请求层级“' + pipeX.lv.t + '”；样本不足的列上卷到“规格段 × 壁厚段”', '分段方案：' + M.BAND_VER.ver + '（示例参数）'], cols: '维度列（规格段、规格、壁厚段）、销量、单位列、披露层级列（单规格、合并披露、已上卷）、贡献企业数区间',
+      sheets: [{ name: '钢材（吨）', head: pipeX.head, rows: pipeX.rows }], fmt: 'Excel', rows: pipeX.rows.length, cells: pipeX.rows.length, masked: 0, merged: pipeX.rows.filter((r) => String(r[6]).indexOf('合并') >= 0).length, status: 'done', by: '郑晓岚', at: '2026-11-24 14:36', doneAt: '2026-11-24 14:36' },
+    { id: 'EXP-20261124-0045', src: '多维查询', title: '螺纹钢与配套辅材分规格销量（钢材、非钢材分表）', cond: ['时间：2026-11-17 至 2026-11-23（日粒度）', '地区：全国（按仓库所在地）', '品类：建筑钢材 → 螺纹钢；配套辅材（非钢材）→ 钢筋连接套筒、脚手架扣件、法兰', '披露层级：建材模板（规格）；其他品类模板（规格）', '品类维度条件：未设（选了多个品名）', '分段方案：' + M.BAND_VER.ver + '（示例参数）'], cols: '维度列（规格段、规格）、销量、单位列、披露层级列、贡献企业数区间',
       sheets: [{ name: '钢材（吨）', head: rebar.head, rows: rebar.rows }, { name: '非钢材（数量）', head: nsHead, rows: nsRows }], fmt: 'Excel', rows: rebar.rows.length + nsRows.length, cells: rebar.rows.length + nsRows.length, masked: 0, merged: 0, status: 'done', by: '周立明', at: '2026-11-24 14:32', doneAt: '2026-11-24 14:32' },
-    { id: 'EXP-20261124-0044', src: '多维查询', title: '焊管 规格 × 壁厚段（近 7 日销量）', cond: ['时间：2026-11-17 至 2026-11-23（日粒度）', '地区：全国（按仓库所在地）', '品类：管材 → 焊管', '统计维度：管材模板，请求层级“规格 × 壁厚段”', '分段方案：' + M.BAND_VER.ver + '（示例参数）'], cols: '维度列（规格段、规格、壁厚段）、销量、单位列、披露层级列（单规格、段、已上卷）、贡献企业数区间',
-      sheets: [{ name: '钢材（吨）', head: pipe.head, rows: pipe.rows }], fmt: 'Excel', rows: pipe.rows.length, cells: pipe.rows.length, masked: 0, merged: pipe.rows.filter((r) => String(r[6]).indexOf('合并') >= 0).length, status: 'done', by: '周立明', at: '2026-11-24 14:20', doneAt: '2026-11-24 14:20', downloads: [{ who: '周立明', at: '2026-11-24 14:21' }] },
+    { id: 'EXP-20261124-0044', src: '多维查询', title: '焊管 规格段 × 壁厚段（规格段层级，近 7 日销量）', cond: ['时间：2026-11-17 至 2026-11-23（日粒度）', '地区：全国（按仓库所在地）', '品类：管材 → 焊管 → 规格段层级', '品类维度条件：规格段 不限；壁厚段 不限', '披露层级：管材模板，请求层级“' + pipe.lv.t + '”；不含按壁厚段的合计行', '分段方案：' + M.BAND_VER.ver + '（示例参数）'], cols: '维度列（规格段、壁厚段）、销量、单位列、披露层级列（段、合并披露、已上卷）、贡献企业数区间',
+      sheets: [{ name: '钢材（吨）', head: pipe.head, rows: pipe.rows }], fmt: 'Excel', rows: pipe.rows.length, cells: pipe.rows.length, masked: 0, merged: pipe.rows.filter((r) => String(r[5]).indexOf('合并') >= 0).length, status: 'done', by: '周立明', at: '2026-11-24 14:20', doneAt: '2026-11-24 14:20', downloads: [{ who: '周立明', at: '2026-11-24 14:21' }] },
     { id: 'EXP-20261124-0043', src: '多维查询', title: '分省 × 品名月度销量与库存', cond: ['时间：2025-12 至 2026-11（月粒度）', '地区：全国（按仓库所在地，省级）', '品类：全部大类 → 品名', '品牌：全部'], cols: VOL, fmt: 'CSV', rows: 0, status: 'queue', by: '郑晓岚', at: '2026-11-24 14:06' },
     { id: 'EXP-20261124-0042', src: '聚合看板', title: '看板数据（概览、地区、品类、趋势、本厂品牌）', cond: ['数据日期：2026-11-23', '范围：概览指标、地区分布、品类结构、近 30 日趋势、本厂品牌视图', '地区口径：仓库所在地'], cols: '看板各卡片的指标与图表数据：' + VOL, fmt: 'Excel', rows: 486, status: 'run', progress: 62, by: '周立明', at: '2026-11-24 14:05' },
     { id: 'EXP-20261124-0041', src: '多维查询', title: '华东重点城市 · 螺纹钢日度明细', cond: ['时间：2026-08-16 至 2026-11-23（日粒度）', '地区：苏州市、无锡市、南京市、常州市、杭州市、宁波市、上海市等 8 市（按仓库所在地）', '品类：建筑钢材 → 螺纹钢', '品牌：全部'], cols: VOL, fmt: 'Excel', rows: 800, cells: 4800, masked: 312, merged: 14, status: 'done', by: '周立明', at: '2026-11-24 10:42', doneAt: '2026-11-24 10:43', downloads: [{ who: '周立明', at: '2026-11-24 10:44' }] },
@@ -342,7 +347,7 @@
   STP.mount({
     data() {
       return {
-        tab: 'all', f: { src: '', status: '', kw: '' }, all: RAW, seq: 43,
+        tab: 'all', f: { src: '', status: '', kw: '' }, all: RAW, seq: 47,
         quota: { times: 3, maxTimes: 20, rows: 1286, maxRows: 200000 },
         ST: { queue: { t: '排队中', type: 'info' }, run: { t: '生成中', type: 'primary' }, done: { t: '已完成', type: 'success' }, expired: { t: '已过期', type: 'info' }, fail: { t: '生成失败', type: 'danger' } },
         SRC_TYPE: { 聚合看板: 'primary', 多维查询: 'success', 数据来源企业名单: 'warning', 定时发送: 'info', 量价视图: 'danger' },

@@ -171,7 +171,7 @@
             </tr>
           </tbody>
         </table>
-        <div class="small muted mt8"><span class="mask-cell" style="min-width:30px;height:18px">—</span> 表示样本不足，不予披露。钢厂页面不提供“企业”维度，也不能按企业筛选或排除。</div>
+        <div class="small muted mt8"><span class="mask-cell" style="min-width:30px;height:18px">—</span> 表示样本不足，不予披露。厂家端页面不提供“企业”维度，也不能按企业筛选或排除。</div>
       </div>
       <div>
         <div class="small muted mb8">这张表说明了什么</div>
@@ -200,7 +200,7 @@
             </tr>
           </tbody>
         </table>
-        <div class="small muted mt8">样本成交均价，不是市场报价。钢厂页面上<b>没有</b>销售金额合计、有价样本销量、最高价、最低价和价格分布。</div>
+        <div class="small muted mt8">样本成交均价，不是市场报价。厂家端页面上<b>没有</b>销售金额合计、有价样本销量、最高价、最低价和价格分布。</div>
       </div>
       <div>
         <div class="small muted mb8">价格的保护比销量、库存更严</div>
@@ -210,7 +210,7 @@
           <li><i>3</i><span>只统计自愿上传价格、且同意参与披露的企业。</span></li>
         </ul>
         <div class="tip-box small mt8" :class="$state.gate==='open' ? 'green' : 'orange'">
-          上游价格功能受<b>平台法务闸口</b>控制，取得法务书面意见后才由平台开放。当前状态：<b>{{ $state.gate==='open' ? '已开放' : '未开放，钢厂侧没有任何价格入口' }}</b>。
+          上游价格功能受<b>平台法务闸口</b>控制，取得法务书面意见后才由平台开放。当前状态：<b>{{ $state.gate==='open' ? '已开放' : '未开放，厂家端没有任何价格入口' }}</b>。
         </div>
         <div class="tip-box small mt8">本企业价格上传：<b>{{ $state.dnPrice==='on' ? '已开启，范围内的成交价只以上述聚合形式参与' : '未开启，你的数据不进入任何价格指标' }}</b>。<a href="upload-settings.html">上传设置 ›</a></div>
       </div>

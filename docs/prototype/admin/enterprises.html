@@ -561,7 +561,7 @@
     const short = u[0].replace(/(集团有限公司|股份有限公司|有限责任公司|有限公司)$/, '');
     const members = [{ name: u[0], role: '购买主体（集团本部）', side: '上游' }];
     const tails = ['销售有限公司', '国际贸易有限公司', '（华东）物资有限公司', '板材有限公司', '特钢有限公司'];
-    /* 东岳的归并关联企业与上游端“购买主体”信息一致：集团本部 + 东岳钢铁集团国际贸易有限公司、东岳特钢有限公司 */
+    /* 东岳的归并关联企业与上游厂家端“购买主体”信息一致：集团本部 + 东岳钢铁集团国际贸易有限公司、东岳特钢有限公司 */
     if (i === 0) members.push({ name: '东岳钢铁集团国际贸易有限公司', role: '关联贸易公司', side: '下游（名录标注“关联企业”）' }, { name: '东岳特钢有限公司', role: '关联生产企业', side: '上游（归并）' });
     else for (let k = 1; k < u[1]; k++) members.push({ name: short + tails[(k - 1) % tails.length], role: k <= 2 ? '关联贸易公司' : '关联生产企业', side: k <= 2 ? '下游（名录标注“关联企业”）' : '上游（归并）' });
     return { id: 'U' + (20001 + i), name: u[0], kind: KINDS[0], rel: u[1], quota: u[2], pool: u[3], expire: u[4], status: u[5], eff: u[6] || 0, members };

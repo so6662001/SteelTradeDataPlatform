@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>多维查询 · 上游钢厂端 · 钢贸上下游数据平台</title>
+<title>多维查询 · 上游厂家端 · 钢贸上下游数据平台</title>
 <link rel="stylesheet" href="../assets/lib/element-plus.css">
 <link rel="stylesheet" href="../assets/css/app.css">
 <style>
@@ -14,13 +14,15 @@
 .cross td.sec { background: #fbfbfd; }
 .dim-box { background: #f7fafd; border: 1px solid #dfe9f5; border-radius: 6px; padding: 8px 10px; margin-bottom: 10px; }
 .dim-box .el-form-item__label { color: #4a5568; }
+.miss-tag { display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 3px; font-size: 11px; line-height: 17px; color: #9a6400; background: #fff8eb; border: 1px solid #f3dfb8; white-space: nowrap; }
+.tier-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-bottom: 10px; }
 </style>
 </head>
 <body>
 <div id="app"></div>
 <script type="text/x-template" id="page">
 <app-layout portal="upstream" active="query" title="多维查询" watermark
-  desc="按时间、地区、品类、品牌等维度自由组合查询销量与库存；选定品名后，可按该品类的统计维度（管材为规格加壁厚，板材为厚度加宽度，建材为规格，型材为规格加公斤段或负差段，按品名固定其一）查看。钢材按吨、非钢材按数量，分表展示、不合计。所有结果均经聚合引擎做披露判定。">
+  desc="按时间、地区、品类、品牌等维度自由组合查询销量与库存；品类可从大类下钻到品名、规格段层级、单规格层级：在规格段层级，管材显示规格段 × 壁厚段，板材显示厚度段 × 宽度段，建材和其他品类显示规格段。选定单一品名后可按段设规格段、壁厚段等条件，条件在任何行维度下都生效。钢材按吨、非钢材按数量，分表展示、不合计。所有结果均经聚合引擎做披露判定。">
   <template #actions>
     <el-select v-model="scheme" style="width:230px" @change="loadScheme">
       <template #prefix><el-icon><Collection /></el-icon></template>
@@ -62,20 +64,22 @@
           <template #label>品类（大类 / 品名）<a href="javascript:;" style="margin-left:8px;font-weight:400" @click="grainDlg = true">各品类可查粒度</a></template>
           <el-cascader v-model="f.cats" :options="catOpts" :props="{multiple:true}" collapse-tags collapse-tags-tooltip clearable placeholder="全部钢材品类" style="width:100%" />
           <div class="small muted" style="line-height:1.5;margin-top:4px">钢材按吨位统计，非钢材按数量统计。同时选中时分表展示，不出总计。</div>
+          <div v-if="f.cats.length > 1" class="small" style="line-height:1.5;margin-top:4px;color:#9a6400">已选多个品名：规格段、{{ multiD2 }}等品类维度条件一期只在选定单一品名后提供，这次查询只有公共条件。共用同一套分段的多个品名合并设条件属二期<span class="ex-tag" style="margin-left:4px">二期</span>。</div>
         </el-form-item>
         <div v-if="fDim" class="dim-box">
           <div class="row" style="gap:6px;margin-bottom:6px"><b>{{ fDim.name }}</b><span class="dim-chip" style="margin:0">{{ fDim.tpl.name }}模板</span><span class="unit-pill" :class="{ns: !fDim.steel}">{{ fDim.steel ? '吨' : '数量 · ' + fDim.unit }}</span></div>
-          <div class="small" style="line-height:1.6;color:#4a5568">统计维度：<b>{{ fDim.d1.name }}</b><template v-if="fDim.d2"> + <b>{{ fDim.d2.name }}{{ fDim.tplKey === '型材' ? '段（该品名固定用' + fDim.d2.segName + '）' : '' }}</b></template>　<a href="javascript:;" @click="bandDlg = true">查看分段</a></div>
+          <div class="small" style="line-height:1.6;color:#4a5568">品类维度条件：<b>{{ fDim.d1.segName }}</b><template v-if="fDim.d2">、<b>{{ fDim.d2.segName }}{{ fDim.tplKey === '型材' ? '（该品名固定用' + fDim.d2.segName + '）' : '' }}</b></template>　<a href="javascript:;" @click="showBands('')">查看分段</a></div>
           <template v-if="fDim.open">
-            <el-form-item :label="fDim.d1.segName" style="margin:6px 0 6px">
-              <el-select v-model="f.dimSeg" multiple collapse-tags collapse-tags-tooltip clearable placeholder="全部" style="width:100%"><el-option v-for="b in fDim.d1.bands" :key="b" :label="b" :value="b" /></el-select>
+            <el-form-item :label="fDim.d1.segName + '（多选包含）'" style="margin:6px 0 6px">
+              <el-select v-model="f.dimSeg" multiple collapse-tags collapse-tags-tooltip clearable placeholder="不限" style="width:100%"><el-option v-for="b in fDim.d1.bands" :key="b" :label="b" :value="b" /></el-select>
             </el-form-item>
-            <el-form-item v-if="fDim.d2" :label="fDim.d2.segName" style="margin-bottom:6px">
-              <el-select v-model="f.dimD2" multiple collapse-tags collapse-tags-tooltip clearable placeholder="全部" style="width:100%"><el-option v-for="b in fDim.d2.bands" :key="b" :label="b" :value="b" /></el-select>
+            <el-form-item v-if="fDim.d2" :label="fDim.d2.segName + '（多选包含）'" style="margin-bottom:6px">
+              <el-select v-model="f.dimD2" multiple collapse-tags collapse-tags-tooltip clearable placeholder="不限" style="width:100%"><el-option v-for="b in fDim.d2.bands" :key="b" :label="b" :value="b" /></el-select>
             </el-form-item>
-            <div class="small muted" style="line-height:1.5">维度筛选在“行维度 = 品类统计维度”时生效，只收窄展示范围，不改变划分方式。分段由平台统一定义，不能自定边界。</div>
+            <div class="small muted" style="line-height:1.5">条件在<b>任何行维度</b>下都生效，当前条件显示在结果区上方。只能按段多选，不支持排除，也不能输入数值范围；分段由平台统一定义。</div>
+            <div v-if="fDim.d2" class="small muted" style="line-height:1.5;margin-top:4px">设了{{ fDim.d2.segName }}条件时，{{ fDim.cat.name }}可组合到的最细粒度：地区到{{ fDim.combo.geo }}、时间到{{ fDim.combo.time }}<span class="ex-tag" style="margin-left:4px">示例参数</span></div>
           </template>
-          <div v-else class="small" style="line-height:1.6;color:#9a6400">{{ fDim.cat.name }}的标准化深度尚未到规格段（L4），模板维度已随上传采集，暂不按该维度披露；达到后自动回补。</div>
+          <div v-else class="small" style="line-height:1.6;color:#9a6400">{{ fDim.cat.name }}的标准化深度尚未到规格段（L4），模板维度已随上传采集，暂不提供规格段层级和品类维度条件；达到后自动回补。</div>
         </div>
         <el-form-item label="品牌">
           <el-radio-group v-model="f.brand"><el-radio-button label="全部" value="全部" /><el-radio-button label="本厂（东岳）" value="本厂" /><el-radio-button label="其他品牌" value="其他" /></el-radio-group>
@@ -85,45 +89,39 @@
         <el-form-item label="行维度（可逐级下钻）">
           <el-select v-model="f.rowDim" style="width:100%">
             <el-option label="仓库所在地 / 流向地（省 → 市）" value="region" />
-            <el-option label="品类（大类 → 品名 → 材质 / 规格段）" value="cat" />
+            <el-option label="品类（大类 → 品名 → 规格段层级 → 单规格层级）" value="cat" />
             <el-option label="时间（按所选粒度）" value="time" />
-            <el-option :label="fDim && fDim.open ? '品类统计维度（' + fDim.levels[0].t + '）' : '品类统计维度（需先选定单一品名）'" value="dim" :disabled="!fDim || !fDim.open" />
           </el-select>
+          <div v-if="f.rowDim==='cat'" class="small muted" style="line-height:1.5;margin-top:4px">规格段层级带出第二维度：<template v-if="fDim && fDim.open"><b>{{ fDim.name }}</b>显示 <b>{{ fTierName }}</b>。</template><template v-else>{{ segTierText }}。</template>未到 L4 的品名只到材质。</div>
         </el-form-item>
         <div v-if="secMix" class="small" style="line-height:1.6;margin:-6px 0 10px;color:#9a6400;background:#fff8eb;border:1px solid #f3dfb8;border-radius:4px;padding:6px 8px">所选型材品名的第二维度不同：{{ secMix.kg.join('、') }}用公斤段，{{ secMix.neg.join('、') }}用负差段。两种分段不合并展示，本次查询只提供公共维度；要看第二维度请逐个品名查询。</div>
-        <template v-if="f.rowDim==='dim' && fDim && fDim.open">
-          <el-form-item label="披露层级（只能沿固定路径由细到粗）">
-            <el-radio-group v-model="f.dimLevel" style="display:grid;gap:2px"><el-radio v-for="l in fDim.levels" :key="l.k" :value="l.k">{{ l.t }}</el-radio></el-radio-group>
-          </el-form-item>
-          <el-form-item label="指标">
-            <el-radio-group v-model="f.dimMetric"><el-radio-button label="销量" value="sales" /><el-radio-button label="期末库存" value="stock" /></el-radio-group>
-          </el-form-item>
-          <div v-if="fDim.tplKey==='型材'" class="small muted" style="line-height:1.5;margin-bottom:8px">型材的第二维度按品名固定：{{ fDim.name }}用<b>{{ fDim.d2.segName }}</b>。用公斤段还是负差段由平台在品类主数据里逐个品名配置，查询时不能切换。</div>
-        </template>
-        <el-form-item v-else label="列维度">
+        <div v-if="fDim && fDim.open && fDim.tplKey==='型材'" class="small muted" style="line-height:1.5;margin:-4px 0 8px">型材的第二维度按品名固定：{{ fDim.name }}用<b>{{ fDim.d2.segName }}</b>，由平台在品类主数据里逐个品名配置，查询时不能切换。型材的规格段层级暂不带第二维度<span class="ex-tag" style="margin-left:4px">待确认</span></div>
+        <el-form-item label="列维度">
           <el-select v-model="f.colDim" style="width:100%">
             <el-option label="指标（多指标并列）" value="metric" />
-            <el-option label="大类（交叉表，单指标）" value="cat" :disabled="f.rowDim!=='region'" />
+            <el-option label="大类（交叉表，单指标）" value="cat" :disabled="f.rowDim!=='region' || fCondOn" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="f.colDim==='metric' && f.rowDim!=='dim'" label="指标">
+        <el-form-item v-if="f.colDim==='metric'" label="指标">
           <el-checkbox-group v-model="f.metrics" style="display:grid;grid-template-columns:1fr 1fr">
-            <el-checkbox v-for="m in metricList" :key="m.k" :value="m.k" :disabled="m.price && !singleProduct">
-              <el-tooltip v-if="m.price && !singleProduct" content="价格类指标需先在“品类”中选定单一品名（跨品名均价无意义）" placement="right"><span>{{ m.t }}</span></el-tooltip>
+            <el-checkbox v-for="m in metricList" :key="m.k" :value="m.k" :disabled="m.price && (!singleProduct || fCondOn)">
+              <el-tooltip v-if="m.price && (!singleProduct || fCondOn)" :content="fCondOn && singleProduct ? '设了规格段等品类维度条件时，这里不提供价格类指标；按规格段看均价请到量价视图' : '价格类指标需先在“品类”中选定单一品名（跨品名均价无意义）'" placement="right"><span>{{ m.t }}</span></el-tooltip>
               <span v-else>{{ m.t }}</span>
             </el-checkbox>
           </el-checkbox-group>
           <div v-if="!priceOpen" class="small muted" style="line-height:1.5;margin-top:4px"><el-icon style="vertical-align:-2px"><Lock /></el-icon> 价格类指标暂未开放（平台法务闸口关闭）</div>
         </el-form-item>
-        <el-form-item v-else-if="f.rowDim!=='dim'" label="交叉表指标">
+        <el-form-item v-else label="交叉表指标">
           <el-radio-group v-model="f.crossMetric"><el-radio-button label="销量" value="sales" /><el-radio-button label="库存量" value="stock" /></el-radio-group>
         </el-form-item>
 
         <div class="side-panel-title">可用维度</div>
         <div class="row" style="gap:6px">
           <span class="pivot-chip row" v-for="d in ['时间','仓库所在地','流向地','大类','品名','材质','品牌（本厂 / 其他）','客户类型','下游行业']" :key="d">{{ d }}</span>
-          <el-tooltip content="选定品名后按统计维度模板提供：管材为规格、壁厚段；板材为厚度段、宽度段；建材为规格；型材为规格加公斤段或负差段（按品名固定其一）；其他品类为规格" placement="top"><span class="pivot-chip row">品类统计维度（随品类变化）</span></el-tooltip>
-          <el-tooltip content="分段由平台统一定义。自选边界等于提供了差分工具，两次查询的边界相差一点就能切出单家" placement="top"><span class="pivot-chip disabled">自定分段边界（不提供）</span></el-tooltip>
+          <el-tooltip :content="'品类下钻到品名之下的一级：' + segTierText + '。不再作为单独的行维度入口'" placement="top"><span class="pivot-chip row">规格段层级（随品类变化）</span></el-tooltip>
+          <el-tooltip content="规格段层级之下：管材为规格 × 壁厚段，建材、其他品类为规格，型材为规格 × 公斤段或负差段；板材的厚度是连续取值，没有这一级" placement="top"><span class="pivot-chip row">单规格层级</span></el-tooltip>
+          <el-tooltip content="分段由平台统一定义，条件只能按段多选，不能输入数值范围。自选边界等于提供了差分工具，两次查询的边界相差一点就能切出单家" placement="top"><span class="pivot-chip disabled">自定分段边界、数值范围（不提供）</span></el-tooltip>
+          <el-tooltip content="“品名 × 壁厚段”“品名 × 宽度段”不在披露路径上。各规格段的合并方式不同，列合计与格子相减可以倒推被合并的内容，因此不提供" placement="top"><span class="pivot-chip disabled">按第二维度的列合计（不提供）</span></el-tooltip>
           <el-tooltip content="为防止反推，平台不提供“按企业”维度，也不支持按企业筛选或排除" placement="top"><span class="pivot-chip disabled">企业（不提供）</span></el-tooltip>
           <el-tooltip content="筛选不支持“排除某项”，避免用“全部 − 排除项”做差分" placement="top"><span class="pivot-chip disabled">排除筛选（不提供）</span></el-tooltip>
         </div>
@@ -136,6 +134,23 @@
 
     <!-- 右侧：结果 -->
     <div>
+      <div class="cond-bar">
+        <span class="cond-lb">当前条件</span>
+        <span v-for="c in condChips" :key="c.k" class="cond-chip" :class="{none: c.none}">{{ c.k }}：<b v-if="c.on">{{ c.v }}</b><template v-else>{{ c.v }}</template></span>
+        <span v-if="!qDim" class="cond-chip none">规格段等品类维度条件：选定单一品名后可设</span>
+        <div v-if="cond" class="small" style="flex-basis:100%;line-height:1.7;color:#4a5568">
+          <template v-if="dimView || bandNarrow">{{ condNames }}条件在这一层级只收窄展示的行和列，合并与上卷仍按全部成员判定，不因筛选重新划分。</template>
+          <template v-else>各行的数值 = 该行范围内、所选{{ condNames }}在披露路径上<b>各自可见的格子之和</b>，逐行判定；样本不足的不计入。<template v-if="cond.d2s.length && !cond.segs.length">只选{{ cond.d.d2.segName }}时按各{{ cond.d.d1.segName }}下可见的格子求和，不另算“品名 × {{ cond.d.d2.segName }}”。</template>
+            <template v-if="q.rowDim==='time' && res.missAll"><b style="color:#9a6400">所选项中有 {{ res.missAll }} 项因样本不足未计入</b>（各周期按同一披露层级计算）。</template>
+            <template v-else-if="res.missRows">有 <b style="color:#9a6400">{{ res.missRows }}</b> 行存在未计入的项，见行内标注。</template>
+          </template>
+          <template v-if="cond.d2s.length">{{ cond.d.d2.segName }}条件可组合到：地区到{{ cond.d.combo.geo }}、时间到{{ cond.d.combo.time }}（{{ cond.d.cat.name }}，<span class="ex-tag">示例参数</span>）。</template>
+          条件随查询方案保存，并写入导出文件的查询条件说明。
+        </div>
+      </div>
+      <el-alert v-if="res.partialD2.length" type="warning" show-icon :closable="false" style="margin-bottom:12px">
+        <template #title>设了{{ cond.d.d2.segName }}条件时，{{ cond.d.cat.name }}的地区最细到省。所选的 <b>{{ res.partialD2.join('、') }}</b> 只选了部分地级市，未计入；完整选中该省后按省统计。</template>
+      </el-alert>
       <el-alert v-if="res.excluded.length" type="warning" show-icon :closable="false">
         <template #title>所选 {{ res.selCount }} 个地区中有 <b>{{ res.excluded.length }}</b> 项（{{ res.excluded.join('、') }}）因样本不足未计入求和。只有完整选中上级地区时，才按上级地区整体计算。</template>
       </el-alert>
@@ -147,23 +162,53 @@
               <el-breadcrumb-item><a href="javascript:;" @click="drillTo(0)">{{ rootName }}</a></el-breadcrumb-item>
               <el-breadcrumb-item v-for="(p,i) in path" :key="p"><a href="javascript:;" @click="drillTo(i+1)">{{ p }}</a></el-breadcrumb-item>
             </el-breadcrumb>
-            <small>{{ res.range[0] }} 至 {{ res.range[1] }}（{{ res.days }} 天）· {{ q.grain }}粒度 · {{ q.brand==='全部' ? '全部品牌' : q.brand==='本厂' ? '本厂品牌（东岳）' : '其他品牌（合并）' }}</small>
+            <span v-if="tierD" class="level-tag" style="margin-left:8px">{{ path.length >= 3 ? '单规格层级' : '规格段层级' }}</span>
+            <small v-if="!tierD">{{ res.range[0] }} 至 {{ res.range[1] }}（{{ res.days }} 天）· {{ q.grain }}粒度 · {{ q.brand==='全部' ? '全部品牌' : q.brand==='本厂' ? '本厂品牌（东岳）' : '其他品牌（合并）' }}</small>
+            <small v-else>{{ res.days }} 天 · {{ q.brand==='全部' ? '全部品牌' : q.brand==='本厂' ? '本厂品牌（东岳）' : '其他品牌（合并）' }}</small>
           </span>
           <span class="right">
             <el-radio-group v-model="view" size="small"><el-radio-button value="table"><el-icon><Grid /></el-icon> 表格</el-radio-button><el-radio-button value="chart"><el-icon><Histogram /></el-icon> 图表</el-radio-button></el-radio-group>
           </span>
         </div>
 
-        <!-- 品类统计维度 -->
-        <template v-if="res.dim">
+        <!-- 规格段层级、单规格层级：按品类的统计维度模板展示（UP-105） -->
+        <template v-if="tierD">
           <div class="row small" style="gap:6px;margin-bottom:8px;flex-wrap:wrap">
-            <span class="dim-chip">{{ qDim.tpl.name }}模板</span>
-            <span>披露层级路径：<b>{{ qDim.tpl.path.join(' → ') }}</b></span>
+            <span class="dim-chip">{{ tierD.tpl.name }}模板</span>
+            <span>披露层级路径：<b>{{ tierD.tpl.path.join(' → ') }}</b></span>
             <span class="muted">｜ 分段方案 {{ bandVer.ver }}（{{ bandVer.eff }} 生效，示例参数）</span>
-            <a href="javascript:;" @click="bandDlg = true">查看分段</a>
+            <a href="javascript:;" @click="showBands(tierD.name)">查看分段</a>
           </div>
-          <dim-table v-show="view==='table'" :name="res.dim.name" :total="q.dimMetric==='stock' ? res.dim.stock : res.dim.sales" :n="res.dim.n" :n-scale="res.dim.nScale" :seg-w="q.dimMetric==='stock' ? res.dim.stockW : undefined"
-            :metric="q.dimMetric==='stock' ? '期末库存' : '销量'" :level="q.dimLevel" :seg-filter="q.dimSeg" :d2-filter="q.dimD2"></dim-table>
+          <div class="tier-bar">
+            <template v-if="segCtl">
+              <el-radio-group v-model="fold" size="small" :disabled="foldLock">
+                <el-radio-button :value="false">{{ tierD.d1.segName }} × {{ tierD.d2.segName }}</el-radio-button>
+                <el-radio-button :value="true">收起{{ tierD.d2.name }}</el-radio-button>
+              </el-radio-group>
+              <span v-if="foldLock" class="small muted">已设{{ tierD.d2.segName }}条件，不能收起{{ tierD.d2.name }}</span>
+            </template>
+            <template v-if="dimView">
+              <el-radio-group v-model="dimMetric" size="small"><el-radio-button label="销量" value="sales" /><el-radio-button label="期末库存" value="stock" /></el-radio-group>
+              <el-radio-group v-if="dimTree.cols.length && view==='table'" v-model="flat" size="small"><el-radio-button :value="false">交叉表</el-radio-button><el-radio-button :value="true">平铺为行</el-radio-button></el-radio-group>
+            </template>
+            <span class="small muted" style="flex:1;min-width:260px;line-height:1.6">{{ tierNote }}</span>
+          </div>
+        </template>
+        <template v-if="dimView">
+          <template v-if="view==='table'">
+            <dim-table v-if="!flat || !dimTree.cols.length" :name="res.dim.name" :total="dimMetric==='stock' ? res.dim.stock : res.dim.sales" :n="res.dim.n" :n-scale="res.dim.nScale" :seg-w="dimMetric==='stock' ? res.dim.stockW : undefined"
+              :metric="dimMetric==='stock' ? '期末库存' : '销量'" :level="dimView.level" :seg-only="dimView.segOnly" :seg-filter="q.dimSeg" :d2-filter="q.dimD2" :drill="dimView.tier==='seg'" @drill="drillSeg"></dim-table>
+            <template v-else>
+              <table class="plain-table">
+                <thead><tr><th>{{ tierD.d1.segName }}</th><th v-if="dimView.tier==='spec'">{{ tierD.d1.name }}</th><th>{{ tierD.d2.segName }}</th><th class="r">{{ dimMetric==='stock' ? '期末库存' : '销量' }}（{{ dimTree.unit }}）</th><th class="c">贡献企业数</th><th>披露层级</th></tr></thead>
+                <tbody><tr v-for="(r, i) in flatRows" :key="i">
+                  <td class="nowrap">{{ r.seg }}</td><td v-if="dimView.tier==='spec'" class="nowrap">{{ r.name }}</td><td class="nowrap">{{ r.d2 }}</td>
+                  <td class="r"><span class="num">{{ $fmt(r.v) }}</span></td><td class="c"><contrib-tag :n="r.n" /></td><td class="small">{{ r.lv }}</td>
+                </tr></tbody>
+              </table>
+              <div class="small muted mt8">平铺为行与交叉表是同一结果的两种排法，披露层级列标出每一行实际到了哪一级；同样不提供按{{ tierD.d2.segName }}的合计行。</div>
+            </template>
+          </template>
           <ve-chart v-if="view==='chart'" :option="dimChartOption" height="460px"></ve-chart>
           <div class="tbl-foot">
             <span>请求层级：<b>{{ dimTree.levelName }}</b>　|　{{ dimStatText }}</span>
@@ -177,10 +222,11 @@
             <el-table-column :label="res.dimName" min-width="150" fixed>
               <template #default="{row}">
                 <template v-if="row.merged"><el-tooltip placement="top" :content="'合并成员：' + row.members.join('、') + '。这些成员单独不满足披露条件，为防止用合计倒推，合并为一行披露。'"><span>其他<span class="merged-row-tag">合并披露</span></span></el-tooltip></template>
-                <template v-else-if="row.total"><b>合计</b></template>
+                <template v-else-if="row.total"><b>合计</b><span v-if="row.note" class="small muted">（{{ row.note }}）</span></template>
                 <a v-else-if="row.child" href="javascript:;" @click="drill(row)">{{ row.name }} <el-icon style="vertical-align:-2px"><ArrowRight /></el-icon></a>
-                <el-tooltip v-else-if="row.lock" placement="top" content="该品类暂不提供此粒度"><span>{{ row.name }} <span class="level-tag lock">{{ row.lock }}</span></span></el-tooltip>
+                <el-tooltip v-else-if="row.lock" placement="top" :content="row.lockTip || '该品类暂不提供此粒度'"><span>{{ row.name }} <span class="level-tag lock">{{ row.lock }}</span></span></el-tooltip>
                 <span v-else>{{ row.name }}</span>
+                <el-tooltip v-if="row.miss" placement="top" :content="'所选项中有 ' + row.miss + ' 项因样本不足未计入（共选 ' + row.picked + ' 项）'"><span class="miss-tag">{{ row.miss }} 项未计入</span></el-tooltip>
               </template>
             </el-table-column>
             <el-table-column v-if="on('sales')" label="销量(吨)" align="right" min-width="96"><template #default="{row}"><v-num :v="row.sales" :tip="row.tip" /></template></el-table-column>
@@ -221,7 +267,7 @@
         </template>
 
         <div v-if="hasPrice" class="tip-box orange small mt12"><b>样本成交均价，不是市场报价。</b>口径：含税、自提、非暂估；只统计自愿上传价格的在池企业。价格门槛比销量更严（有价企业数 ≥ {{ $PV.kPrice }} 家，按有价销量计算优势度）；销量被屏蔽的行，价格一并屏蔽。不提供金额合计、有价销量、最高最低价。更多见 <a href="price.html">量价视图</a>。</div>
-        <div v-if="!res.dim" class="tbl-foot">
+        <div v-if="!dimView" class="tbl-foot">
           <span>共 {{ res.rowCount }} 行（页面最多展示 1,000 行，超出请使用导出）　|　命中单元格 <b>{{ res.cellCount }}</b> 个，其中屏蔽 <b>{{ res.maskCount }}</b> 个（{{ (res.maskCount / res.cellCount * 100).toFixed(1) }}%）</span>
           <span><el-icon style="vertical-align:-2px"><Lock /></el-icon> 本次查询条件与命中、屏蔽单元格数已记入审计日志</span>
         </div>
@@ -230,20 +276,24 @@
       <!-- 非钢材：按数量，分表展示 -->
       <div v-if="nsRes" class="card" v-loading="loading" :style="{marginTop: steelOff ? '0' : '14px', marginBottom: 0}">
         <div class="card-title">
-          <span><span class="unit-pill ns" style="margin-right:8px">非钢材 · 数量</span>{{ nsRes.dim ? nsRes.dim.name + ' › 品类统计维度' : '配套辅材（按品名）' }}<small>{{ nsRes.range[0] }} 至 {{ nsRes.range[1] }}（{{ nsRes.days }} 天）· 与钢材分表展示，不出总计</small></span>
+          <span><span class="unit-pill ns" style="margin-right:8px">非钢材 · 数量</span>
+            <template v-if="nsView"><a href="javascript:;" @click="nsDrill=''; nsSeg=''">配套辅材</a> › <a href="javascript:;" @click="nsSeg=''">{{ nsView.r.name }}</a><template v-if="nsSeg"> › {{ nsSeg }}</template><span class="level-tag" style="margin-left:8px">{{ nsSeg ? '单规格层级' : '规格段层级' }}</span></template>
+            <template v-else>配套辅材（按品名）</template>
+            <small>{{ nsRes.range[0] }} 至 {{ nsRes.range[1] }}（{{ nsRes.days }} 天）· 与钢材分表展示，不出总计</small></span>
         </div>
         <el-alert v-if="nsRes.partial.length" type="info" show-icon :closable="false" style="margin-bottom:10px"><template #title>非钢材最细地区为省。所选的 {{ nsRes.partial.join('、') }} 只选了部分地级市，未计入；完整选中该省后按省统计。</template></el-alert>
-        <template v-if="nsRes.dim">
-          <div class="row small" style="gap:6px;margin-bottom:8px"><span class="dim-chip">{{ qDim.tpl.name }}模板</span><span>披露层级路径：<b>{{ qDim.tpl.path.join(' → ') }}</b></span><span class="muted">｜ 数量单位：{{ nsRes.dim.unit }}</span><a href="javascript:;" @click="bandDlg = true">查看分段</a></div>
-          <dim-table :name="nsRes.dim.name" :total="q.dimMetric==='stock' ? nsRes.dim.rawStock : nsRes.dim.rawSales" :n="nsRes.dim.n" :metric="q.dimMetric==='stock' ? '期末库存' : '销量'" :level="q.dimLevel" :seg-filter="q.dimSeg"></dim-table>
+        <template v-if="nsView">
+          <div class="row small" style="gap:6px;margin-bottom:8px;flex-wrap:wrap"><span class="dim-chip">{{ nsView.d.tpl.name }}模板</span><span>披露层级路径：<b>{{ nsView.d.tpl.path.join(' → ') }}</b></span><span class="muted">｜ 数量单位：{{ nsView.r.unit }}</span><a href="javascript:;" @click="showBands(nsView.r.name)">查看分段</a></div>
+          <div class="tier-bar"><el-radio-group v-model="dimMetric" size="small"><el-radio-button label="销量" value="sales" /><el-radio-button label="期末库存" value="stock" /></el-radio-group><span class="small muted">其他品类模板只有一个统计维度，规格段层级只按规格段展示{{ nsView.d.specLevel ? '；点规格段可下钻到单规格层级' : '；该品名尚未配置单规格' }}。</span></div>
+          <dim-table :name="nsView.r.name" :total="dimMetric==='stock' ? nsView.r.rawStock : nsView.r.rawSales" :n="nsView.r.n0" :metric="dimMetric==='stock' ? '期末库存' : '销量'" :level="nsView.level" :seg-only="nsSeg" :seg-filter="nsView.segs" :drill="!nsSeg" @drill="(s) => { nsSeg = s; }"></dim-table>
         </template>
         <table v-else class="plain-table">
-          <thead><tr><th>品名</th><th class="c">数量单位</th><th class="r">销量</th><th class="r">日均销量</th><th class="r">期末库存</th><th class="r">可销天数</th><th class="c">贡献企业数</th><th>统计维度</th></tr></thead>
+          <thead><tr><th>品名</th><th class="c">数量单位</th><th class="r">销量</th><th class="r">日均销量</th><th class="r">期末库存</th><th class="r">可销天数</th><th class="c">贡献企业数</th><th>下钻</th></tr></thead>
           <tbody><tr v-for="r in nsRes.rows" :key="r.name">
             <td><b>{{ r.name }}</b></td><td class="c"><span class="unit-pill ns">{{ r.unit }}</span></td>
             <td class="r"><v-num :v="r.sales" /></td><td class="r"><v-num :v="r.avg" /></td><td class="r"><v-num :v="r.stock" /></td><td class="r"><v-num :v="r.days" :d="1" /></td>
             <td class="c"><contrib-tag :n="r.sales===null ? 0 : r.n" /></td>
-            <td><a href="javascript:;" @click="loadDim(r.name)">按规格查看 ›</a></td>
+            <td><a href="javascript:;" @click="nsDrill = r.name; nsSeg = ''">下钻到规格段 ›</a><el-tooltip v-if="r.miss" placement="top" :content="'所选项中有 ' + r.miss + ' 项因样本不足未计入'"><span class="miss-tag">{{ r.miss }} 项未计入</span></el-tooltip></td>
           </tr></tbody>
         </table>
         <div class="tip-box small mt12">非钢材按数量统计，每个品名一个标准数量单位（示例：个、套、片）。<b>不同数量单位之间不相加</b>，因此没有合计行，也没有占比；数量与钢材的吨位不换算、不合计。<template v-if="nsRes.brand">非钢材不区分钢厂品牌，品牌筛选对本表不生效。</template>非钢材暂不提供价格指标；地区最细到省。披露门槛与钢材相同，按数量分别判定贡献企业数与优势度。</div>
@@ -275,7 +325,8 @@
 
   <el-dialog v-model="exportDlg" title="导出查询结果" width="560px">
     <el-descriptions :column="1" border size="small">
-      <el-descriptions-item label="导出范围">当前查询结果{{ res.dim ? '（按品类统计维度）' : '，共 ' + res.rowCount + ' 行' }}</el-descriptions-item>
+      <el-descriptions-item label="导出范围">当前查询结果{{ dimView ? '（' + dimTree.levelName + (dimView.segOnly ? '，' + dimView.segOnly : '') + '）' : '，共 ' + res.rowCount + ' 行' }}</el-descriptions-item>
+      <el-descriptions-item label="查询条件说明">{{ condChips.map((c) => c.k + '：' + c.v).join('；') }}<div class="small muted">写入导出文件的“查询条件说明”页，含规格段、壁厚段等品类维度条件</div></el-descriptions-item>
       <el-descriptions-item label="工作表">{{ steelOff ? '非钢材（数量）' : nsRes ? '钢材（吨）、非钢材（数量）两个工作表，不合计' : '钢材（吨）' }}；含维度列、单位列、披露层级列（单规格、段、已上卷）</el-descriptions-item>
       <el-descriptions-item label="文件格式"><el-radio-group v-model="expFmt"><el-radio value="xlsx">Excel</el-radio><el-radio value="csv">CSV</el-radio></el-radio-group></el-descriptions-item>
       <el-descriptions-item label="今日导出配额">已用 3 / 20 次，已导出 1,286 / 200,000 行</el-descriptions-item>
@@ -293,12 +344,12 @@
         <td><b>{{ c.name }}</b></td>
         <td><span class="unit-pill" :class="{ns: c.steel === false}">{{ c.steel === false ? '数量' : '吨' }}</span></td>
         <td class="small">{{ tplOf(c).name }}<div class="muted">{{ tplOf(c).dims.map((x) => x.name).join(' + ') }}</div></td>
-        <td><span class="level-tag" :class="{lock: c.depth < 'L3'}">{{ c.depth >= 'L4' ? '统计维度' : c.depth === 'L3' ? '材质' : '品名' }}</span></td>
+        <td><span class="level-tag" :class="{lock: c.depth < 'L3'}">{{ c.depth >= 'L4' ? '规格段层级' : c.depth === 'L3' ? '材质' : '品名' }}</span><div v-if="c.depth >= 'L4'" class="small muted">{{ segTierOf(c) }}</div></td>
         <td>{{ c.geo === '市' ? '地级市' : '省' }}</td><td>{{ c.time }}</td>
         <td class="muted small">{{ c.products.map((p) => p.name).join('、') }}</td>
       </tr></tbody>
     </table>
-    <div class="small muted mt12">“统计维度”指按该大类的统计维度模板查看（第二维度按段）；标准化深度未到规格段的大类，模板维度已采集、暂不披露。粒度随标准化进度与样本量扩大而放开，由运营后台“全品类主数据工作台”统一配置，调整前公告。</div>
+    <div class="small muted mt12">“规格段层级”是品类下钻中品名之下的一级，按该大类的统计维度模板带出第二维度（{{ segTierText }}）；配置了单规格的品名还可以再下钻到单规格层级。标准化深度未到规格段的大类，模板维度已采集、暂不披露。粒度随标准化进度与样本量扩大而放开，由运营后台“全品类主数据工作台”统一配置，调整前公告。</div>
     <template #footer><el-button type="primary" @click="grainDlg=false">知道了</el-button></template>
   </el-dialog>
 
@@ -307,7 +358,7 @@
       <el-form-item label="方案名称"><el-input v-model="saveName" /></el-form-item>
       <el-form-item label="其他"><el-checkbox>设为看板卡片</el-checkbox><el-checkbox>每周一 8:30 发送到邮箱</el-checkbox></el-form-item>
     </el-form>
-    <div class="small muted">定时发送的内容同样经过聚合引擎，屏蔽与修约规则和页面一致。</div>
+    <div class="small muted">方案保存当前的筛选条件（含规格段、壁厚段等品类维度条件）、行列布局和下钻位置。定时发送的内容同样经过聚合引擎，屏蔽与修约规则和页面一致。</div>
     <template #footer><el-button @click="saveDlg=false">取消</el-button><el-button type="primary" @click="saveDlg=false; $demo('方案已保存')">保存</el-button></template>
   </el-dialog>
 </app-layout>
@@ -324,7 +375,7 @@
   const { hash, disclose, PV, chart, fmt } = STP;
   const K = M.KPI;
   const isSteel = (s) => M.categories.some((c) => c.name === s[0]);
-  const defaults = () => ({ grain: '日', range: ['2026-11-17', '2026-11-23'], regionMode: '仓库所在地', regions: [], cats: [], brand: '全部', rowDim: 'region', colDim: 'metric', crossMetric: 'sales', dimSeg: [], dimD2: [], dimLevel: '', dimMetric: 'sales', metrics: ['sales', 'nSales', 'share', 'avg', 'mom', 'stock', 'nStock', 'days'] });
+  const defaults = () => ({ grain: '日', range: ['2026-11-17', '2026-11-23'], regionMode: '仓库所在地', regions: [], cats: [], brand: '全部', rowDim: 'region', colDim: 'metric', crossMetric: 'sales', dimSeg: [], dimD2: [], metrics: ['sales', 'nSales', 'share', 'avg', 'mom', 'stock', 'nStock', 'days'] });
   const PRICE_KEYS = ['price', 'pchg', 'cover', 'nPrice'];
   const jsCities = (names) => names.map((n) => ['江苏', n]);
   const SCHEMES = {
@@ -332,11 +383,18 @@
     east: { t: '华东重点城市 · 螺纹钢周报', f: { regions: jsCities(['苏州市', '无锡市', '南京市', '常州市', '宿迁市']).concat([['浙江', '杭州市'], ['浙江', '宁波市'], ['浙江', '金华市'], ['上海', '上海市']]), cats: [['建筑钢材', '螺纹钢']], metrics: ['sales', 'nSales', 'avg', 'mom', 'stock', 'days'] } },
     cross: { t: '省 × 大类交叉表（近 7 日销量）', f: { colDim: 'cat' } },
     spec: { t: '东岳品牌分规格动销', f: { rowDim: 'cat', brand: '本厂' } },
-    pipe: { t: '焊管 规格 × 壁厚段（管材模板）', f: { cats: [['管材', '焊管']], rowDim: 'dim' } },
-    plate: { t: '热轧卷板 厚度段 × 宽度段（板材模板）', f: { cats: [['热轧板卷', '热轧卷板']], rowDim: 'dim' } },
-    rebar: { t: '江苏螺纹钢分规格（建材模板）', f: { cats: [['建筑钢材', '螺纹钢']], rowDim: 'dim', regions: [['江苏', '苏州市'], ['江苏', '无锡市'], ['江苏', '南京市'], ['江苏', '常州市'], ['江苏', '徐州市'], ['江苏', '南通市'], ['江苏', '扬州市'], ['江苏', '连云港市'], ['江苏', '宿迁市']] } },
-    hbeam: { t: 'H 型钢 规格 × 负差段（型材模板）', f: { cats: [['型钢', 'H 型钢']], rowDim: 'dim' } },
-    angle: { t: '角钢 规格 × 公斤段（型材模板）', f: { cats: [['型钢', '角钢']], rowDim: 'dim' } },
+    /* p 为方案保存的下钻位置（大类、品名、规格段）；规格段层级带出的第二维度由品类模板决定（UP-105） */
+    pipe: { t: '焊管 规格段 × 壁厚段（管材 · 规格段层级）', f: { cats: [['管材', '焊管']], rowDim: 'cat' }, p: ['管材', '焊管'] },
+    pipeSpec: { t: '焊管 DN15–50 规格 × 壁厚段（管材 · 单规格层级）', f: { cats: [['管材', '焊管']], rowDim: 'cat' }, p: ['管材', '焊管', 'DN15–50'] },
+    plate: { t: '热轧卷板 厚度段 × 宽度段（板材 · 规格段层级）', f: { cats: [['热轧板卷', '热轧卷板']], rowDim: 'cat' }, p: ['热轧板卷', '热轧卷板'] },
+    /* 品类维度条件与其他行维度组合（UP-106、PV-107） */
+    pipeTime: { t: '焊管 · 壁厚段 2.0–4.5mm 按月（条件 × 时间）', f: { cats: [['管材', '焊管']], rowDim: 'time', grain: '月', range: ['2026-06-01', '2026-11-23'], dimD2: ['2.0–3.0mm', '3.0–4.5mm'], metrics: ['sales', 'nSales', 'avg', 'mom', 'stock', 'days'] } },
+    pipeProv: { t: '分省焊管 · 壁厚段 2.0–4.5mm（条件 × 地区，样本不足示例）', f: { cats: [['管材', '焊管']], rowDim: 'region', grain: '月', range: ['2026-11-01', '2026-11-23'], dimD2: ['2.0–3.0mm', '3.0–4.5mm'], metrics: ['sales', 'nSales', 'share', 'stock', 'days'] } },
+    rebarProv: { t: '分省螺纹钢 · 规格段 Φ16–40（条件 × 地区）', f: { cats: [['建筑钢材', '螺纹钢']], rowDim: 'region', dimSeg: ['Φ16–25', 'Φ28–40'], metrics: ['sales', 'nSales', 'share', 'mom', 'stock', 'days'] } },
+    plateTime: { t: '热轧卷板 3.0–6.0mm × 1250–1500mm 按旬（条件 × 时间）', f: { cats: [['热轧板卷', '热轧卷板']], rowDim: 'time', grain: '旬', range: ['2026-09-01', '2026-11-23'], dimSeg: ['3.0–6.0mm'], dimD2: ['1250–1500mm'], metrics: ['sales', 'nSales', 'avg', 'mom', 'stock', 'days'] } },
+    rebar: { t: '江苏螺纹钢分规格（建材 · 单规格层级）', f: { cats: [['建筑钢材', '螺纹钢']], rowDim: 'cat', regions: [['江苏', '苏州市'], ['江苏', '无锡市'], ['江苏', '南京市'], ['江苏', '常州市'], ['江苏', '徐州市'], ['江苏', '南通市'], ['江苏', '扬州市'], ['江苏', '连云港市'], ['江苏', '宿迁市']] }, p: ['建筑钢材', '螺纹钢', 'Φ16–25'] },
+    hbeam: { t: 'H 型钢 规格 × 负差段（型材 · 单规格层级）', f: { cats: [['型钢', 'H 型钢']], rowDim: 'cat' }, p: ['型钢', 'H 型钢', M.findProd('H 型钢').p.bands[0]] },
+    angle: { t: '角钢 规格 × 公斤段（型材 · 单规格层级）', f: { cats: [['型钢', '角钢']], rowDim: 'cat' }, p: ['型钢', '角钢', M.findProd('角钢').p.bands[0]] },
     mix: { t: '钢材 + 非钢材分表（螺纹钢与配套辅材）', f: { cats: [['建筑钢材', '螺纹钢'], ['配套辅材', '钢筋连接套筒'], ['配套辅材', '脚手架扣件'], ['配套辅材', '法兰']], rowDim: 'cat', metrics: ['sales', 'nSales', 'avg', 'stock', 'days'] } },
     price: { t: '分省螺纹钢量价', price: true, f: { cats: [['建筑钢材', '螺纹钢']], metrics: ['sales', 'nSales', 'avg', 'price', 'pchg', 'cover', 'nPrice'] } },
   };
@@ -346,7 +404,9 @@
       const f = defaults();
       return {
         f, q: JSON.parse(JSON.stringify(f)), path: [], view: 'table', loading: false, scheme: 'default',
-        cats: M.allCats, grainDlg: false, bandDlg: false, bandVer: M.BAND_VER,
+        cats: M.allCats, grainDlg: false, bandDlg: false, bandName: '', bandVer: M.BAND_VER, segTierText: M.SEG_TIER_TEXT,
+        /* 规格段层级、单规格层级的展示状态：指标、是否收起第二维度、是否平铺为行；非钢材的下钻位置 */
+        dimMetric: 'sales', fold: false, flat: false, nsDrill: '', nsSeg: '',
         exportDlg: false, saveDlg: false, agree: false, expFmt: 'xlsx', saveName: '华东螺纹钢周报',
         metricDefs: [
           { k: 'sales', t: '销量' }, { k: 'stock', t: '期末库存' }, { k: 'avg', t: '日均销量' }, { k: 'days', t: '可销天数' },
@@ -364,6 +424,10 @@
       steelOff() { return this.q.cats.length > 0 && this.qc.length === 0; },
       singleProductQ() { return this.qc.length === 1; },
       fDim() { return this.f.cats.length === 1 ? M.dimsOf(this.f.cats[0][1]) : null; },
+      fCondOn() { return !!this.fDim && this.fDim.open && this.f.dimSeg.length + this.f.dimD2.length > 0; },
+      fTierName() { const d = this.fDim; return d.levels.find((l) => l.k === d.segLevel).t; },
+      /* 多选品名时提示里用到的第二维度名称 */
+      multiD2() { const a = []; this.f.cats.forEach((c) => { const d = M.dimsOf(c[1]); if (d && d.d2 && a.indexOf(d.d2.segName) < 0) a.push(d.d2.segName); }); return a.length ? a.slice(0, 2).join('、') : '壁厚段'; },
       /* PV-92：一次查询同时选了公斤段品名和负差段品名时，第二维度不合并展示。选中“型钢”整个大类（只有一级）也算 */
       secMix() {
         const names = [];
@@ -372,27 +436,114 @@
         return kg.length && neg.length ? { kg, neg } : null;
       },
       qDim() { return this.q.cats.length === 1 ? M.dimsOf(this.q.cats[0][1]) : null; },
-      bandDim() { return this.fDim || this.qDim; },
+      bandDim() { return this.bandName ? M.dimsOf(this.bandName) : this.fDim || this.qDim; },
+      /* 品类维度条件（UP-106）：选定单一品名、且该大类已披露到规格段时才有 */
+      cond() {
+        const d = this.qDim, q = this.q;
+        if (!d || !d.open) return null;
+        const segs = q.dimSeg.filter((b) => d.d1.bands.indexOf(b) >= 0), d2s = d.d2 ? q.dimD2.filter((b) => d.d2.bands.indexOf(b) >= 0) : [];
+        return segs.length || d2s.length ? { d, segs, d2s } : null;
+      },
+      condNames() { const c = this.cond, a = []; if (c.segs.length) a.push(c.d.d1.segName); if (c.d2s.length) a.push(c.d.d2.segName); return a.join('、'); },
+      condChips() {
+        const q = this.q, a = [], d = this.qDim;
+        a.push({ k: '时间', v: this.res.range[0] + ' 至 ' + this.res.range[1] + '（' + q.grain + '）' });
+        const pv = []; q.regions.forEach((r) => { if (pv.indexOf(r[0]) < 0) pv.push(r[0]); });
+        a.push({ k: q.regionMode, v: pv.length ? pv.slice(0, 3).join('、') + (pv.length > 3 ? ' 等 ' + pv.length + ' 省' : '') + '（已选 ' + q.regions.length + ' 个地市）' : '全国' });
+        const names = q.cats.map((c) => c[1] || c[0]);
+        a.push({ k: '品类', v: names.length ? names.slice(0, 3).join('、') + (names.length > 3 ? ' 等 ' + names.length + ' 个' : '') : '全部钢材品类' });
+        a.push({ k: '品牌', v: q.brand === '全部' ? '全部' : q.brand === '本厂' ? '本厂（东岳）' : '其他品牌' });
+        if (d && d.open) {
+          const c = this.cond || { segs: [], d2s: [] };
+          a.push({ k: d.d1.segName, v: c.segs.length ? c.segs.join('、') : '不限', on: c.segs.length > 0 });
+          if (d.d2) a.push({ k: d.d2.segName, v: c.d2s.length ? c.d2s.join('、') : '不限', on: c.d2s.length > 0 });
+        } else if (d) a.push({ k: '品类维度条件', v: '该大类未到规格段，暂不提供', none: true });
+        return a;
+      },
+      /* 品类下钻到品名以下：tierD 为当前品名的统计维度；dimView 为按模板展示的层级（规格段层级带第二维度的交叉表，或单规格层级） */
+      tierD() { return this.q.rowDim === 'cat' && this.path.length >= 2 && this.res.dim ? M.dimsOf(this.path[1]) : null; },
+      segCtl() { const d = this.tierD; return !!d && this.path.length === 2 && !!d.d2 && d.segLevel === 'sx'; },
+      foldLock() { return !!this.cond && this.cond.d2s.length > 0; },
+      dimView() {
+        const d = this.tierD;
+        if (!d) return null;
+        if (this.path.length >= 3) return d.specLevel ? { d, level: d.specLevel, segOnly: this.path[2], tier: 'spec' } : null;
+        return this.segCtl && !(this.fold && !this.foldLock) ? { d, level: d.segLevel, segOnly: '', tier: 'seg' } : null;
+      },
+      /* 规格段层级只做收窄（PV-98），不按“可见格子之和”重算 */
+      bandNarrow() { return !!this.tierD && !this.dimView; },
+      tierNote() {
+        const d = this.tierD, v = this.dimView;
+        if (!d) return '';
+        if (v && v.tier === 'spec') return d.keepWall ? '每一列的上一级是本规格段的“' + d.d1.segName + ' × ' + d.d2.segName + '”：样本不足的列整列上卷到小计行。' : d.d2 ? '各' + d.d1.name + '下不满足披露条件的' + d.d2.segName + '合并披露，或整行上卷到' + d.d1.name + '。' : '样本不足的' + d.d1.name + '与最小的可见' + d.d1.name + '合并披露，或整段上卷到' + d.d1.segName + '。';
+        if (v) return '规格段层级带出第二维度：行为' + d.d1.segName + '，列为' + d.d2.segName + '。' + (d.specLevel ? '点' + d.d1.segName + '可下钻到单规格层级。' : d.tplKey === '板材' ? '板材的厚度是连续取值，只披露到段，没有单规格层级。' : '该品名尚未配置单规格。');
+        if (this.segCtl) return '已收起' + d.d2.name + '：下表是“' + d.d1.segName + '（不分' + d.d2.name + '）”，为“' + d.d1.segName + ' × ' + d.d2.segName + '”在路径上的上一级。';
+        if (d.d2) return d.tpl.name + '的规格段层级暂不带第二维度（待确认），按' + d.d1.segName + '展示；' + d.d2.segName + '在单规格层级查看，也可在筛选区按' + d.d2.segName + '设条件。';
+        return d.tpl.name + '模板只有一个统计维度，规格段层级只按' + d.d1.segName + '展示' + (d.specLevel ? '；点' + d.d1.segName + '可下钻到单规格层级。' : '。');
+      },
+      flatRows() {
+        const v = this.dimView, q = this.q, segs = q.dimSeg, d2s = q.dimD2;
+        return M.dimFlat(this.dimTree).filter((r) => (v.segOnly ? r.seg === v.segOnly : !segs.length || segs.indexOf(r.seg) >= 0 || r.lv.indexOf('合并披露') === 0) && (!d2s.length || d2s.indexOf(r.d2) >= 0 || r.d2 === '—' || r.d2 === '其他（合并披露）'));
+      },
+      nsView() {
+        if (!this.nsDrill || !this.nsRes) return null;
+        const r = this.nsRes.rows.find((x) => x.name === this.nsDrill), d = r ? M.dimsOf(r.name) : null;
+        if (!d || !d.open) return null;
+        return { r, d, level: this.nsSeg && d.specLevel ? d.specLevel : d.segLevel, segs: this.cond && this.cond.d.name === r.name ? this.cond.segs : [] };
+      },
       kgEg() {
         const d = this.bandDim; if (!d || !d.d2 || d.d2.name !== '公斤') return null;
         const all = d.d1.fine ? [].concat.apply([], d.d1.fine) : [], model = all.find((m) => M.THEO_KG[m]) || Object.keys(M.THEO_KG).find((m) => m.indexOf(d.name) >= 0);
         return model ? { model, w: M.THEO_KG[model], r: M.kgRange(model) } : null;
       },
-      dimTree() { const d = this.res.dim; return d ? M.dimTree(d.name, this.q.dimMetric === 'stock' ? d.stock : d.sales, d.n, { level: this.q.dimLevel, nScale: d.nScale, segW: this.q.dimMetric === 'stock' ? d.stockW : undefined }) : null; },
+      dimTree() { const v = this.dimView, d = this.res.dim, st = this.dimMetric === 'stock'; return v ? M.dimTree(d.name, st ? d.stock : d.sales, d.n, { level: v.level, nScale: d.nScale, segW: st ? d.stockW : undefined }) : null; },
       dimStatText() {
         const t = this.dimTree, s = t.stat, d = t.d;
         if (t.prodRolled) return '本次范围内只到品名';
         const a = [];
-        if (s.specAll) a.push('单规格 ' + s.specAll + ' 个，可单独披露 ' + s.specOk + ' 个');
-        if (s.rowAll) a.push(d.rowName + ' × ' + d.d2.segName + '可拆分 ' + s.rowSplit + ' / ' + s.rowAll + ' 行');
+        if (t.colwise) a.push('全品名“' + t.levelName + '”格子 ' + s.cellAll + ' 个，可单独披露 ' + s.cellOk + ' 个；按' + d.d1.segName + '、' + d.d2.segName + '共 ' + s.rowAll + ' 列，整列上卷 ' + s.rowRolled + ' 列');
+        else {
+          if (s.specAll) a.push('全品名单规格 ' + s.specAll + ' 个，可单独披露 ' + s.specOk + ' 个');
+          if (s.rowAll) a.push('可按' + d.d2.segName + '拆分 ' + s.rowSplit + ' / ' + s.rowAll + ' 行');
+        }
         if (s.segRolled) a.push(d.d1.segName + '整段上卷 ' + s.segRolled + ' 个');
         return a.join('，') || '各' + d.d1.segName + '均可披露';
       },
       dimChartOption() {
-        const t = this.dimTree, x = [], v = [];
-        if (t.prodRolled) { x.push(t.d.name); v.push(t.total); }
-        t.groups.forEach((g) => { if (g.rolled) { x.push(g.seg + '（已上卷）'); v.push(g.total); } else g.rows.forEach((r) => { x.push(r.merged ? (g.seg ? g.seg + ' ' : '') + '其他(合并)' : r.name); v.push(r.total); }); });
-        const o = chart.bar({ x, unit: t.unit, series: [{ name: (this.q.dimMetric === 'stock' ? '期末库存' : '销量') + '（' + t.unit + '）', data: v }] });
+        const t = this.dimTree, v = this.dimView, mName = (this.dimMetric === 'stock' ? '期末库存' : '销量') + '（' + t.unit + '）';
+        const groups = t.groups.filter((g) => !v.segOnly || g.seg === v.segOnly);
+        let x = [], series = [];
+        if (t.prodRolled) { x = [t.d.name]; series = [{ name: mName, data: [t.total] }]; }
+        else if (t.colwise) {
+          /* 管材单规格层级：横轴为规格，按壁厚段堆叠；整列上卷的壁厚段只在“规格段小计”一柱里出现 */
+          groups.forEach((g) => {
+            if (g.rolled) { x.push(g.seg + '（已上卷）'); return; }
+            g.rows.forEach((r) => x.push(r.name));
+            if (g.others.some((o) => o)) x.push((v.segOnly ? '' : g.seg + ' ') + '其他(合并)');
+            x.push((v.segOnly ? '' : g.seg + ' ') + '已上卷的列');
+          });
+          series = t.cols.map((c, j) => {
+            const data = [];
+            groups.forEach((g) => {
+              if (g.rolled) { data.push(null); return; }
+              g.rows.forEach((r) => data.push(r.cells[j].state === 'ok' ? r.cells[j].v : null));
+              if (g.others.some((o) => o)) data.push(g.others[j] ? g.others[j].v : null);
+              data.push(g.colState[j] === 'rolled' ? g.parent.cells[j].v : null);
+            });
+            return { name: c, data };
+          });
+        } else if (t.cols.length) {
+          const rows = [];
+          groups.forEach((g) => { if (g.rolled) rows.push({ name: g.seg + '（已上卷）', rolled: g.total }); else g.rows.forEach((r) => rows.push({ name: r.merged ? (g.seg ? g.seg + ' ' : '') + '其他(合并)' : r.name, r })); });
+          x = rows.map((r) => r.name);
+          series = t.cols.map((c, j) => ({ name: c, data: rows.map((o) => (o.r && o.r.state === 'cells' && o.r.cells[j].state === 'ok' ? o.r.cells[j].v : null)) }));
+          series.push({ name: '合并披露或已上卷', color: '#c0c7d2', data: rows.map((o) => (o.rolled != null ? o.rolled : o.r.state === 'cells' ? (o.r.other ? o.r.other.v : null) : o.r.total)) });
+        } else {
+          const vals = [];
+          groups.forEach((g) => { if (g.rolled) { x.push(g.seg + '（已上卷）'); vals.push(g.total); } else g.rows.forEach((r) => { x.push(r.merged ? (g.seg ? g.seg + ' ' : '') + '其他(合并)' : r.name); vals.push(r.total); }); });
+          series = [{ name: mName, data: vals }];
+        }
+        const o = chart.bar({ x, unit: t.unit, stack: t.cols.length > 0, series });
         o.xAxis.axisLabel = { color: '#6b7787', rotate: x.length > 10 ? 40 : 0, interval: 0 };
         return o;
       },
@@ -405,12 +556,20 @@
         const selMap = {}; q.regions.forEach((r) => { (selMap[r[0]] = selMap[r[0]] || []).push(r[1]); });
         let f = 1; const partial = [];
         if (q.regions.length) { f = 0; M.provinces.forEach((p) => { const s = selMap[p.name]; if (!s) return; if (s.length === p.cities.length) f += p.share; else partial.push(p.name); }); }
+        const cd = this.cond;
         const rows = names.map((nm) => {
-          const k = M.nsKpi(nm), n = f > 0 ? Math.round(k.n * Math.pow(Math.min(1, f), 0.4)) : 0;
-          const sales = Math.round(M.nsBetween(nm, r0, r1) * f), stock = Math.round(M.nsStockOn(nm, r1) * f), ok = n >= PV.k;
-          return { name: nm, unit: k.unit, n, rawSales: sales, rawStock: stock, sales: ok ? sales : null, avg: ok ? Math.round(sales / days) : null, stock: ok ? stock : null, days: ok && sales ? +(stock / (sales / days)).toFixed(1) : null };
+          const k = M.nsKpi(nm), n0 = f > 0 ? Math.round(k.n * Math.pow(Math.min(1, f), 0.4)) : 0;
+          const rawSales = Math.round(M.nsBetween(nm, r0, r1) * f), rawStock = Math.round(M.nsStockOn(nm, r1) * f);
+          let sales = rawSales, stock = rawStock, n = n0, miss = 0;
+          /* 品类维度条件（非钢材只有规格段）：取所选规格段中可见的之和（PV-107） */
+          if (cd && cd.d.name === nm && n0 >= PV.k) {
+            const ps = M.dimPick(nm, rawSales, n0, { segs: cd.segs }), pt = M.dimPick(nm, rawStock, n0, { segs: cd.segs });
+            if (!ps.whole) { sales = ps.v; stock = pt.v; n = ps.n; miss = ps.miss; }
+          }
+          const ok = n >= PV.k;
+          return { name: nm, unit: k.unit, n, n0, miss, rawSales, rawStock, sales: ok ? sales : null, avg: ok ? Math.round(sales / days) : null, stock: ok ? stock : null, days: ok && sales ? +(stock / (sales / days)).toFixed(1) : null };
         });
-        return { rows, range: [r0, r1], days, partial, brand: q.brand !== '全部', dim: q.rowDim === 'dim' && q.cats.length === 1 ? rows[0] : null };
+        return { rows, range: [r0, r1], days, partial, brand: q.brand !== '全部' };
       },
       priceOpen() { return this.$state.gate === 'open'; },
       schemes() { return Object.keys(SCHEMES).filter((k) => !SCHEMES[k].price || this.priceOpen).map((k) => ({ k, t: SCHEMES[k].t })); },
@@ -419,13 +578,16 @@
       /* 所选品类中披露粒度较粗（省、旬）的大类 */
       coarseSel() { const names = []; this.qc.forEach((s) => { const c = M.categories.find((x) => x.name === s[0]); if (c && c.geo === '省' && names.indexOf(c.name) < 0) names.push(c.name); }); return names; },
       allCoarse() { return this.qc.length > 0 && this.qc.every((s) => M.categories.find((x) => x.name === s[0]).geo === '省'); },
-      rootName() { return this.q.rowDim === 'dim' && this.qDim ? this.qDim.name + ' › 品类统计维度' : this.q.rowDim === 'region' ? (this.q.regions.length ? '所选地区' : '全国') : this.q.rowDim === 'cat' ? (this.q.cats.length ? '所选品类' : '全部品类') : '时间'; },
+      rootName() { return this.q.rowDim === 'region' ? (this.q.regions.length ? '所选地区' : '全国') : this.q.rowDim === 'cat' ? (this.q.cats.length ? '所选品类' : '全部品类') : '时间'; },
       /* 聚合引擎的原型模拟：根据查询条件生成结果并做披露判定。
          销量、库存、价格都取自与聚合看板、量价视图相同的拆分与序列，同一口径在各页数值一致 */
       res() {
-        /* 引擎只处理钢材（吨）；按品类统计维度查看时，先按品类口径算出该品名在所选范围内的合计与企业数，再交给统计维度模板 */
-        const byDim = this.q.rowDim === 'dim';
-        const q = Object.assign({}, this.q, { cats: this.qc }, byDim ? { rowDim: 'cat', colDim: 'metric' } : {}), path = byDim ? [] : this.path;
+        /* 引擎只处理钢材（吨）。品类下钻到品名以下时，先按品类口径算出该品名在所选范围内的合计与企业数（dimInfo），再交给统计维度模板 */
+        const q = Object.assign({}, this.q, { cats: this.qc }), path = this.path;
+        /* 品类维度条件（UP-106、PV-107）。设了第二维度条件时，地区、时间可组合到的最细粒度按大类配置 */
+        const cd = this.cond && this.singleProductQ ? this.cond : null;
+        const d2Lock = !!cd && cd.d2s.length > 0 && cd.d.combo.geo === '省';
+        let dimInfo = null;
         const r0 = q.range[0], r1 = q.range[1] > M.DATA_DATE ? M.DATA_DATE : q.range[1];
         const days = Math.max(1, Math.round((new Date(r1) - new Date(r0)) / 864e5) + 1);
         const seed = JSON.stringify([q.range, q.regionMode, q.brand, q.cats]);
@@ -452,7 +614,7 @@
         // 地区选择
         const selMap = {}; q.regions.forEach((r) => { (selMap[r[0]] = selMap[r[0]] || []).push(r[1]); });
         const excluded = [];
-        const provs = M.provinces.map((p, i) => ({ p, i })).filter((x) => !q.regions.length || selMap[x.p.name]).map(({ p, i }) => {
+        const provsAll = M.provinces.map((p, i) => ({ p, i })).filter((x) => !q.regions.length || selMap[x.p.name]).map(({ p, i }) => {
           const full = !q.regions.length || selMap[p.name].length === p.cities.length;
           const cs = ST.cities(p), cw = SW.cities(p), ct = M.split(provSt[i], tree.cities(p));
           /* 按品牌查询时，企业数只计经销本厂品牌的企业；“其他品牌”= 全部 − 本厂，本厂不可披露的地区同样不披露，防止相减倒推 */
@@ -462,6 +624,10 @@
           const used = full ? cities : cities.filter((c) => c.n >= PV.k), us = (k) => sum(used.map((c) => c[k]));
           return { name: p.name, pv: p, i, full, cities, sales: full ? ST.provs[i] : us('sales'), salesWh: full ? SW.provs[i] : us('salesWh'), st: full ? provSt[i] : us('st'), n: full ? nn(p.ent) : Math.min(nn(p.ent), us('n')), dom: branded && i === 9, child: !p.muni };
         }).filter((p) => p.full || p.cities.some((c) => c.n >= PV.k));
+        /* 第二维度条件只能组合到省的大类：只选了部分地级市的省不计入 */
+        const partialD2 = d2Lock ? provsAll.filter((p) => !p.full).map((p) => p.name) : [];
+        const provs = d2Lock ? provsAll.filter((p) => p.full) : provsAll;
+        if (d2Lock) excluded.length = 0;
         const regSel = q.regions.length > 0;
         /* 所选地区、品类、品牌下的销量与库存合计：按品类、按时间展开时以它为总量 */
         const gSales = regSel ? sum(provs.map((p) => p.sales)) : ST.total, gSalesWh = regSel ? sum(provs.map((p) => p.salesWh)) : SW.total, gStock = regSel ? sum(provs.map((p) => p.st)) : S0;
@@ -482,7 +648,7 @@
         };
         let raw = [], dimName = '';
         if (q.rowDim === 'region') {
-          if (path.length === 0) { dimName = q.regionMode + '（省）'; raw = provs.map((p) => mk(p.name, p.n, p, Object.assign({ dom: p.dom }, this.allCoarse ? { lock: '仅到省' } : { child: p.child }, one ? pFields(M.priceOf(one.p.name, pOpt({ prov: p.name }))) : {}))); }
+          if (path.length === 0) { dimName = q.regionMode + '（省）'; raw = provs.map((p) => mk(p.name, p.n, p, Object.assign({ dom: p.dom }, this.allCoarse ? { lock: '仅到省' } : d2Lock ? (p.child ? { lock: '仅到省', lockTip: '设了' + cd.d.d2.segName + '条件时，' + cd.d.cat.name + '的地区最细到省（按大类配置）' } : {}) : { child: p.child }, one ? pFields(M.priceOf(one.p.name, pOpt({ prov: p.name }))) : {}))); }
           else { dimName = q.regionMode + '（地级市）'; const p = provs.find((x) => x.name === path[0]); raw = p.cities.map((c) => mk(c.name, c.n, c, Object.assign({ dom: p.dom }, one ? pFields(M.priceOf(one.p.name, pOpt({ prov: p.name, city: c.name }))) : {}))); }
         } else if (q.rowDim === 'cat') {
           const nc = (sh) => Math.round(M.nOf(sh) * regN * brN);
@@ -500,12 +666,13 @@
             if (path.length === 1) { dimName = '品名'; raw = ps.map((s, j) => mk(s.p.name, nc(s.sh), { sales: pSales[j], st: pStock[j] }, Object.assign(s.c.depth >= 'L3' ? { child: true } : { lock: '仅到品名' }, one ? pFields(natCell({})) : {}))); }
             else {
               const j = ps.findIndex((x) => x.p.name === path[1]), s = ps[j];
-              const byBand = s.c.depth >= 'L4';
-              dimName = byBand ? '规格段' : '材质';
+              const byBand = s.c.depth >= 'L4', sd = M.dimsOf(s.p.name);
+              dimName = byBand ? sd.levels.find((l) => l.k === 'seg').t : '材质';
+              if (byBand) dimInfo = { name: s.p.name, sales: Math.round(pSales[j]), stock: Math.round(pStock[j]), n: nc(s.sh), nScale: regN * brN, stockW: tree.leaf(s.c, s.p, s.p.bands, s.p.bandShare) };
               const names = byBand ? s.p.bands : s.p.materials, w = byBand ? s.p.bandShare : M.matShare(s.p);
               const lSales = M.split(pSales[j], w), lStock = M.split(pStock[j], tree.leaf(s.c, s.p, names, w));
               const prow = one ? M.priceRow(one.p.name, pOpt(onlyProv ? { prov: onlyProv } : {})) : [];
-              raw = names.map((b, i) => mk(b, nc(s.sh * w[i]), { sales: lSales[i], st: lStock[i] }, Object.assign(byBand ? {} : { lock: '仅到材质' }, one && prow[i] ? pFields(Object.assign({}, prow[i].cell, { show: prow[i].show })) : {})));
+              raw = names.map((b, i) => mk(b, nc(s.sh * w[i]), { sales: lSales[i], st: lStock[i] }, Object.assign(byBand ? (sd.specLevel ? { child: true } : {}) : { lock: '仅到材质' }, one && prow[i] ? pFields(Object.assign({}, prow[i].cell, { show: prow[i].show })) : {})));
             }
           }
         } else {
@@ -550,7 +717,6 @@
           raw.forEach((r, i) => { r.prev = pvs[i]; r.yb = ybs[i]; r.mom = pct(r.sales, pvs[i]); r.yoy = pct(r.sales, ybs[i]); });
         }
         const sumRaw = (k) => raw.reduce((a, r) => a + (r[k] || 0), 0);
-        const tSales = sumRaw('sales'), tStock = sumRaw('stock'), tAvgWh = sumRaw('avgWh');
         // 披露判定
         let rows;
         if (q.rowDim === 'time') {
@@ -566,19 +732,64 @@
             dom.forEach((r) => { r.sales = null; r.avg = null; });
           }
         }
+        /* 品类维度条件与行维度组合（PV-107）：每一行取所选成员在路径上各自可见的格子之和，逐行判定；
+           所选成员恰好是父节点的全部成员时按父节点整体计算（dimPick 返回 whole，不改动该行）。
+           时间序列各周期用同一披露层级（PV-86）：按整个统计区间判定一次，各周期按同一组可见格子取数。
+           下钻到规格段层级后，条件只收窄展示的行（PV-98） */
+        let condOn = false, missAll = 0, totalNote = '';
+        if (cd) {
+          const nm = cd.d.name, stW = tree.leaf(one.c, one.p, one.p.bands, one.p.bandShare), ck = cd.segs.join() + '|' + cd.d2s.join();
+          const jit = (r) => 1 + ((hash(r.name + ck) % 50) - 25) / 1000;
+          const hide = (r) => Object.assign(r, { sales: null, avg: null, stock: null, avgWh: 0, prev: 0, yb: 0, n: 0, nSales: 0, nStock: 0, mom: null, yoy: null, tip: '所选项在这一行样本不足，不予披露' });
+          /* base：行本身是规格段时，按品名在所选范围内的合计与企业数取该规格段之下的可见格子；否则该行就是品名在这一行范围内的合计 */
+          const pickRow = (r, segs, base) => {
+            if (r.sales === null) return;
+            const o = Object.assign({ segs, d2s: cd.d2s }, base ? { nScale: base.nScale } : {}), ps = M.dimPick(nm, base ? base.sales : r.sales, base ? base.n : r.n, o);
+            if (ps.whole) return;
+            const pt = r.stock === null ? { v: 0, n: 0 } : M.dimPick(nm, base ? base.stock : r.stock, base ? base.n : r.n, Object.assign({ segW: stW, seed: 's' }, o));
+            r.miss = ps.miss; r.picked = ps.picked;
+            if (!ps.n) { hide(r); return; }
+            const rr = ps.v / Math.max(1, r.sales), j = jit(r);
+            r.prev = (r.prev || 0) * rr * j; r.yb = (r.yb || 0) * rr / j; r.avgWh = (r.avgWh || 0) * rr;
+            r.sales = ps.v; r.avg = Math.round(ps.v / days); r.n = ps.n; r.nSales = ps.n;
+            r.stock = pt.n ? pt.v : null; r.nStock = pt.n;
+            if (r.prev) r.mom = pct(r.sales, r.prev); if (r.yb) r.yoy = pct(r.sales, r.yb);
+          };
+          if (q.rowDim === 'time') {
+            const nP = Math.round(M.nOf(one.sh) * regN * brN), o = { segs: cd.segs, d2s: cd.d2s, nScale: regN * brN };
+            const ps = M.dimPick(nm, Math.round(gSales), nP, o), pt = M.dimPick(nm, Math.round(gStock), nP, Object.assign({ segW: stW, seed: 's' }, o));
+            if (!ps.whole) {
+              condOn = true; missAll = ps.miss;
+              rows.forEach((r) => {
+                if (r.sales === null) return;
+                if (!ps.n) { hide(r); return; }
+                const rr = ps.v / Math.max(1, gSales) * jit(r);
+                r.sales = Math.round(r.sales * rr); r.avg = Math.round(r.avg * rr); r.avgWh = r.avgWh * rr; r.n = ps.n; r.nSales = ps.n;
+                r.stock = pt.n ? Math.round(r.stock * pt.v / Math.max(1, gStock)) : null; r.nStock = pt.n;
+              });
+            }
+          } else if (q.rowDim === 'cat' && path.length >= 2) {
+            if (cd.segs.length) { rows = rows.filter((r) => (r.merged ? r.members.some((m) => cd.segs.indexOf(m) >= 0) : cd.segs.indexOf(r.name) >= 0)); totalNote = '全部' + cd.d.d1.segName + '，不随筛选变化'; }
+            if (cd.d2s.length) { condOn = true; totalNote = '所列各行之和'; rows.forEach((r) => { if (r.merged) hide(r); else pickRow(r, [r.name], dimInfo); }); }
+          } else { condOn = true; totalNote = '所列各行之和'; rows.forEach((r) => pickRow(r, cd.segs)); }
+          /* 设了品类维度条件时不提供价格类指标 */
+          rows.forEach((r) => { r.price = null; r.pchg = null; r.cover = null; r.nPrice = 0; });
+        }
+        const sumT = condOn ? (k) => rows.reduce((a, r) => a + (r[k] || 0), 0) : sumRaw;
+        const tSales = sumT('sales'), tStock = sumT('stock'), tAvgWh = sumT('avgWh');
         rows.forEach((r) => {
           const ms = r.sales === null;
           /* 可销天数 = 期末库存 ÷ 区间日均销量，销量按仓库所在地计（与库存同口径） */
           r.days = ms || r.stock === null || !r.avgWh ? null : +(r.stock / r.avgWh).toFixed(1);
-          r.share = ms ? null : +(r.sales / tSales * 100).toFixed(1);
+          r.share = ms || !tSales ? null : +(r.sales / tSales * 100).toFixed(1);
           if (ms) { r.mom = null; r.yoy = null; r.price = null; }
           if (r.price === null) r.pchg = null;
         });
         const out = rows.slice();
         if (q.rowDim !== 'time') {
-          const tc = one ? pFields(M.priceOf(one.p.name, pOpt(onlyProv ? { prov: onlyProv } : {}))) : {};
+          const tc = one && !cd ? pFields(M.priceOf(one.p.name, pOpt(onlyProv ? { prov: onlyProv } : {}))) : {};
           /* 按流向地分地区时，合计只含已填报流向地的销量，可销天数仍用仓库所在地口径的销量 */
-          out.push(Object.assign({ total: true, name: '合计', sales: tSales, avg: Math.round(tSales / days), stock: tStock, days: tAvgWh ? +(tStock / tAvgWh).toFixed(1) : null, share: 100, mom: sumRaw('prev') ? pct(tSales, sumRaw('prev')) : totalMom, yoy: sumRaw('yb') ? pct(tSales, sumRaw('yb')) : totalYoy, nPrice: 0 }, one ? { price: tc.price, pchg: tc.pchg, cover: tc.cover } : { price: null, pchg: null, cover: null }));
+          out.push(Object.assign({ total: true, name: '合计', sales: tSales, avg: Math.round(tSales / days), stock: tStock, days: tAvgWh ? +(tStock / tAvgWh).toFixed(1) : null, share: tSales ? 100 : null, note: totalNote, mom: sumT('prev') ? pct(tSales, sumT('prev')) : condOn ? null : totalMom, yoy: sumT('yb') ? pct(tSales, sumT('yb')) : condOn ? null : totalYoy, nPrice: 0 }, one && !cd ? { price: tc.price, pchg: tc.pchg, cover: tc.cover } : { price: null, pchg: null, cover: null }));
         }
         // 交叉表：行为披露后的地区行，行合计、列合计与多指标表一致
         let cross = [], cols = [];
@@ -613,8 +824,7 @@
         const isCross = cross.length > 0;
         const cellCount = isCross ? (cross.length - 1) * cols.length : rows.length * q.metrics.filter((m) => ['sales', 'stock', 'avg', 'days', 'mom', 'yoy', 'share', 'price', 'pchg'].indexOf(m) >= 0 && ((m !== 'price' && m !== 'pchg') || (one && this.priceOpen))).length;
         const maskCount = isCross ? cross.reduce((a, l) => a + l.cells.filter((c) => c.v === null).length, 0) : rows.reduce((a, r) => a + q.metrics.filter((m) => ['sales', 'stock', 'avg', 'days', 'mom', 'yoy', 'share', 'price', 'pchg'].indexOf(m) >= 0 && ((m !== 'price' && m !== 'pchg') || (one && this.priceOpen)) && r[m] === null).length, 0);
-        const dim = byDim && one ? { name: one.p.name, sales: Math.round(gSales), stock: Math.round(gStock), n: Math.round(M.nOf(one.sh) * regN * brN), nScale: regN * brN, stockW: tree.leaf(one.c, one.p, one.p.bands, one.p.bandShare) } : null;
-        return { dim, rows: out, dimName, days, range: [r0, r1], excluded, selCount: q.regions.length, cross, cols, rowCount: isCross ? cross.length - 1 : rows.length, cellCount: Math.max(1, cellCount), maskCount };
+        return { dim: dimInfo, partialD2, condOn, missAll, missRows: rows.filter((r) => r.miss).length, rows: out, dimName, days, range: [r0, r1], excluded, selCount: q.regions.length, cross, cols, rowCount: isCross ? cross.length - 1 : rows.length, cellCount: Math.max(1, cellCount), maskCount };
       },
       chartOption() {
         const rows = this.res.rows.filter((r) => !r.total);
@@ -639,19 +849,32 @@
       tplOf(c) { return M.DIM_TPL[c.tpl]; },
       pOn(k) { return this.priceOpen && this.singleProductQ && this.on(k); },
       rowCls({ row }) { return row.total ? 'total-row' : row.merged ? 'merged-row' : ''; },
-      run() {
+      segTierOf(c) { const t = M.DIM_TPL[c.tpl]; return M.DIM_OPT.segSecond.indexOf(c.tpl) >= 0 ? t.dims[0].name + '段 × ' + t.dims[1].name + '段' : '规格段'; },
+      showBands(name) { this.bandName = name || ''; this.bandDlg = true; },
+      /* p：方案保存的下钻位置。品类为行维度且只选了一个品名时，直接定位到该品名（规格段层级），面包屑可以回到上级 */
+      run(p) {
         this.loading = true;
-        if (this.f.rowDim !== 'region' && this.f.colDim === 'cat') this.f.colDim = 'metric';
-        if (this.f.rowDim === 'dim' && !(this.fDim && this.fDim.open)) this.f.rowDim = 'cat';
-        if (this.fDim) { const d = this.fDim; this.f.dimSeg = this.f.dimSeg.filter((b) => d.d1.bands.indexOf(b) >= 0); this.f.dimD2 = d.d2 ? this.f.dimD2.filter((b) => d.d2.bands.indexOf(b) >= 0) : []; if (!d.levels.some((l) => l.k === this.f.dimLevel)) this.f.dimLevel = d.levels[0].k; } else { this.f.dimSeg = []; this.f.dimD2 = []; }
-        if (this.f.cats.filter(isSteel).length !== 1 || !this.priceOpen) this.f.metrics = this.f.metrics.filter((m) => PRICE_KEYS.indexOf(m) < 0);
-        const fc = this.f.cats.filter(isSteel);
-        if (fc.length && fc.every((c) => M.categories.find((x) => x.name === c[0]).geo === '省') && (this.f.grain === '日' || this.f.grain === '周')) { this.f.grain = '旬'; this.$info('所选品类最细时间粒度为旬，已按旬查询'); }
-        setTimeout(() => { this.q = JSON.parse(JSON.stringify(this.f)); this.path = []; this.loading = false; }, 500);
+        const f = this.f, d = this.fDim;
+        if (f.rowDim !== 'region' && f.colDim === 'cat') f.colDim = 'metric';
+        if (d && d.open) { f.dimSeg = f.dimSeg.filter((b) => d.d1.bands.indexOf(b) >= 0); f.dimD2 = d.d2 ? f.dimD2.filter((b) => d.d2.bands.indexOf(b) >= 0) : []; } else { f.dimSeg = []; f.dimD2 = []; }
+        const condOn = f.dimSeg.length + f.dimD2.length > 0;
+        if (condOn && f.colDim === 'cat') { f.colDim = 'metric'; this.$info('设了品类维度条件，已改为多指标展示'); }
+        if (f.cats.filter(isSteel).length !== 1 || !this.priceOpen || condOn) f.metrics = f.metrics.filter((m) => PRICE_KEYS.indexOf(m) < 0);
+        const fc = f.cats.filter(isSteel);
+        if (fc.length && fc.every((c) => M.categories.find((x) => x.name === c[0]).geo === '省') && (f.grain === '日' || f.grain === '周')) { f.grain = '旬'; this.$info('所选品类最细时间粒度为旬，已按旬查询'); }
+        /* 第二维度条件与时间组合的最细粒度按大类配置（PV-107，示例参数） */
+        const order = ['日', '周', '旬', '月'];
+        if (d && d.d2 && f.dimD2.length && f.rowDim === 'time' && order.indexOf(f.grain) < order.indexOf(d.combo.time)) { f.grain = d.combo.time; this.$info('设了' + d.d2.segName + '条件时，' + d.cat.name + '按时间展开最细到' + d.combo.time + '，已按' + d.combo.time + '查询'); }
+        let path = Array.isArray(p) ? p : [], nsDrill = '';
+        if (!path.length && f.rowDim === 'cat') {
+          if (fc.length === 1 && fc[0][1] && M.categories.find((x) => x.name === fc[0][0]).depth >= 'L3') path = fc[0].slice(0, 2);
+          if (f.cats.length === 1 && !fc.length) nsDrill = f.cats[0][1];
+        }
+        setTimeout(() => { this.q = JSON.parse(JSON.stringify(f)); this.path = path; this.nsDrill = nsDrill; this.nsSeg = ''; this.loading = false; }, 500);
       },
-      reset() { this.f = defaults(); this.scheme = 'default'; this.run(); },
-      loadScheme(k) { this.f = Object.assign(defaults(), JSON.parse(JSON.stringify(SCHEMES[k].f))); this.run(); },
-      loadDim(name) { const h = M.findProd(name); this.f.cats = [[h.c.name, name]]; this.f.rowDim = 'dim'; this.f.dimLevel = ''; this.run(); },
+      reset() { this.f = defaults(); this.scheme = 'default'; this.fold = false; this.flat = false; this.dimMetric = 'sales'; this.run(); },
+      loadScheme(k) { const s = SCHEMES[k]; this.f = Object.assign(defaults(), JSON.parse(JSON.stringify(s.f))); this.fold = !!s.fold; this.flat = false; this.dimMetric = s.dimMetric || 'sales'; this.run(s.p ? s.p.slice() : null); },
+      drillSeg(seg) { this.path = this.path.slice(0, 2).concat([seg]); },
       drill(row) { this.path = this.path.concat([row.name]); },
       drillTo(i) { this.path = this.path.slice(0, i); },
     },

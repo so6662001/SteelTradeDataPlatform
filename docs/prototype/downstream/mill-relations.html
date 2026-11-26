@@ -129,7 +129,7 @@
             <td v-for="c in S.cycles" :key="c" class="c"><span class="grade g">达标</span></td><td class="c">连续 {{ H.streak }} 期</td>
           </tr></tbody>
         </table>
-        <div class="small muted" style="margin-top:6px"><template v-if="nsOn">{{ S.cur }} 周期的结果在 {{ S.nextPub }} 统一发布，本企业该周期为<b>“不适用（无库存经营）”</b>；“无库存经营”标签随周期结果在发布日出现在钢厂端（这里按发布后的样子预览）。</template><template v-else>{{ S.cur }} 周期的结果在 {{ S.nextPub }} 统一发布，发布前钢厂看不到任何进度。</template>接入状态每日更新一次。</div>
+        <div class="small muted" style="margin-top:6px"><template v-if="nsOn">{{ S.cur }} 周期的结果在 {{ S.nextPub }} 统一发布，本企业该周期为<b>“不适用（无库存经营）”</b>；“无库存经营”标签随周期结果在发布日出现在厂家端（这里按发布后的样子预览）。</template><template v-else>{{ S.cur }} 周期的结果在 {{ S.nextPub }} 统一发布，发布前钢厂看不到任何进度。</template>接入状态每日更新一次。</div>
       </div>
       <div class="bound mt12">
         <div class="box yes">
@@ -153,7 +153,7 @@
       </div>
       <div v-if="nsOn && cyc === S.cur" class="na-block">
         <b>不适用（无库存经营）</b>
-        <div class="small muted" style="margin-top:6px;line-height:1.8">本企业自 {{ S.cur }} 周期起不参加报送达标评定，不显示当期进度和缺报日历。<br>销售数据仍应照常上传；连续 {{ NS.breakDays }} 个自然日没有任何数据时，钢厂端会显示“报送中断”。<br><a href="#nostock">查看标记状态、到期日与撤销入口 ›</a></div>
+        <div class="small muted" style="margin-top:6px;line-height:1.8">本企业自 {{ S.cur }} 周期起不参加报送达标评定，不显示当期进度和缺报日历。<br>销售数据仍应照常上传；连续 {{ NS.breakDays }} 个自然日没有任何数据时，厂家端会显示“报送中断”。<br><a href="#nostock">查看标记状态、到期日与撤销入口 ›</a></div>
       </div>
       <template v-else>
       <div class="cal">
@@ -196,7 +196,7 @@
             <tr><td>报送达标</td><td>按周期评定，达标或未达标</td><td>不参加评定，显示“不适用（无库存经营）”</td></tr>
             <tr><td>带动钢厂看到的</td><td>接入状态、各周期达标或未达标</td><td>接入状态照常；达标一栏为“不适用”，<b>并看到“无库存经营”标签</b></td></tr>
             <tr><td>钢厂的汇总达标率</td><td>计入</td><td>不计入</td></tr>
-            <tr><td>上传</td><td>销售数据、库存快照</td><td>销售数据仍应照常上传；连续 {{ NS.breakDays }} 个自然日没有任何数据，钢厂端显示“报送中断”<span class="ex-tag" style="margin-left:4px">示例参数</span></td></tr>
+            <tr><td>上传</td><td>销售数据、库存快照</td><td>销售数据仍应照常上传；连续 {{ NS.breakDays }} 个自然日没有任何数据，厂家端显示“报送中断”<span class="ex-tag" style="margin-left:4px">示例参数</span></td></tr>
             <tr><td>名录、数据池、聚合数据</td><td colspan="2">不受影响。标签只对与本企业有带动关系的钢厂显示，不进企业名录，不作为聚合数据的维度、筛选条件或分组</td></tr>
             <tr><td>带动奖励</td><td>达标周期计入有效带动户的认定</td><td>标记生效的周期没有达标结果；一期这类企业不计入钢厂的有效带动户</td></tr>
           </tbody>
@@ -321,7 +321,7 @@
   <!-- 邀请落地页 / 确认 -->
   <el-dialog v-model="land.show" :title="landPending ? '带动关系确认请求' : '邀请落地页预览'" width="640px" top="5vh">
     <div class="land">
-      <div class="top"><b>{{ land.mill }}</b> 邀请贵司加入货袋子钢贸上下游数据平台<div class="small" style="opacity:.9;margin-top:4px">确认前请看清下面四件事。这些内容与钢厂端的说明一致。</div></div>
+      <div class="top"><b>{{ land.mill }}</b> 邀请贵司加入货袋子钢贸上下游数据平台<div class="small" style="opacity:.9;margin-top:4px">确认前请看清下面四件事。这些内容与厂家端的说明一致。</div></div>
       <div class="body">
         <div class="item"><span class="no">1</span><div><b>谁邀请。</b>{{ land.mill }}，通过协议户名单向贵司发出邀请。</div></div>
         <div class="item"><span class="no">2</span><div><b>钢厂能看到什么。</b>贵司是否已接入，以及报送中断、已暂停、已退出（接入前为未接入或接入中；解除后为已解除关联）；每个达标周期是达标还是未达标（不满评定条件的周期为“不适用”），以及连续达标的周期数；把贵司选入数据池后，包含贵司在内的聚合数据。贵司如自行申报“无库存经营”并经平台核实生效，钢厂还会看到这个标签；不申报就没有。</div></div>

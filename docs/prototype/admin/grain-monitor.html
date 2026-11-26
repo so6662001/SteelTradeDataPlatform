@@ -191,13 +191,13 @@
               <span v-else class="muted">{{ row.open ? '模板只有一个维度' : '—' }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="去掉第二维度的行" width="130" align="right">
+          <el-table-column label="最细层上卷（行；管材为列）" width="150" align="right">
             <template #default="{row}"><template v-if="row.open && row.s.rowAll"><span class="num" :style="{color: row.rollRate >= 50 ? '#e5484d' : row.rollRate >= 20 ? '#b26a00' : ''}">{{ row.s.rowRolled }} / {{ row.s.rowAll }}</span><div class="small muted">上卷率 {{ row.rollRate }}%</div></template><span v-else class="muted">—</span></template>
           </el-table-column>
           <el-table-column label="上卷到规格段" width="106" align="right"><template #default="{row}"><span v-if="row.open && row.s.specAll" class="num">{{ row.s.specAll - row.s.specOk }} / {{ row.s.specAll }}</span><span v-else class="muted">—</span></template></el-table-column>
           <el-table-column label="判断" min-width="170"><template #default="{row}"><el-tag size="small" :type="row.tagType" effect="light">{{ row.tag }}</el-tag><div class="small muted" style="margin-top:2px">{{ row.note }}</div></template></el-table-column>
         </el-table>
-        <div class="tbl-foot"><span>上卷路径固定：先去掉第二维度，再从规格到规格段，最后到品名（PV-83）。上卷率 = 被去掉第二维度的行数 ÷ 行数。上卷率持续偏高说明分段过细或池内企业偏少，应合并相邻段而不是降低阈值；调整分段须走分段字典变更（双人复核，带影响评估）。“未分段”（第二维度缺失）占比见 <a href="quality.html">数据质量监控</a>。</span></div>
+        <div class="tbl-foot"><span>上卷路径按模板固定（PV-83）。管材先把规格合并到规格段、保留壁厚，再去掉壁厚（PV-106，V0.7）：这里统计的是各“规格段 × 壁厚段”之下，有多少列的单规格整列上卷；型材先去掉第二维度，再从规格到规格段；板材从厚度段 × 宽度段到厚度段；最后到品名。上卷率 = 上卷的行数（管材为列数）÷ 总数。上卷率持续偏高说明分段过细或池内企业偏少，应合并相邻段而不是降低阈值；调整分段须走分段字典变更（双人复核，带影响评估）。“未分段”（第二维度缺失）占比见 <a href="quality.html">数据质量监控</a>。</span></div>
       </el-tab-pane>
     </el-tabs>
   </div>
@@ -323,7 +323,7 @@
           const r = { tpl: d.steel ? tpl : '其他（非钢材）', ns: !d.steel, name: p.name, cat: c.name, depth: c.depth, unit: d.steel ? '吨' : p.unit, n, s, open, a1, a1Ok, a1Name: fine ? '单规格' : (tpl === '板材' ? '厚度段' : '规格段'), cellRate, rollRate,
             finest: (d.d2 ? (tpl === '板材' ? '厚度段' : '规格') + ' × ' + d.d2.segName : '规格') + (fine || tpl === '板材' ? '' : '（第一维度到规格段）') };
           if (!open) Object.assign(r, { tag: '暂不披露', tagType: 'info', note: '达到 L4 后自动回补并开放' });
-          else if (rollRate !== null && rollRate >= 50) Object.assign(r, { tag: '分段偏细', tagType: 'danger', note: '多数行被去掉第二维度，建议合并相邻段' });
+          else if (rollRate !== null && rollRate >= 50) Object.assign(r, { tag: '分段偏细', tagType: 'danger', note: d.keepWall ? '多数“规格 × 壁厚段”的列上卷到规格段 × 壁厚段，规格段层级仍可披露；要看到单规格需合并相邻段或扩大数据池' : '多数行被去掉第二维度，建议合并相邻段' });
           else if (cellRate !== null && cellRate < 85) Object.assign(r, { tag: '部分格子合并', tagType: 'warning', note: '不足的段并入“其他”或上卷，属正常范围' });
           else Object.assign(r, { tag: '正常', tagType: 'success', note: s.cellAll ? '格子基本达标' : '单维度模板，按规格或规格段披露' });
           out.push(r);

@@ -72,7 +72,7 @@
       <b class="rep-k">报送达标</b>
       <el-tag size="small" type="info" effect="plain">不适用（无库存经营）</el-tag>
       <span><b>贵企业不参加报送达标评定，销售数据仍应照常上传。</b></span>
-      <span class="muted small">标记生效期间不做缺报提醒；连续 {{ NS.breakDays }} 个自然日没有任何数据时，钢厂端会显示“报送中断”。</span>
+      <span class="muted small">标记生效期间不做缺报提醒；连续 {{ NS.breakDays }} 个自然日没有任何数据时，厂家端会显示“报送中断”。</span>
       <span style="margin-left:auto;white-space:nowrap"><a href="mill-relations.html">查看标记状态 ›</a></span>
     </div>
     <div class="rep-note" style="background:#fffaf2"><b>已收到库存数据，与无库存经营的申报不一致，平台将复核。</b>本企业在标记生效期间仍有库存快照到达（示例企业每天上传库存快照，这里用来演示这条提示）。这是原型的演示状态，可在“带动关系与报送达标”页撤销标记后恢复。</div>
@@ -533,7 +533,7 @@
         <tr><td>数据全部被本企业的上传条件过滤掉</td><td><span class="dot err"></span>不算</td><td class="small muted">过滤发生在 ERP 端还是平台端，结果相同。保存规则前的试算会提示有多少天没有可报送的数据</td></tr>
         <tr><td>截止时点之后才到达</td><td><span class="dot err"></span>不算</td><td class="small muted">补传的数据照常入库并参与聚合，当天仍计为缺报；已发布的周期结果不因补传自动改变</td></tr>
         <tr><td>周末、法定节假日（非应报送日）</td><td><span class="dot"></span>不计入</td><td class="small muted">应报送日为工作日，日历由平台维护。非应报送日上传的数据照常接收和聚合，不计入评定的分子和分母，没有数据也不算缺报</td></tr>
-        <tr><td>暂停上传期间</td><td><span class="dot err"></span>不算</td><td class="small muted">暂停期间的应报送日按缺报计入评定，钢厂端显示“已暂停”</td></tr>
+        <tr><td>暂停上传期间</td><td><span class="dot err"></span>不算</td><td class="small muted">暂停期间的应报送日按缺报计入评定，厂家端显示“已暂停”</td></tr>
         <tr><td>常年不落库，当天既没有销售也没有库存</td><td><span class="dot err"></span>不算</td><td class="small muted">偶尔出现靠达标阈值容忍；常年如此的企业可申报“无库存经营”，核实生效后不参加达标评定</td></tr>
       </tbody>
     </table>

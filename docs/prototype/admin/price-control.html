@@ -40,7 +40,7 @@
         <el-dropdown-item v-for="s in staff" :key="s.n" :command="s.n" :disabled="s.n===me">{{ s.n }}（{{ s.r }}）</el-dropdown-item>
       </el-dropdown-menu></template>
     </el-dropdown>
-    <el-button type="primary" @click="$go('../upstream/dashboard.html')"><el-icon><View /></el-icon>到上游端查看效果</el-button>
+    <el-button type="primary" @click="$go('../upstream/dashboard.html')"><el-icon><View /></el-icon>到上游厂家端查看效果</el-button>
   </template>
 
   <div class="grid c4">
@@ -64,7 +64,7 @@
   <div class="grid c-2-1">
     <div class="card">
       <div class="card-title"><span>上游价格功能闸口<small>全部上游价格功能的统一开关，开启与关闭均留痕</small></span>
-        <span class="right"><a href="../upstream/dashboard.html">到上游端查看效果 ›</a></span></div>
+        <span class="right"><a href="../upstream/dashboard.html">到上游厂家端查看效果 ›</a></span></div>
 
       <div class="gate-head" :class="open ? 'open' : 'closed'">
         <div class="big-ico"><el-icon><component :is="open ? 'Unlock' : 'Lock'" /></el-icon></div>
@@ -418,7 +418,7 @@
       };
     },
     watch: {
-      /* 闸口状态被本页流程以外的途径改变时（如上游端顶栏的原型开关），补齐操作记录 */
+      /* 闸口状态被本页流程以外的途径改变时（如上游厂家端顶栏的原型开关），补齐操作记录 */
       open(v) {
         if (this.selfChange) { this.selfChange = false; return; }
         const t = nowStr();
@@ -474,7 +474,7 @@
           this.openInfo = { t, docNo: this.flow.docNo, applicant: this.flow.applicant, approver: this.me };
           this.logs.unshift({ t, who: this.me, role: this.roleOf(this.me), act: '复核通过，闸口开启。上游侧价格功能对全部已付费上游开放。', type: 'success' });
           this.selfChange = true; this.$setState('gate', 'open');
-          this.$demo('闸口已开启。可到上游端查看量价视图与价格指标。');
+          this.$demo('闸口已开启。可到上游厂家端查看量价视图与价格指标。');
         }).catch(() => {});
       },
       closeGate() {
